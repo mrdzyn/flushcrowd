@@ -1,0 +1,62 @@
+name: LooRadar CI
+
+on:
+  push:
+    branches:
+      - main
+      - 'phase-*/**'
+      - 'feature/**'
+  pull_request:
+    branches:
+      - main
+      - 'phase-*/**'
+
+jobs:
+  validate:
+    name: Code Quality & Flutter Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: 'stable'
+          cache: true
+
+      - name: Install Dependencies
+        run: flutter pub get
+
+      - name: Verify Code Formatting
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run Static Analysis
+        run: flutter analyze
+
+      - name: Run Unit & Widget Tests
+        run: flutter test
+
+  firestore-rules:
+    name: Firestore Security Rules Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Setup Java (for Firebase Emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Rules Test Dependencies
+        run: npm --prefix rules_tests ci
+
+      - name: Run Firestore Rules Tests in Emulator
+        run: npm --prefix rules_tests run test:emulators

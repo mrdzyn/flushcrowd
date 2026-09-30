@@ -2,18 +2,19 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-**Last updated:** 2026-09-16  
+**Last updated:** 2026-09-30  
 **Project:** LooRadar — global community-powered restroom finder  
 **Repository:** `mrdzyn/looradar`  
-**Overall stage:** Documentation / pre-implementation  
+**Overall stage:** Application Implementation  
 **Current phase:** Phase 0 — Foundation + UI shell/design system  
-**Current branch:** `docs/phase-0-foundation`  
-**Current PR:** #1 — `docs: establish LooRadar Phase 0 foundation`  
-**Implementation status:** Not started
+**Current branch:** `phase-0/foundation`  
+**Current PR:** [#2](https://github.com/mrdzyn/looradar/pull/2) — `feat: establish LooRadar Phase 0 application foundation`  
+**Audited implementation head:** `cbdbae417505c3ffd8dece347f37975b67dc3b45`  
+**Implementation status:** Passed Exact-Head Re-Audit (0 BLOCKER / 0 MAJOR findings; ready for merge decision)
 
 ## Current objective
 
-Finish and approve the product/technical foundation, merge the documentation baseline, then begin Phase 0 implementation from the repository source of truth.
+Establish the production-oriented Flutter foundation, architecture boundaries, design system tokens, UI shell, GIS utilities, Firebase/Maps boundaries, and CI baseline ready for Phase 1 Map Discovery.
 
 ## Locked decisions
 
@@ -46,52 +47,43 @@ Read these before implementation:
 - `docs/04-mvp-scope.md` — MVP boundaries and acceptance criteria.
 - `docs/05-phase-0-plan.md` — Phase 0 implementation plan and definition of done.
 - `docs/06-ui-ux-reference.md` — UX rules and validation gates.
+- `docs/07-environment-setup.md` — secrets, platform keys, App Check, and budget setup.
 - `docs/assets/looradar-mobile-ux-reference.png` — **canonical visual reference** for user-facing implementation.
 
 ## Completed
 
-- Initial product vision documented.
-- Flutter/Firebase/Google Maps architecture documented.
-- GIS strategy defined using lat/lng + geohash candidate queries + exact distance filtering.
-- Indoor-location metadata strategy defined.
-- Initial Firestore/domain data model documented.
-- Anonymous identity and location-privacy model documented.
-- MVP scope and phased roadmap documented.
-- Phase 0 plan and definition of done documented.
-- UI/UX-first approach documented.
-- Canonical mobile mockup checked into `docs/assets/`.
-- Multi-agent orchestration contract added as `AGENTS.md`.
-- Cross-agent status/handoff ledger added as this file.
+- Scaffolded Flutter iOS and Android application with package identifier `com.looradar.looradar`.
+- Designed clean layered architecture: Presentation -> State -> Domain -> Data Repositories -> Firebase/GIS Adapters.
+- Established design tokens (`AppColors`, `AppTypography`, `AppSpacing`, `AppRadii`, `AppTheme`) matching canonical visual reference.
+- Built reusable UI components: `LooPrimaryButton`, `LooSecondaryButton`, `AmenityChip`, `StatusChip`, `RestroomSummaryCard`, `MapSearchBar`, `MapRecenterButton`, `PermissionBanner`, `LooBottomNavBar`, `LooLoadingIndicator`, `EmptyStateView`, `ErrorStateView`.
+- Implemented UI Shell: `SplashScreen` (Mockup 1), `MainShellScreen` (5-tab shell), `MapDiscoveryScreen` (Mockup 2).
+- Built typed domain models: `Restroom`, `Rating`, `Verification`, `RestroomReport`, `Coordinates`, enums with full indoor metadata and zero contributor UIDs in public domain models.
+- Implemented clean Firestore serialization boundary with native `Timestamp` adapters (`FirestoreCodec`, `RestroomFirestoreCodec`, `RatingFirestoreCodec`, `RestroomReportFirestoreCodec`, `VerificationFirestoreCodec`) preserving domain layer independence from Firebase.
+- Implemented automated Firestore Security Rules test harness with 20 emulator tests (`rules_tests/test/firestore_rules.test.js`) testing public reads, private data protection, contribution auth, UID exclusion, aggregate protection, coordinate validation, and deterministic rating ownership.
+- Removed premature production Firestore spatial querying; explicitly deferred spatial methods (`getNearbyRestrooms`, `getViewportRestrooms`) in `FirestoreRestroomRepository` via `UnsupportedError` to prevent partial or un-debounced spatial reads before Phase 1.
+- Documented single-cell prefix calculation in `GeohashService.getCandidatePrefixes` and deferred full 9-neighbor multi-cell candidate expansion to Phase 1.
+- Built Firebase Anonymous Authentication boundary (`AuthRepository`, `FirebaseAuthRepositoryImpl`, `InMemoryAuthRepository`).
+- Configured Cloud Firestore repository boundary (`FirestoreRestroomRepository`, `InMemoryRestroomRepository`).
+- Created Cloud Firestore Security Rules (`firestore.rules`) and indexes (`firestore.indexes.json`) enforcing public/private separation, deterministic `ratingOwnership/{restroomId}_{auth.uid}`, aggregate protections, and coordinate validations.
+- Implemented Firebase App Check boundary (`FirebaseAppCheckService`) with debug provider in development and Play Integrity / App Attest in production.
+- Configured foreground location permissions (`LocationRepositoryImpl`, `LocationNotifier`, `PermissionBanner`) with graceful manual exploration fallback.
+- Added GitHub Actions CI (`.github/workflows/ci.yml`) for formatting, analysis, Flutter tests, and automated Firestore Security Rules emulator tests.
+- Documented environment, secrets, budget alerts, cost controls, and Android production signing safeguards in `docs/07-environment-setup.md`.
+- Expanded test suite: 46 Flutter tests passing and 20 Firestore rules tests passing.
 
 ## Active work
 
-Documentation PR #1 is the active milestone. No application implementation should begin until the documentation baseline is reviewed/merged unless the human owner explicitly changes that sequence.
+PR #2 substantive exact-head re-audit passed at implementation head `cbdbae417505c3ffd8dece347f37975b67dc3b45` with 0 BLOCKER and 0 MAJOR findings. Final bookkeeping cleanup applied. Ready for merge decision.
 
-## Phase 0 implementation scope
+## Not started / later phases (Phase 1 Scope Intentionally Deferred)
 
-Once documentation is merged, Phase 0 should establish:
-
-- Flutter application scaffold and identifiers;
-- clean project/layer structure;
-- strict analysis/linting and CI;
-- environment/config strategy with no committed secrets;
-- Firebase initialization;
-- anonymous authentication;
-- Firestore foundation and initial security rules;
-- Firebase App Check strategy/integration;
-- Google Maps Android/iOS setup with restricted keys;
-- foreground location permission flow;
-- UI shell/design tokens/components guided by the canonical mockup;
-- typed core domain models and enums;
-- lat/lng value object, geohash abstraction, and Haversine utility;
-- repository/service boundaries around Firebase/GIS/platform dependencies;
-- foundational unit tests.
-
-See `docs/05-phase-0-plan.md` for the authoritative definition of done.
-
-## Not started / later phases
-
-**Phase 1 — Map Discovery:** nearby and viewport queries, restroom markers, clustering, preview cards/list, initial filters.
+**Phase 1 — Map Discovery:**
+- Production geohash multi-cell candidate expansion (9-cell neighbor algorithm)
+- Production Firestore spatial queries (`getNearbyRestrooms`, `getViewportRestrooms`)
+- Viewport query debounce (300-500ms idle window)
+- Live restroom map markers & marker clustering
+- Preview card carousel / bottom sheet expansion
+- Filter bottom sheet & query filters
 
 **Phase 2 — Add Restroom:** adjustable map pin, location/building/floor/landmark metadata, amenities/access fields, duplicate warning, anonymous submission.
 
@@ -103,32 +95,25 @@ See `docs/05-phase-0-plan.md` for the authoritative definition of done.
 
 ## Current blockers / human actions
 
-- Review/audit PR #1.
-- Merge PR #1 after approval.
-- Google/Firebase project configuration and production credentials will require owner-controlled setup during Phase 0.
-- Google Maps API keys must be platform-restricted and must not be committed as unrestricted secrets.
+1. **Google Maps Platform API Keys:** Create platform-restricted keys for Android (`com.looradar.looradar` + SHA-1) and iOS (`com.looradar.looradar`) as documented in `docs/07-environment-setup.md`.
+2. **Firebase Project Configuration:** Enable Anonymous Authentication in Firebase Console; download `google-services.json` and `GoogleService-Info.plist` into local developer workspaces.
+3. **Google Cloud Billing:** Configure budget alerts in GCP Console (\$25/mo threshold alerts).
+4. **Android Production Signing:** Generate production keystore and configure `android/key.properties` prior to release readiness.
 
 ## Validation status
 
-This milestone is documentation-only. Application build/test validation has **not started**.
-
-- Product/architecture docs — PRESENT
-- Privacy/security baseline — PRESENT
-- MVP/Phase 0 scope — PRESENT
-- Canonical PNG UI reference — PRESENT
-- `AGENTS.md` — PRESENT
-- `docs/STATUS.md` — PRESENT
-- Flutter format/analyze/test — NOT RUN; app not scaffolded yet
-- Android build — NOT RUN; app not scaffolded yet
-- iOS build — NOT RUN; app not scaffolded yet
-- Firebase runtime validation — NOT RUN; Phase 0 implementation pending
-- Google Maps runtime validation — NOT RUN; Phase 0 implementation pending
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (53 files checked, formatted)
+- `flutter analyze` — PASS (0 issues found, strict mode enabled)
+- `flutter test` — PASS (46/46 unit & widget tests passing)
+- `npm --prefix rules_tests run test:emulators` — PASS (20/20 Firestore security rules tests passing in Firestore Emulator)
+- Android debug build (`flutter build apk --debug`) — PASS (APK assembled successfully)
+- iOS build configuration (`flutter build ios --config-only --no-codesign`) — PASS (Xcode project and CocoaPods configured successfully)
+- Firebase live deployment / runtime — NOT RUN (Requires owner Firebase project credentials)
+- Google Maps live SDK rendering — NOT RUN (Requires owner platform-restricted API key)
 
 ## Next recommended action
 
-**Audit PR #1 as the final documentation baseline.** Verify consistency across product scope, architecture, privacy/security, Phase 0 requirements, canonical UX reference, `AGENTS.md`, and this status file. Resolve any findings, then merge PR #1.
-
-After merge, create a dedicated Phase 0 implementation branch/PR and instruct the implementation agent to read `AGENTS.md` + `docs/STATUS.md` before touching code.
+Review final bookkeeping delta on PR #2 and execute merge decision. Once merged into `main`, proceed to **Phase 1 — Map Discovery**.
 
 ## Handoff template
 
