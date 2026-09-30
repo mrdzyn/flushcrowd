@@ -9,7 +9,7 @@
 **Current phase:** Phase 1 — Map Discovery  
 **Current milestone:** P1.0 — Specification and task contract  
 **Current branch:** `phase-1/map-discovery`  
-**Current PR:** Not opened yet  
+**Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
 **Implementation status:** Phase 1 specification established; production discovery implementation not started
 
@@ -167,7 +167,7 @@ Existing Phase 0 CI/security tests must remain green throughout Phase 1.
 
 ## Next recommended action
 
-Implement **P1.1 — GIS + Firestore discovery engine** against `docs/08-phase-1-map-discovery.md` on `phase-1/map-discovery`, then open/update the Phase 1 PR and hand the exact head off for independent audit before proceeding to P1.2 if the GIS boundary is clean.
+Implement **P1.1 — GIS + Firestore discovery engine** against `docs/08-phase-1-map-discovery.md` on `phase-1/map-discovery`, then update PR #3 and hand the exact head off for independent audit before proceeding to P1.2 if the GIS boundary is clean.
 
 ## Handoff template
 
