@@ -14,6 +14,7 @@ For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) fir
 6. [`04-mvp-scope.md`](04-mvp-scope.md) — MVP features, exclusions, primary screens, acceptance criteria, and initial success measures.
 7. [`05-phase-0-plan.md`](05-phase-0-plan.md) — concrete Phase 0 implementation requirements and definition of done.
 8. [`06-ui-ux-reference.md`](06-ui-ux-reference.md) — UI/UX-first build rules, screen flows, design direction, validation gates, and the canonical mobile mockup.
+9. [`07-environment-setup.md`](07-environment-setup.md) — environment variables, restricted API keys, App Check strategy, and budget alert procedures.
 
 ## Canonical visual reference
 

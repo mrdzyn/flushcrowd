@@ -1,0 +1,34 @@
+/// Core application constants.
+class AppConstants {
+  AppConstants._();
+
+  static const String appName = 'LooRadar';
+  static const String appTagline = 'Find a better loo, anywhere.';
+
+  // Default coordinate fallback (e.g., when location is not yet granted or denied)
+  // Defaulting to a central landmark (e.g., Ortigas Center / Manila as seen in canonical UX mock)
+  static const double defaultLatitude = 14.5839;
+  static const double defaultLongitude = 121.0617;
+  static const double defaultZoomLevel = 15.0;
+
+  // GIS & Search parameters
+  static const double defaultSearchRadiusMeters = 1500.0;
+  static const double maxSearchRadiusMeters = 5000.0;
+  static const int defaultGeohashPrecision = 6; // ~1.2 km precision box
+  static const int minRestroomNameLength = 1;
+  static const int maxRestroomNameLength = 100;
+  static const int maxCommentLength = 500;
+  static const int maxReportNotesLength = 1000;
+
+  // Firestore Collection Names
+  static const String restroomsCollection = 'restrooms';
+  static const String ratingsCollection = 'ratings';
+  static const String verificationsCollection = 'verifications';
+  static const String reportsCollection = 'reports';
+  static const String ratingOwnershipCollection = 'ratingOwnership';
+  static const String contributionOwnershipCollection = 'contributionOwnership';
+
+  // Support links
+  static const String buyMeACoffeeUrl = 'https://buymeacoffee.com/looradar';
+  static const String privacyPolicyUrl = 'https://looradar.app/privacy';
+}

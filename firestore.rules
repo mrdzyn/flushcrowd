@@ -1,0 +1,441 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: restrooms
+    // Document ID: auto-generated or slug string
+    // Fields:
+    //   - id: string (optional, 1..100 chars, immutable)
+    //   - name: string (required, 1..100 chars)
+    //   - latitude: number (required, -90.0 .. 90.0)
+    //   - longitude: number (required, -180.0 .. 180.0)
+    //   - geohash: string (required, 4..12 chars)
+    //   - countryCode: string (optional, 2..3 chars)
+    //   - region: string (optional, 1..100 chars)
+    //   - city: string (optional, 1..100 chars)
+    //   - buildingName: string (optional, 1..100 chars)
+    //   - buildingSection: string (optional, 1..100 chars)
+    //   - floor: string (optional, 1..20 chars)
+    //   - unitOrArea: string (optional, 1..100 chars)
+    //   - landmark: string (optional, 1..100 chars)
+    //   - directionsNote: string (optional, 1..500 chars)
+    //   - accessType: string (required, enum: 'free', 'paid', 'customer_only', 'key_required')
+    //   - feeAmount: number (optional, >= 0 && <= 1000000)
+    //   - feeCurrency: string (optional, 3 chars)
+    //   - male: bool (optional)
+    //   - female: bool (optional)
+    //   - allGender: bool (optional)
+    //   - pwdAccessible: bool (optional)
+    //   - babyChanging: bool (optional)
+    //   - hasBidet: bool (optional)
+    //   - hasToiletPaper: bool (optional)
+    //   - hasSoap: bool (optional)
+    //   - hasHandDryer: bool (optional)
+    //   - averageRating: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
+    //   - ratingCount: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
+    //   - verificationCount: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
+    //   - negativeVerificationCount: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
+    //   - lastVerifiedAt: timestamp (optional, trusted aggregate, immutable on update)
+    //   - status: string (required, enum: 'active', 'unverified', 'flagged', 'temporarily_unavailable', 'removed')
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: ratings
+    // Document ID: auto-generated string (must NOT contain raw UID)
+    // Fields:
+    //   - id: string (optional, 1..100 chars, immutable)
+    //   - restroomId: string (required, 1..100 chars, immutable)
+    //   - overall: number (required, 1.0 .. 5.0)
+    //   - cleanliness: number (optional, 1.0 .. 5.0)
+    //   - supplies: number (optional, 1.0 .. 5.0)
+    //   - accessibility: number (optional, 1.0 .. 5.0)
+    //   - privacy: number (optional, 1.0 .. 5.0)
+    //   - comment: string (optional, 1..1000 chars)
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: ratingOwnership
+    // Document ID: {restroomId}_{userId} (deterministic)
+    // Fields:
+    //   - id: string (optional, 1..150 chars, immutable)
+    //   - restroomId: string (required, 1..100 chars, immutable)
+    //   - userUid: string (required, matches request.auth.uid, immutable)
+    //   - ratingId: string (required, 1..100 chars, references /ratings/{ratingId})
+    //   - createdAt: timestamp (required, immutable)
+    //   - updatedAt: timestamp (required)
+    //
+    // Collection: verifications
+    // Document ID: auto-generated string
+    // Fields:
+    //   - id: string (optional, 1..100 chars)
+    //   - restroomId: string (required, 1..100 chars)
+    //   - result: string (required, enum: 'confirmed', 'not_found', 'temporarily_unavailable')
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: reports
+    // Document ID: auto-generated string
+    // Fields:
+    //   - id: string (optional, 1..100 chars)
+    //   - restroomId: string (required, 1..100 chars)
+    //   - reason: string (required, enum: 'duplicate', 'permanently_closed', 'wrong_location', 'inaccurate_details', 'inappropriate_content', 'other')
+    //   - notes: string (optional, 1..1000 chars)
+    //   - status: string (optional, 'pending' on client create)
+    //   - userUid: string (optional, must match request.auth.uid if provided)
+    //   - createdAt: timestamp (required)
+    //
+    // Collection: contributions
+    // Document ID: auto-generated string
+    // Fields:
+    //   - id: string (optional, 1..100 chars)
+    //   - contributionType: string (required, enum: 'restroom', 'rating', 'verification', 'report', 'photo')
+    //   - resourceId: string (required, 1..100 chars)
+    //   - restroomId: string (optional, 1..100 chars)
+    //   - userUid: string (required, matches request.auth.uid)
+    //   - moderationState: string (optional, 1..50 chars)
+    //   - createdAt: timestamp (required)
+    //   - updatedAt: timestamp (required)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function hasRequiredFields(data, fields) {
+      return data.keys().hasAll(fields);
+    }
+
+    function hasOnlyAllowedFields(data, fields) {
+      return data.keys().hasOnly(fields);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    function isValidStringLength(data, field, minLen, maxLen) {
+      return field in data &&
+             data[field] is string &&
+             data[field].size() >= minLen &&
+             data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(data, field, minLen, maxLen) {
+      return !(field in data) ||
+             (data[field] is string &&
+              data[field].size() >= minLen &&
+              data[field].size() <= maxLen);
+    }
+
+    function isValidOptionalBool(data, field) {
+      return !(field in data) ||
+             data[field] is bool;
+    }
+
+    function isValidOptionalNumber(data, field, minVal, maxVal) {
+      return !(field in data) ||
+             (data[field] is number &&
+              data[field] >= minVal &&
+              data[field] <= maxVal);
+    }
+
+    // Ensures public documents NEVER contain contributor UIDs or ownership metadata
+    function hasNoContributorUid(data) {
+      return !('createdByUid' in data) &&
+             !('userUid' in data) &&
+             !('userId' in data) &&
+             !('authorUid' in data) &&
+             !('uid' in data);
+    }
+
+    // ===============================================================
+    // Domain Validators: Restrooms
+    // ===============================================================
+
+    function isValidRestroomSchema(data) {
+      let allowedFields = [
+        'id', 'name', 'latitude', 'longitude', 'geohash',
+        'countryCode', 'region', 'city', 'buildingName', 'buildingSection',
+        'floor', 'unitOrArea', 'landmark', 'directionsNote',
+        'accessType', 'feeAmount', 'feeCurrency',
+        'male', 'female', 'allGender', 'pwdAccessible', 'babyChanging',
+        'hasBidet', 'hasToiletPaper', 'hasSoap', 'hasHandDryer',
+        'averageRating', 'ratingCount', 'verificationCount', 'negativeVerificationCount',
+        'lastVerifiedAt', 'status', 'createdAt', 'updatedAt'
+      ];
+
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             hasRequiredFields(data, ['name', 'latitude', 'longitude', 'geohash', 'accessType', 'status', 'createdAt', 'updatedAt']) &&
+             hasNoContributorUid(data) &&
+             isValidStringLength(data, 'name', 1, 100) &&
+             data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0 &&
+             data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0 &&
+             isValidStringLength(data, 'geohash', 4, 12) &&
+             data.accessType in ['free', 'paid', 'customer_only', 'key_required'] &&
+             data.status in ['active', 'unverified', 'flagged', 'temporarily_unavailable', 'removed'] &&
+             isValidOptionalString(data, 'id', 1, 100) &&
+             isValidOptionalString(data, 'countryCode', 2, 3) &&
+             isValidOptionalString(data, 'region', 1, 100) &&
+             isValidOptionalString(data, 'city', 1, 100) &&
+             isValidOptionalString(data, 'buildingName', 1, 100) &&
+             isValidOptionalString(data, 'buildingSection', 1, 100) &&
+             isValidOptionalString(data, 'floor', 1, 20) &&
+             isValidOptionalString(data, 'unitOrArea', 1, 100) &&
+             isValidOptionalString(data, 'landmark', 1, 100) &&
+             isValidOptionalString(data, 'directionsNote', 1, 500) &&
+             isValidOptionalString(data, 'feeCurrency', 3, 3) &&
+             isValidOptionalNumber(data, 'feeAmount', 0, 1000000) &&
+             isValidOptionalBool(data, 'male') &&
+             isValidOptionalBool(data, 'female') &&
+             isValidOptionalBool(data, 'allGender') &&
+             isValidOptionalBool(data, 'pwdAccessible') &&
+             isValidOptionalBool(data, 'babyChanging') &&
+             isValidOptionalBool(data, 'hasBidet') &&
+             isValidOptionalBool(data, 'hasToiletPaper') &&
+             isValidOptionalBool(data, 'hasSoap') &&
+             isValidOptionalBool(data, 'hasHandDryer') &&
+             isValidOptionalNumber(data, 'averageRating', 0.0, 5.0) &&
+             isValidOptionalNumber(data, 'ratingCount', 0, 1000000000) &&
+             isValidOptionalNumber(data, 'verificationCount', 0, 1000000000) &&
+             isValidOptionalNumber(data, 'negativeVerificationCount', 0, 1000000000) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp &&
+             (!('lastVerifiedAt' in data) || data.lastVerifiedAt == null || data.lastVerifiedAt is timestamp);
+    }
+
+    // Clients cannot forge positive aggregate values on restroom creation
+    function isValidInitialAggregates(data) {
+      return (!('averageRating' in data) || data.averageRating == 0) &&
+             (!('ratingCount' in data) || data.ratingCount == 0) &&
+             (!('verificationCount' in data) || data.verificationCount == 0) &&
+             (!('negativeVerificationCount' in data) || data.negativeVerificationCount == 0) &&
+             (!('lastVerifiedAt' in data) || data.lastVerifiedAt == null);
+    }
+
+    function isValidRestroomCreate() {
+      return isValidRestroomSchema(request.resource.data) &&
+             isValidInitialAggregates(request.resource.data);
+    }
+
+    function isValidRestroomUpdate() {
+      return isValidRestroomSchema(request.resource.data) &&
+             areImmutableFieldsUnchanged(['createdAt', 'averageRating', 'ratingCount', 'verificationCount', 'negativeVerificationCount', 'lastVerifiedAt']) &&
+             areImmutableFieldsUnchanged(['id']);
+    }
+
+    // ===============================================================
+    // Domain Validators: Ratings & Ownership
+    // ===============================================================
+
+    function isValidRatingSchema(data) {
+      let allowedFields = [
+        'id', 'restroomId', 'overall', 'cleanliness', 'supplies',
+        'accessibility', 'privacy', 'comment', 'createdAt', 'updatedAt'
+      ];
+
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             hasRequiredFields(data, ['restroomId', 'overall', 'createdAt', 'updatedAt']) &&
+             hasNoContributorUid(data) &&
+             isValidOptionalString(data, 'id', 1, 100) &&
+             isValidStringLength(data, 'restroomId', 1, 100) &&
+             data.overall is number && data.overall >= 1.0 && data.overall <= 5.0 &&
+             isValidOptionalNumber(data, 'cleanliness', 1.0, 5.0) &&
+             isValidOptionalNumber(data, 'supplies', 1.0, 5.0) &&
+             isValidOptionalNumber(data, 'accessibility', 1.0, 5.0) &&
+             isValidOptionalNumber(data, 'privacy', 1.0, 5.0) &&
+             isValidOptionalString(data, 'comment', 1, 1000) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    // Checks deterministic private ownership record to enforce 1 rating per user per restroom
+    function hasValidRatingOwnership(restroomId, ratingId) {
+      let ownershipPath = /databases/$(database)/documents/ratingOwnership/$(restroomId + '_' + request.auth.uid);
+      return exists(ownershipPath) ?
+               (get(ownershipPath).data.ratingId == ratingId || (getAfter(ownershipPath) != null && getAfter(ownershipPath).data.ratingId == ratingId)) :
+               (getAfter(ownershipPath) != null && getAfter(ownershipPath).data.ratingId == ratingId);
+    }
+
+    function isValidRatingOwnership(data, ownershipId) {
+      let allowedFields = ['id', 'restroomId', 'userUid', 'ratingId', 'createdAt', 'updatedAt'];
+
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             hasRequiredFields(data, ['restroomId', 'userUid', 'ratingId', 'createdAt', 'updatedAt']) &&
+             ownershipId == (data.restroomId + '_' + request.auth.uid) &&
+             data.userUid == request.auth.uid &&
+             isValidStringLength(data, 'restroomId', 1, 100) &&
+             isValidStringLength(data, 'ratingId', 1, 100) &&
+             isValidOptionalString(data, 'id', 1, 150) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Domain Validators: Verifications
+    // ===============================================================
+
+    function isValidVerification(data) {
+      let allowedFields = ['id', 'restroomId', 'result', 'createdAt'];
+
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             hasRequiredFields(data, ['restroomId', 'result', 'createdAt']) &&
+             hasNoContributorUid(data) &&
+             isValidOptionalString(data, 'id', 1, 100) &&
+             isValidStringLength(data, 'restroomId', 1, 100) &&
+             data.result in ['confirmed', 'not_found', 'temporarily_unavailable'] &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Domain Validators: Reports
+    // ===============================================================
+
+    function isValidReport(data) {
+      let allowedFields = ['id', 'restroomId', 'reason', 'notes', 'status', 'userUid', 'createdAt'];
+
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             hasRequiredFields(data, ['restroomId', 'reason', 'createdAt']) &&
+             isValidOptionalString(data, 'id', 1, 100) &&
+             isValidStringLength(data, 'restroomId', 1, 100) &&
+             data.reason in ['duplicate', 'permanently_closed', 'wrong_location', 'inaccurate_details', 'inappropriate_content', 'other'] &&
+             isValidOptionalString(data, 'notes', 1, 1000) &&
+             (!('status' in data) || data.status == 'pending') &&
+             (!('userUid' in data) || data.userUid == request.auth.uid) &&
+             data.createdAt is timestamp;
+    }
+
+    // ===============================================================
+    // Domain Validators: Contributions
+    // ===============================================================
+
+    function isValidContribution(data) {
+      let allowedFields = [
+        'id', 'contributionType', 'resourceId', 'restroomId',
+        'userUid', 'createdAt', 'updatedAt', 'moderationState'
+      ];
+
+      return hasOnlyAllowedFields(data, allowedFields) &&
+             hasRequiredFields(data, ['contributionType', 'resourceId', 'userUid', 'createdAt', 'updatedAt']) &&
+             data.userUid == request.auth.uid &&
+             data.contributionType in ['restroom', 'rating', 'verification', 'report', 'photo'] &&
+             isValidStringLength(data, 'resourceId', 1, 100) &&
+             isValidOptionalString(data, 'restroomId', 1, 100) &&
+             isValidOptionalString(data, 'id', 1, 100) &&
+             isValidOptionalString(data, 'moderationState', 1, 50) &&
+             data.createdAt is timestamp &&
+             data.updatedAt is timestamp;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    // 1. Restrooms: Public facilities
+    match /restrooms/{restroomId} {
+      // Publicly readable by all users (unauthenticated and authenticated)
+      allow read: if true;
+
+      // Only authenticated users can contribute new restrooms
+      allow create: if isAuthenticated() && isValidRestroomCreate();
+
+      // Only authenticated users can update facility information; trusted aggregates and createdAt are immutable
+      allow update: if isAuthenticated() && isValidRestroomUpdate();
+
+      // Restrooms cannot be directly deleted by clients (moderation/server-side only)
+      allow delete: if false;
+    }
+
+    // 2. Ratings: Sanitized public rating content
+    match /ratings/{ratingId} {
+      // Sanitized ratings are publicly readable
+      allow read: if true;
+
+      // Creation requires authentication, valid schema, and verified private ownership record
+      allow create: if isAuthenticated() &&
+                       isValidRatingSchema(request.resource.data) &&
+                       hasValidRatingOwnership(request.resource.data.restroomId, ratingId);
+
+      // Updates require active ownership and preserve immutable restroomId and createdAt
+      allow update: if isAuthenticated() &&
+                       isValidRatingSchema(request.resource.data) &&
+                       hasValidRatingOwnership(resource.data.restroomId, ratingId) &&
+                       areImmutableFieldsUnchanged(['restroomId', 'createdAt', 'id']);
+
+      // Rating deletion allowed by its owner
+      allow delete: if isAuthenticated() &&
+                       hasValidRatingOwnership(resource.data.restroomId, ratingId);
+    }
+
+    // 3. Rating Ownership: Deterministic private 1-rating-per-user-per-restroom records
+    match /ratingOwnership/{ownershipId} {
+      // Strictly private: users may only read their own rating ownership documents
+      allow read: if isAuthenticated() && resource.data.userUid == request.auth.uid;
+
+      // Ownership record matches deterministic key {restroomId}_{auth.uid}
+      allow create: if isAuthenticated() &&
+                       isValidRatingOwnership(request.resource.data, ownershipId);
+
+      // Updates maintain ownership integrity and immutable links
+      allow update: if isAuthenticated() &&
+                       resource.data.userUid == request.auth.uid &&
+                       isValidRatingOwnership(request.resource.data, ownershipId) &&
+                       areImmutableFieldsUnchanged(['restroomId', 'userUid', 'createdAt', 'id']);
+
+      // Owner can remove their active rating ownership record
+      allow delete: if isAuthenticated() && resource.data.userUid == request.auth.uid;
+    }
+
+    // 4. Verifications: Sanitized verification logs
+    match /verifications/{verificationId} {
+      // Publicly readable verification stream
+      allow read: if true;
+
+      // Authenticated users can log verification events
+      allow create: if isAuthenticated() && isValidVerification(request.resource.data);
+
+      // Verifications are point-in-time immutable audit records
+      allow update, delete: if false;
+    }
+
+    // 5. Reports: Moderation inputs
+    match /reports/{reportId} {
+      // Strictly private: reports are not publicly readable
+      allow read: if false;
+
+      // Authenticated users can submit moderation reports
+      allow create: if isAuthenticated() && isValidReport(request.resource.data);
+
+      // Client updates and deletions are forbidden (handled by moderation services)
+      allow update, delete: if false;
+    }
+
+    // 6. Contributions: Private contribution tracking & abuse controls
+    match /contributions/{contributionId} {
+      // Strictly private: users may only read their own contribution logs
+      allow read: if isAuthenticated() && resource.data.userUid == request.auth.uid;
+
+      // Authenticated users can log their contribution metadata
+      allow create: if isAuthenticated() && isValidContribution(request.resource.data);
+
+      // Contributions are immutable audit logs
+      allow update, delete: if false;
+    }
+
+    // 7. Default Deny: All other unmapped paths are closed
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
