@@ -1,0 +1,14 @@
+{
+  "name": "looradar-rules-tests",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "test:emulators": "firebase emulators:exec --only firestore \"npm test\""
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "firebase-tools": "^13.31.0"
+  }
+}

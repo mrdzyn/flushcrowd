@@ -97,7 +97,34 @@ To ensure LooRadar remains low-cost to operate:
    - Add notification email addresses for the project administrators.
 
 2. **Application-level Cost Guards:**
-   - Viewport map pan/zoom queries are debounced.
-   - Restroom listings store precomputed rating averages and counts (`averageRating`, `ratingCount`) so card views never fan out to read child rating documents.
-   - Dense markers are clustered.
-   - Cache results locally using Firestore offline cache.
+
+   **IMPLEMENTED IN PHASE 0 BASELINE:**
+   - **Zero-Fan-Out Data Model:** Restroom documents store precomputed rating averages and counts (`averageRating`, `ratingCount`, `verificationCount`) so map and preview cards never fan out to read child rating documents.
+   - **Strict API Scope Restriction:** No Google Maps Platform Web Services (Places, Routes, Directions, Geocoding) are enabled; navigation is strictly external-app handoff.
+   - **Deferred Spatial Execution:** Production Firestore spatial discovery (`getNearbyRestrooms`, `getViewportRestrooms`) is explicitly deferred to Phase 1 via fail-safe `UnsupportedError`, preventing accidental un-debounced or incomplete queries during Phase 0.
+
+   **REQUIRED & PLANNED FOR PHASE 1:**
+   - **Debounced Viewport Queries:** Map camera movement queries will be debounced (e.g. 300–500ms delay after idle) to avoid triggering queries on each pan/zoom frame.
+   - **9-Neighbor Geohash Expansion:** Multi-cell candidate expansion with strict distance post-filtering and bounded radius limits.
+   - **Marker Clustering:** Dense map markers clustered dynamically by zoom level to avoid map marker explosion.
+   - **Offline Caching:** Explicit Firestore cache sizing and query persistence policies.
+
+---
+
+## 6. Android Signing & Release Readiness Safeguard
+
+- **Current State (Phase 0):** `android/app/build.gradle.kts` uses debug keystore signing for release builds (`signingConfig = signingConfigs.getByName("debug")`) solely as a development convenience to allow local testing with `flutter run --release` and `flutter build apk --debug`.
+- **Production Warning:** This configuration is strictly **development-only** and **MUST NOT** be used for store distribution or production releases.
+- **Production Setup Procedure:** Prior to production release readiness:
+  1. Generate a production upload key:
+     ```bash
+     keytool -genkey -v -keystore ~/upload-keystore.jks -keyalg RSA -keysize 2048 -validity 10000 -alias upload
+     ```
+  2. Create `android/key.properties` (strictly gitignored):
+     ```properties
+     storePassword=<password>
+     keyPassword=<password>
+     keyAlias=upload
+     storeFile=<path-to-keystore>
+     ```
+  3. Update `android/app/build.gradle.kts` to load `key.properties` for production release signing. Never commit keystores or key properties.

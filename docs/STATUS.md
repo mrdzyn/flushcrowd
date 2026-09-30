@@ -9,8 +9,8 @@
 **Current phase:** Phase 0 — Foundation + UI shell/design system  
 **Current branch:** `phase-0/foundation`  
 **Current PR:** [#2](https://github.com/mrdzyn/looradar/pull/2) — `feat: establish LooRadar Phase 0 application foundation`  
-**Latest commit:** `c38c9d7`  
-**Implementation status:** Completed (Phase 0 Foundation established; PR opened for review)
+**Latest commit:** `ede50f0`  
+**Implementation status:** Remediated & Ready for Re-Audit (Phase 0 Audit Findings Resolved)
 
 ## Current objective
 
@@ -58,23 +58,32 @@ Read these before implementation:
 - Built reusable UI components: `LooPrimaryButton`, `LooSecondaryButton`, `AmenityChip`, `StatusChip`, `RestroomSummaryCard`, `MapSearchBar`, `MapRecenterButton`, `PermissionBanner`, `LooBottomNavBar`, `LooLoadingIndicator`, `EmptyStateView`, `ErrorStateView`.
 - Implemented UI Shell: `SplashScreen` (Mockup 1), `MainShellScreen` (5-tab shell), `MapDiscoveryScreen` (Mockup 2).
 - Built typed domain models: `Restroom`, `Rating`, `Verification`, `RestroomReport`, `Coordinates`, enums with full indoor metadata and zero contributor UIDs in public domain models.
-- Implemented GIS utilities: `Haversine` distance formula and `GeohashService` with bounding box and radius prefix candidate queries.
+- Implemented clean Firestore serialization boundary with native `Timestamp` adapters (`FirestoreCodec`, `RestroomFirestoreCodec`, `RatingFirestoreCodec`, `RestroomReportFirestoreCodec`, `VerificationFirestoreCodec`) preserving domain layer independence from Firebase.
+- Implemented automated Firestore Security Rules test harness with 20 emulator tests (`rules_tests/test/firestore_rules.test.js`) testing public reads, private data protection, contribution auth, UID exclusion, aggregate protection, coordinate validation, and deterministic rating ownership.
+- Removed premature production Firestore spatial querying; explicitly deferred spatial methods (`getNearbyRestrooms`, `getViewportRestrooms`) in `FirestoreRestroomRepository` via `UnsupportedError` to prevent partial or un-debounced spatial reads before Phase 1.
+- Documented single-cell prefix calculation in `GeohashService.getCandidatePrefixes` and deferred full 9-neighbor multi-cell candidate expansion to Phase 1.
 - Built Firebase Anonymous Authentication boundary (`AuthRepository`, `FirebaseAuthRepositoryImpl`, `InMemoryAuthRepository`).
 - Configured Cloud Firestore repository boundary (`FirestoreRestroomRepository`, `InMemoryRestroomRepository`).
-- Created Cloud Firestore Security Rules (`firestore.rules`) and indexes (`firestore.indexes.json`) via `firestore-rules-author` subagent enforcing public/private separation, deterministic `ratingOwnership/{restroomId}_{auth.uid}`, aggregate protections, and coordinate validations.
+- Created Cloud Firestore Security Rules (`firestore.rules`) and indexes (`firestore.indexes.json`) enforcing public/private separation, deterministic `ratingOwnership/{restroomId}_{auth.uid}`, aggregate protections, and coordinate validations.
 - Implemented Firebase App Check boundary (`FirebaseAppCheckService`) with debug provider in development and Play Integrity / App Attest in production.
 - Configured foreground location permissions (`LocationRepositoryImpl`, `LocationNotifier`, `PermissionBanner`) with graceful manual exploration fallback.
-- Added GitHub Actions CI (`.github/workflows/ci.yml`) for format, analyze, and test.
-- Documented environment, secrets, and budget alerts setup in `docs/07-environment-setup.md` and `.env.example`.
-- Created comprehensive test suite with 33 passing automated tests.
+- Added GitHub Actions CI (`.github/workflows/ci.yml`) for formatting, analysis, Flutter tests, and automated Firestore Security Rules emulator tests.
+- Documented environment, secrets, budget alerts, cost controls, and Android production signing safeguards in `docs/07-environment-setup.md`.
+- Expanded test suite: 46 Flutter tests passing and 20 Firestore rules tests passing.
 
 ## Active work
 
-Phase 0 foundation implementation is complete and ready for PR review.
+PR #2 audit findings remediation completed. Ready for independent exact-head re-audit.
 
-## Not started / later phases
+## Not started / later phases (Phase 1 Scope Intentionally Deferred)
 
-**Phase 1 — Map Discovery:** nearby and viewport queries, restroom markers, clustering, preview cards/list, initial filters.
+**Phase 1 — Map Discovery:**
+- Production geohash multi-cell candidate expansion (9-cell neighbor algorithm)
+- Production Firestore spatial queries (`getNearbyRestrooms`, `getViewportRestrooms`)
+- Viewport query debounce (300-500ms idle window)
+- Live restroom map markers & marker clustering
+- Preview card carousel / bottom sheet expansion
+- Filter bottom sheet & query filters
 
 **Phase 2 — Add Restroom:** adjustable map pin, location/building/floor/landmark metadata, amenities/access fields, duplicate warning, anonymous submission.
 
@@ -89,12 +98,14 @@ Phase 0 foundation implementation is complete and ready for PR review.
 1. **Google Maps Platform API Keys:** Create platform-restricted keys for Android (`com.looradar.looradar` + SHA-1) and iOS (`com.looradar.looradar`) as documented in `docs/07-environment-setup.md`.
 2. **Firebase Project Configuration:** Enable Anonymous Authentication in Firebase Console; download `google-services.json` and `GoogleService-Info.plist` into local developer workspaces.
 3. **Google Cloud Billing:** Configure budget alerts in GCP Console (\$25/mo threshold alerts).
+4. **Android Production Signing:** Generate production keystore and configure `android/key.properties` prior to release readiness.
 
 ## Validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (51 files checked, formatted)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (53 files checked, formatted)
 - `flutter analyze` — PASS (0 issues found, strict mode enabled)
-- `flutter test` — PASS (33/33 tests passing)
+- `flutter test` — PASS (46/46 unit & widget tests passing)
+- `npm --prefix rules_tests run test:emulators` — PASS (20/20 Firestore security rules tests passing in Firestore Emulator)
 - Android debug build (`flutter build apk --debug`) — PASS (APK assembled successfully)
 - iOS build configuration (`flutter build ios --config-only --no-codesign`) — PASS (Xcode project and CocoaPods configured successfully)
 - Firebase live deployment / runtime — NOT RUN (Requires owner Firebase project credentials)
@@ -102,7 +113,7 @@ Phase 0 foundation implementation is complete and ready for PR review.
 
 ## Next recommended action
 
-Review and approve PR for `phase-0/foundation`. Once merged into `main`, begin **Phase 1 — Map Discovery**.
+Perform independent exact-head re-audit of PR #2 on branch `phase-0/foundation`.
 
 ## Handoff template
 

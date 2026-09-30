@@ -108,7 +108,10 @@ class GeohashService {
     );
   }
 
-  /// Returns candidate geohash query prefixes for a radius in meters around [center].
+  /// Returns the center geohash query prefix for a radius in meters around [center].
+  ///
+  /// Note: Full 9-neighbor multi-cell candidate expansion is planned and deferred
+  /// to Phase 1. In Phase 0, this provides the base prefix calculation primitive.
   static List<String> getCandidatePrefixes(
     Coordinates center,
     double radiusMeters,

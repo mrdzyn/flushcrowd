@@ -1,6 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looradar/core/errors/exceptions.dart';
 import 'package:looradar/data/repositories/auth_repository_impl.dart';
+import 'package:looradar/data/repositories/firestore_restroom_repository.dart';
 import 'package:looradar/data/repositories/in_memory_restroom_repository.dart';
 import 'package:looradar/data/repositories/location_repository_impl.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
@@ -110,6 +111,25 @@ void main() {
       expect(
         () => locRepo.getCurrentLocation(),
         throwsA(isA<LocationServiceDisabledException>()),
+      );
+    });
+
+    test('FirestoreRestroomRepository explicitly defers spatial discovery methods to Phase 1', () {
+      final firestoreRepo = FirestoreRestroomRepository();
+      final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+      final bounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.5800, longitude: 121.0500),
+        northEast: Coordinates(latitude: 14.5900, longitude: 121.0700),
+      );
+
+      expect(
+        () => firestoreRepo.getNearbyRestrooms(center),
+        throwsUnsupportedError,
+      );
+
+      expect(
+        () => firestoreRepo.getViewportRestrooms(bounds),
+        throwsUnsupportedError,
       );
     });
   });

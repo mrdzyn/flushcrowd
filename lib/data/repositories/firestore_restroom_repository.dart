@@ -2,94 +2,69 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../domain/models/coordinates.dart';
-import '../../domain/models/enums.dart';
 import '../../domain/models/restroom.dart';
 import '../../domain/repositories/restroom_repository.dart';
+import '../services/firebase/firestore_codec.dart';
 import '../services/gis/geohash_service.dart';
-import '../services/gis/haversine.dart';
 
 /// Cloud Firestore implementation of [RestroomRepository].
-/// Encapsulates geohash range queries and exact Haversine distance filtering.
+///
+/// Phase 0 establishes the repository boundary, document operations,
+/// and [RestroomFirestoreCodec] integration.
+/// Production spatial discovery (geohash candidate expansion and viewport queries)
+/// is intentionally deferred to Phase 1.
 class FirestoreRestroomRepository implements RestroomRepository {
-  final FirebaseFirestore _firestore;
+  final FirebaseFirestore? _firestore;
 
-  FirestoreRestroomRepository({FirebaseFirestore? firestore})
-    : _firestore = firestore ?? FirebaseFirestore.instance;
+  FirestoreRestroomRepository({this._firestore});
 
   CollectionReference<Map<String, dynamic>> get _collection =>
-      _firestore.collection(AppConstants.restroomsCollection);
+      (_firestore ?? FirebaseFirestore.instance).collection(
+        AppConstants.restroomsCollection,
+      );
 
   @override
   Future<List<Restroom>> getNearbyRestrooms(
     Coordinates center, {
     double radiusMeters = 1500.0,
   }) async {
-    final prefixes = GeohashService.getCandidatePrefixes(center, radiusMeters);
-    final List<Restroom> candidates = [];
-
-    for (final prefix in prefixes) {
-      final querySnapshot = await _collection
-          .where('geohash', isGreaterThanOrEqualTo: prefix)
-          .where('geohash', isLessThanOrEqualTo: '$prefix~')
-          .limit(100)
-          .get();
-
-      for (final doc in querySnapshot.docs) {
-        final data = doc.data();
-        final restroom = Restroom.fromMap(data, documentId: doc.id);
-        if (restroom.status == RestroomStatus.active ||
-            restroom.status == RestroomStatus.unverified) {
-          candidates.add(restroom);
-        }
-      }
-    }
-
-    // Exact Haversine distance post-filtering and sorting
-    final inRange = candidates.where((r) {
-      final distance = Haversine.distanceInMeters(center, r.coordinates);
-      return distance <= radiusMeters;
-    }).toList();
-
-    inRange.sort((a, b) {
-      final distA = Haversine.distanceInMeters(center, a.coordinates);
-      final distB = Haversine.distanceInMeters(center, b.coordinates);
-      return distA.compareTo(distB);
-    });
-
-    return inRange;
+    // Phase 1 Scope: Production geohash multi-cell candidate expansion and
+    // Firestore spatial range queries are deferred to Phase 1.
+    // In Phase 0, use [InMemoryRestroomRepository] for UI testing and preview.
+    throw UnsupportedError(
+      'Production Firestore spatial discovery is deferred to Phase 1. '
+      'Use InMemoryRestroomRepository for Phase 0 UI preview.',
+    );
   }
 
   @override
   Future<List<Restroom>> getViewportRestrooms(GeoBoundingBox bounds) async {
-    // For viewport discovery, retrieve candidate active listings within bounding box
-    final querySnapshot = await _collection
-        .where('status', isEqualTo: RestroomStatus.active.value)
-        .limit(150)
-        .get();
-
-    final List<Restroom> results = [];
-    for (final doc in querySnapshot.docs) {
-      final restroom = Restroom.fromMap(doc.data(), documentId: doc.id);
-      if (bounds.contains(restroom.coordinates)) {
-        results.add(restroom);
-      }
-    }
-    return results;
+    // Phase 1 Scope: Production viewport bounding queries and clustering
+    // are deferred to Phase 1.
+    // In Phase 0, use [InMemoryRestroomRepository] for UI testing and preview.
+    throw UnsupportedError(
+      'Production Firestore viewport discovery is deferred to Phase 1. '
+      'Use InMemoryRestroomRepository for Phase 0 UI preview.',
+    );
   }
 
   @override
   Future<Restroom?> getRestroomById(String id) async {
     final docSnapshot = await _collection.doc(id).get();
-    if (!docSnapshot.exists || docSnapshot.data() == null) {
+    final data = docSnapshot.data();
+    if (!docSnapshot.exists || data == null) {
       return null;
     }
-    return Restroom.fromMap(docSnapshot.data()!, documentId: docSnapshot.id);
+    return RestroomFirestoreCodec.fromFirestore(
+      data,
+      documentId: docSnapshot.id,
+    );
   }
 
   @override
   Future<void> submitRestroom(Restroom restroom) async {
-    final data = restroom.toMap();
-    // Use server timestamp for creation/update
+    final data = RestroomFirestoreCodec.toFirestore(restroom);
+    // Use server timestamp for creation/update to prevent client clock skew
     data['updatedAt'] = FieldValue.serverTimestamp();
     if (restroom.id.isEmpty) {
       data['createdAt'] = FieldValue.serverTimestamp();
