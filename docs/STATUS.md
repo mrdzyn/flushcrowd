@@ -9,8 +9,8 @@
 **Current phase:** Phase 0 — Foundation + UI shell/design system  
 **Current branch:** `phase-0/foundation`  
 **Current PR:** [#2](https://github.com/mrdzyn/looradar/pull/2) — `feat: establish LooRadar Phase 0 application foundation`  
-**Latest commit:** `baebd1b`  
-**Implementation status:** Remediated & Ready for Re-Audit (Phase 0 Audit Findings Resolved)
+**Audited implementation head:** `cbdbae417505c3ffd8dece347f37975b67dc3b45`  
+**Implementation status:** Passed Exact-Head Re-Audit (0 BLOCKER / 0 MAJOR findings; ready for merge decision)
 
 ## Current objective
 
@@ -73,7 +73,7 @@ Read these before implementation:
 
 ## Active work
 
-PR #2 audit findings remediation completed. Ready for independent exact-head re-audit.
+PR #2 substantive exact-head re-audit passed at implementation head `cbdbae417505c3ffd8dece347f37975b67dc3b45` with 0 BLOCKER and 0 MAJOR findings. Final bookkeeping cleanup applied. Ready for merge decision.
 
 ## Not started / later phases (Phase 1 Scope Intentionally Deferred)
 
@@ -113,7 +113,7 @@ PR #2 audit findings remediation completed. Ready for independent exact-head re-
 
 ## Next recommended action
 
-Perform independent exact-head re-audit of PR #2 on branch `phase-0/foundation`.
+Review final bookkeeping delta on PR #2 and execute merge decision. Once merged into `main`, proceed to **Phase 1 — Map Discovery**.
 
 ## Handoff template
 
