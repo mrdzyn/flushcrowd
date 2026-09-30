@@ -1,6 +1,6 @@
 # LooRadar Documentation
 
-This folder is the source of truth for the initial LooRadar product and technical foundation.
+This folder is the source of truth for the LooRadar product and technical implementation.
 
 For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) first and then [`STATUS.md`](STATUS.md) for the current project state, active phase, blockers, and next action.
 
@@ -12,9 +12,10 @@ For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) fir
 4. [`02-data-model.md`](02-data-model.md) — Firestore collections, restroom fields, ratings, verification, reports, and duplicate-handling guidance.
 5. [`03-privacy-security.md`](03-privacy-security.md) — anonymous identity model, location privacy, App Check, security rules, data minimization, and secret handling.
 6. [`04-mvp-scope.md`](04-mvp-scope.md) — MVP features, exclusions, primary screens, acceptance criteria, and initial success measures.
-7. [`05-phase-0-plan.md`](05-phase-0-plan.md) — concrete Phase 0 implementation requirements and definition of done.
+7. [`05-phase-0-plan.md`](05-phase-0-plan.md) — Phase 0 implementation requirements and definition of done.
 8. [`06-ui-ux-reference.md`](06-ui-ux-reference.md) — UI/UX-first build rules, screen flows, design direction, validation gates, and the canonical mobile mockup.
-9. [`07-environment-setup.md`](07-environment-setup.md) — environment variables, restricted API keys, App Check strategy, and budget alert procedures.
+9. [`07-environment-setup.md`](07-environment-setup.md) — environment variables, restricted API keys, App Check strategy, signing safeguards, and budget alert procedures.
+10. [`08-phase-1-map-discovery.md`](08-phase-1-map-discovery.md) — active Phase 1 GIS/query contract, map orchestration, markers/clustering, preview/list/filter requirements, cost controls, testing, and definition of done.
 
 ## Canonical visual reference
 
@@ -33,6 +34,7 @@ User-facing implementation should follow the PNG's hierarchy, interaction model,
 - Google Maps SDK for map visualization
 - Firebase Anonymous Authentication rather than mandatory user registration
 - Firestore + geohash strategy for MVP GIS queries
+- Exact distance/bounds post-filtering after geohash candidate retrieval
 - No stored user movement/location history
 - No background location permission in V1
 - External navigation handoff instead of implementing routing
@@ -42,9 +44,9 @@ User-facing implementation should follow the PNG's hierarchy, interaction model,
 ## Development sequence
 
 ```text
-Phase 0 — Foundation + UI shell/design system
+Phase 0 — Foundation + UI shell/design system        [MERGED]
    ↓
-Phase 1 — Map Discovery
+Phase 1 — Map Discovery                              [ACTIVE]
    ↓
 Phase 2 — Add Restroom
    ↓
