@@ -9,7 +9,7 @@
 **Current phase:** Phase 0 — Foundation + UI shell/design system  
 **Current branch:** `phase-0/foundation`  
 **Current PR:** [#2](https://github.com/mrdzyn/looradar/pull/2) — `feat: establish LooRadar Phase 0 application foundation`  
-**Latest commit:** `ede50f0`  
+**Latest commit:** `baebd1b`  
 **Implementation status:** Remediated & Ready for Re-Audit (Phase 0 Audit Findings Resolved)
 
 ## Current objective
