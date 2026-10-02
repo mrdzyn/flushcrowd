@@ -7,11 +7,11 @@
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.1 — GIS + Firestore discovery engine remediation completed (re-audit pending)  
+**Current milestone:** P1.2 — Map query orchestration + restroom markers/clustering completed (audit pending)  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audit findings (BLOCKER-1, BLOCKER-2, MAJOR-1, MAJOR-2, MINOR-1) remediated and verified; P1.2 query orchestration is BLOCKED pending exact-head re-audit approval
+**Implementation status:** P1.1 audited (0 findings); P1.2 query orchestration, debounce, query equivalence, stale response token generation, zoom suppression, marker adaptation, and clustering implemented and validated (101/101 tests green); P1.3 preview/list/filters is next pending P1.2 audit approval
 
 ## Current objective
 
@@ -83,35 +83,37 @@ Last validated Phase 0 evidence before merge:
 
 - Production discovery behavior and limits documented in `docs/08-phase-1-map-discovery.md`.
 
-### P1.1 — GIS + Firestore discovery engine (REMEDIATION COMPLETED, RE-AUDIT PENDING)
+### P1.1 — GIS + Firestore discovery engine (AUDITED & APPROVED)
 
-Remediated and implemented:
+Audited at `d6771fb12b84b53d49602d21c0218b9771035559` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
 
-- **Full geometric envelope and spherical-cap polar coverage:** spherical-cap delta longitude formulation with full-world `[-180, 180]` coverage for caps enclosing geographic poles; dynamic grid sampling across allowed radii (up to 10 km) and high latitudes ensuring 100% spatial coverage without fixed 3x3 assumptions or artificial longitude clamping;
-- **Explicit completeness contract:** introduced domain `DiscoveryResult<T>` and `DiscoveryCompletenessReason` (`complete`, `rangeCapExceeded`, `perRangeLimitExceeded`, `candidateLimitExceeded`, `resultCapExceeded`) ensuring UI is never silently misled;
-- **Antimeridian viewport correctness:** `GeoBoundingBox` antimeridian spanning and wraparound containment;
-- **Domain layer purity:** `GeoBoundingBox` in `lib/domain/models/`, removing data-layer leakage into domain contracts;
-- **Injectable Firestore range executor:** `FirestoreQueryExecutor` enables deterministic verification of production query loops, candidate deduplication, status filtering, caps, and error mapping;
-- **Minimum safe query precision floor:** introduced `AppConstants.minDiscoveryGeohashPrecision = 3` (~156 km floor) preventing nearby or viewport candidate prefixes from coarsening to continental/global-scale cells (e.g. precision 1/2) regardless of extreme latitudes or polar caps;
-- **Production range-cap verification:** removed test-only parameter overrides from `FirestoreRestroomRepository` and verified safe degradation under the real production 16-range budget (`AppConstants.maxGeohashQueryRanges = 16`);
-- **Comprehensive test suites:** 77 unit/widget tests green, including dedicated polar facility coverage across meridians, non-immediate geohash cell facility discovery, cost-safety minimum precision assertions, and deterministic 16-range budget caps.
+Capabilities:
+- Full geometric envelope and spherical-cap polar coverage without fixed 3x3 grid assumptions;
+- Explicit completeness contract via `DiscoveryResult<T>` and `DiscoveryCompletenessReason`;
+- Antimeridian viewport correctness via `GeoBoundingBox.contains` and wrapping;
+- Domain layer purity with `GeoBoundingBox` in `lib/domain/models/`;
+- Minimum safe query precision floor `AppConstants.minDiscoveryGeohashPrecision = 3` (~156 km floor);
+- Deterministic 16-range query limit safety cap under real production constraints;
+- Center-distance prioritization for candidate prefixes under range-cap degradation.
 
-### P1.2 — Query orchestration + markers/clustering (BLOCKED)
+### P1.2 — Query orchestration + markers/clustering (IMPLEMENTATION COMPLETED, AUDIT PENDING)
 
-BLOCKED pending exact-head re-audit of P1.1. Do NOT implement until P1.1 re-audit passes.
+Implemented and verified:
 
-Planned:
+- **Camera lifecycle debounce:** central `AppConstants.cameraIdleDebounceDuration = 400ms`; no repository queries during camera pan/zoom movement (`onCameraMove`);
+- **Query equivalence & quantization:** introduced `ViewportQueryDescriptor` value object with coordinate tolerance (0.0001° ~ 11m) and zoom quantization (0.1) to suppress redundant Firestore reads on programmatic recentering or duplicate idle events;
+- **Stale/superseded response protection:** monotonically increasing request generation token (`_activeRequestToken`); stale success, stale failures, and disposed callbacks are safely ignored and cannot overwrite newer state;
+- **Zoom & oversized viewport suppression:** queries suppressed when zoom < `AppConstants.minViewportZoom` (12.0) or on `ViewportTooLargeException`; UI displays non-blocking "Zoom in to see restrooms" pill;
+- **DiscoveryResult completeness propagation:** `MapDiscoveryNotifier` exposes `isComplete`, `completenessReason`, `rangeCount`, and `candidateCount`; partial results render with `loadedDegraded` status;
+- **Center/local prefix prioritization:** candidate geohash prefixes in nearby and viewport queries are prioritized nearest to center coordinates so that any range-cap degradation covers the visible user area;
+- **Restroom marker model & adapter:** introduced presentation model `RestroomMarkerItem` and `MapMarkerAdapter` providing stable identity by restroom ID, visual selection distinction (`hueAzure` vs `hueBlue`), and strict 1:1 deduplication;
+- **Marker clustering:** integrated Google Maps native clustering (`ClusterManager`), cluster tap zooms into cluster region without arbitrarily selecting an individual restroom;
+- **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking;
+- **Comprehensive test suites:** 101 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, and clustering.
 
-- camera-idle debounce (300–500 ms);
-- equivalent-query reuse;
-- stale/superseded response protection;
-- real markers and selected state;
-- dense-marker clustering;
-- zoom-too-low/query-suppressed behavior.
+### P1.3 — Preview/list/filters (NEXT)
 
-### P1.3 — Preview/list/filters
-
-Planned after P1.2:
+Planned after P1.2 audit:
 
 - restroom preview/bottom sheet;
 - nearby list;
@@ -160,14 +162,14 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (77/77 passed)
+- `flutter test` — PASS (101/101 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform independent exact-head re-audit of **P1.1 — GIS + Firestore discovery engine remediation** on `phase-1/map-discovery`. Do NOT begin P1.2 until re-audit passes.
+Perform independent exact-head audit of **P1.2 — Map query orchestration + markers/clustering** on `phase-1/map-discovery`. Do NOT begin P1.3 until audit passes.
 
 ## Handoff template
 

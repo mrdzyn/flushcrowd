@@ -253,16 +253,28 @@ void main() {
       expect(candidatesSouth, contains(inRadiusPrefixSouth));
     });
 
-    test('candidate prefixes eliminate duplicates and are sorted', () {
+    test('candidate prefixes eliminate duplicates and are sorted by center proximity', () {
       final point = Coordinates(latitude: 0.0, longitude: 0.0);
       final candidates = GeohashService.getCandidatePrefixes(point, 1500.0);
 
       // No duplicates
       expect(candidates.toSet().length, candidates.length);
 
-      // Deterministically sorted
-      final sorted = List<String>.from(candidates)..sort();
-      expect(candidates, equals(sorted));
+      // Center prefix should be first (nearest to center)
+      final centerPrefix = GeohashService.encode(
+        point,
+        precision: candidates.first.length,
+      );
+      expect(candidates.first, equals(centerPrefix));
+
+      // Deterministically sorted by distance to center
+      final distances = candidates.map((p) {
+        final c = GeohashService.decodeCenter(p);
+        return Haversine.distanceInMeters(point, c);
+      }).toList();
+      for (int i = 0; i < distances.length - 1; i++) {
+        expect(distances[i], lessThanOrEqualTo(distances[i + 1]));
+      }
     });
 
     test(

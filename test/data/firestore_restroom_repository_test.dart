@@ -680,5 +680,69 @@ void main() {
         expect(result.items.map((r) => r.id), contains('rr_boundary_10km'));
       },
     );
+
+    test('center/local prefixes are prioritized when rangeCapExceeded occurs in nearby discovery', () async {
+      // Near-pole scenario where prefix count (256) exceeds 16-range query limit
+      final centerNearPole = Coordinates(latitude: 89.99, longitude: 0.0);
+
+      // Facility 1: Right at the search center (0m away)
+      final docCenter = _makeRestroomDoc(
+        id: 'rr_center_priority',
+        name: 'Center Priority Facility',
+        latitude: 89.99,
+        longitude: 0.0,
+      );
+
+      // Facility 2: Far away in an outer candidate prefix across opposite meridian (180° lng)
+      final docFar = _makeRestroomDoc(
+        id: 'rr_far_outer',
+        name: 'Far Outer Facility',
+        latitude: 89.99,
+        longitude: 180.0,
+      );
+
+      final executor = FakeFirestoreQueryExecutor(
+        documents: [docCenter, docFar],
+      );
+      final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
+      final result = await repo.getNearbyRestrooms(
+        centerNearPole,
+        radiusMeters: 1000.0,
+      );
+
+      expect(result.isComplete, isFalse);
+      expect(
+        result.completenessReason,
+        DiscoveryCompletenessReason.rangeCapExceeded,
+      );
+      expect(executor.recordedQueryCount, AppConstants.maxGeohashQueryRanges);
+
+      // The center facility MUST be found in the 16 prioritized ranges
+      final foundIds = result.items.map((r) => r.id).toList();
+      expect(foundIds, contains('rr_center_priority'));
+      // The distant opposite-meridian facility is in a dropped outer range
+      expect(foundIds, isNot(contains('rr_far_outer')));
+    });
+
+    test('viewport discovery prioritizes ranges nearest to viewport center under rangeCapExceeded', () async {
+      // Large viewport that requires tiling with center-proximity sorting
+      final bounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.0, longitude: 120.0),
+        northEast: Coordinates(latitude: 14.4, longitude: 120.4),
+      );
+      final center = bounds.center;
+
+      final prefixes = GeohashService.getViewportPrefixes(bounds);
+      expect(prefixes.length, greaterThanOrEqualTo(2));
+
+      // First prefix must be closer to viewport center than the last prefix
+      final firstCenter = GeohashService.decodeCenter(prefixes.first);
+      final lastCenter = GeohashService.decodeCenter(prefixes.last);
+      final distFirst = Haversine.distanceInMeters(center, firstCenter);
+      final distLast = Haversine.distanceInMeters(center, lastCenter);
+
+      expect(distFirst, lessThanOrEqualTo(distLast));
+    });
   });
 }

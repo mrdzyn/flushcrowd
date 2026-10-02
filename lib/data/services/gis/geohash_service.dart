@@ -298,7 +298,17 @@ class GeohashService {
       candidatePrefixes = _tileBoundingBox(envelope, precision);
     }
 
-    candidatePrefixes.sort();
+    // 5. Prioritize candidate prefixes nearest to the search center so that if
+    // rangeCapExceeded occurs, the most relevant local area is queried first.
+    candidatePrefixes.sort((a, b) {
+      final centerA = decodeCenter(a);
+      final centerB = decodeCenter(b);
+      final distA = Haversine.distanceInMeters(center, centerA);
+      final distB = Haversine.distanceInMeters(center, centerB);
+      final cmp = distA.compareTo(distB);
+      if (cmp != 0) return cmp;
+      return a.compareTo(b);
+    });
     return candidatePrefixes;
   }
 
@@ -334,7 +344,18 @@ class GeohashService {
       prefixes = _tileBoundingBox(bounds, precision);
     }
 
-    prefixes.sort();
+    // Prioritize candidate prefixes nearest to viewport center so that if
+    // rangeCapExceeded occurs, the visible center area is queried first.
+    final viewportCenter = bounds.center;
+    prefixes.sort((a, b) {
+      final centerA = decodeCenter(a);
+      final centerB = decodeCenter(b);
+      final distA = Haversine.distanceInMeters(viewportCenter, centerA);
+      final distB = Haversine.distanceInMeters(viewportCenter, centerB);
+      final cmp = distA.compareTo(distB);
+      if (cmp != 0) return cmp;
+      return a.compareTo(b);
+    });
     return prefixes;
   }
 

@@ -22,6 +22,9 @@ class AppConstants {
   static const int maxReportNotesLength = 1000;
 
   // Discovery safety caps (Phase 1)
+  static const Duration cameraIdleDebounceDuration = Duration(
+    milliseconds: 400,
+  );
   static const double minViewportZoom =
       12.0; // Zoom threshold below which facilities are not queried
   static const double maxViewportLatitudeSpan = 0.5; // ~55 km max lat span

@@ -51,6 +51,21 @@ class GeoBoundingBox extends Equatable {
     return rawDiff;
   }
 
+  /// The geographic center of this bounding box.
+  Coordinates get center {
+    final centerLat = (southWest.latitude + northEast.latitude) / 2.0;
+    double centerLng;
+    if (crossesAntimeridian) {
+      centerLng = southWest.longitude + (longitudeSpan / 2.0);
+      if (centerLng > 180.0) {
+        centerLng -= 360.0;
+      }
+    } else {
+      centerLng = (southWest.longitude + northEast.longitude) / 2.0;
+    }
+    return Coordinates(latitude: centerLat, longitude: centerLng);
+  }
+
   @override
   List<Object?> get props => [southWest, northEast];
 
