@@ -26,6 +26,8 @@ class AppConstants {
       12.0; // Zoom threshold below which facilities are not queried
   static const double maxViewportLatitudeSpan = 0.5; // ~55 km max lat span
   static const double maxViewportLongitudeSpan = 0.5; // ~55 km max lng span
+  static const int minDiscoveryGeohashPrecision =
+      3; // ~156 km x 156 km floor; prevents continental/global prefix scans
   static const int maxGeohashQueryRanges =
       16; // Maximum Firestore range queries per discovery operation
   static const int maxDocumentsPerRangeQuery = 50; // Per-range query limit

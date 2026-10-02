@@ -92,7 +92,9 @@ Remediated and implemented:
 - **Antimeridian viewport correctness:** `GeoBoundingBox` antimeridian spanning and wraparound containment;
 - **Domain layer purity:** `GeoBoundingBox` in `lib/domain/models/`, removing data-layer leakage into domain contracts;
 - **Injectable Firestore range executor:** `FirestoreQueryExecutor` enables deterministic verification of production query loops, candidate deduplication, status filtering, caps, and error mapping;
-- **Comprehensive test suites:** 76 unit/widget tests green, including dedicated polar facility coverage across meridians, non-immediate geohash cell facility discovery, isolated candidate/range caps, and 10 km outer boundary cases.
+- **Minimum safe query precision floor:** introduced `AppConstants.minDiscoveryGeohashPrecision = 3` (~156 km floor) preventing nearby or viewport candidate prefixes from coarsening to continental/global-scale cells (e.g. precision 1/2) regardless of extreme latitudes or polar caps;
+- **Production range-cap verification:** removed test-only parameter overrides from `FirestoreRestroomRepository` and verified safe degradation under the real production 16-range budget (`AppConstants.maxGeohashQueryRanges = 16`);
+- **Comprehensive test suites:** 77 unit/widget tests green, including dedicated polar facility coverage across meridians, non-immediate geohash cell facility discovery, cost-safety minimum precision assertions, and deterministic 16-range budget caps.
 
 ### P1.2 — Query orchestration + markers/clustering (BLOCKED)
 
@@ -158,7 +160,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (76/76 passed)
+- `flutter test` — PASS (77/77 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending

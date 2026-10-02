@@ -1,5 +1,6 @@
 import 'dart:math' as math;
 
+import '../../../core/constants/app_constants.dart';
 import '../../../domain/models/coordinates.dart';
 import '../../../domain/models/geo_bounding_box.dart';
 import 'haversine.dart';
@@ -288,9 +289,11 @@ class GeohashService {
     // 3. Select optimal precision
     var precision = precisionForRadius(radiusMeters, center.latitude);
 
-    // 4. Sample envelope. If sampling at this precision exceeds maxRanges, drop precision until it fits.
+    // 4. Sample envelope. If sampling at this precision exceeds maxRanges, drop precision
+    // only down to minDiscoveryGeohashPrecision to prevent continental-scale prefix scans.
     List<String> candidatePrefixes = _tileBoundingBox(envelope, precision);
-    while (candidatePrefixes.length > maxRanges && precision > 1) {
+    while (candidatePrefixes.length > maxRanges &&
+        precision > AppConstants.minDiscoveryGeohashPrecision) {
       precision--;
       candidatePrefixes = _tileBoundingBox(envelope, precision);
     }
@@ -325,7 +328,8 @@ class GeohashService {
     }
 
     var prefixes = _tileBoundingBox(bounds, precision);
-    while (prefixes.length > maxPrefixes && precision > 1) {
+    while (prefixes.length > maxPrefixes &&
+        precision > AppConstants.minDiscoveryGeohashPrecision) {
       precision--;
       prefixes = _tileBoundingBox(bounds, precision);
     }

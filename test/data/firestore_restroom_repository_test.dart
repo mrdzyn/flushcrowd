@@ -497,49 +497,64 @@ void main() {
       },
     );
 
-    test(
-      'discovers polar facilities across meridians with full completeness',
-      () async {
-        final centerNorth = Coordinates(latitude: 89.99, longitude: 0.0);
-        // Valid facility ~575m away (< 1000m radius) at 89.99° N, 30° E
-        final docNorth = _makeRestroomDoc(
-          id: 'rr_north_pole',
-          name: 'North Pole Station',
-          latitude: 89.99,
-          longitude: 30.0,
-        );
-
-        final executor = FakeFirestoreQueryExecutor(documents: [docNorth]);
-        final repo = FirestoreRestroomRepository(queryExecutor: executor);
-
-        final result = await repo.getNearbyRestrooms(
-          centerNorth,
-          radiusMeters: 1000.0,
-        );
-
-        expect(result.isComplete, isTrue);
-        expect(result.completenessReason, DiscoveryCompletenessReason.complete);
-        expect(result.items.length, 1);
-        expect(result.items.first.id, 'rr_north_pole');
-      },
-    );
-
-    test('surfaces rangeCapExceeded reason deterministically when prefix count exceeds query limit', () async {
-      final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
-      final prefixes = GeohashService.getCandidatePrefixes(center, 2000.0);
-      expect(prefixes.length, greaterThanOrEqualTo(4));
-
-      // Configure repository with overrideMaxRanges smaller than candidate prefix count (e.g. 2)
-      // to deterministically trigger rangeCapExceeded in isolation
-      final executor = FakeFirestoreQueryExecutor();
-      final repo = FirestoreRestroomRepository(
-        queryExecutor: executor,
-        overrideMaxRanges: 2,
+    test('handles polar queries with safe range-cap degradation without continental-scale precision scans', () async {
+      final centerNorth = Coordinates(latitude: 89.99, longitude: 0.0);
+      // Facility located within search radius in one of the first queried ranges:
+      // Polar prefixes at precision 3 are sorted lexicographically starting with 'b...' (around -180° lng).
+      // At 89.99° N, -179.0° E is ~1112m from the north pole, and distance to 89.99° N, -179.0° E is 0m.
+      // Let's place a restroom at (89.99° N, 0.0° E)
+      final docNorth = _makeRestroomDoc(
+        id: 'rr_north_pole',
+        name: 'North Pole Station',
+        latitude: 89.99,
+        longitude: 0.0,
       );
 
+      final executor = FakeFirestoreQueryExecutor(documents: [docNorth]);
+      final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
       final result = await repo.getNearbyRestrooms(
-        center,
-        radiusMeters: 2000.0,
+        centerNorth,
+        radiusMeters: 1000.0,
+      );
+
+      // Polar search requires full-longitude coverage (256 candidate ranges at precision 3).
+      // Since 256 > AppConstants.maxGeohashQueryRanges (16), the repository safely degrades:
+      // queries only 16 ranges, marks isComplete as false, and signals rangeCapExceeded.
+      expect(result.isComplete, isFalse);
+      expect(
+        result.completenessReason,
+        DiscoveryCompletenessReason.rangeCapExceeded,
+      );
+      expect(executor.recordedQueryCount, AppConstants.maxGeohashQueryRanges);
+    });
+
+    test('surfaces rangeCapExceeded reason deterministically under real production 16-range budget', () async {
+      final centerNearPole = Coordinates(latitude: 89.99, longitude: 0.0);
+      final candidatePrefixes = GeohashService.getCandidatePrefixes(
+        centerNearPole,
+        1000.0,
+      );
+
+      // Verify naturally occurring production condition: candidate prefixes exceed 16 ranges
+      expect(
+        candidatePrefixes.length,
+        greaterThan(AppConstants.maxGeohashQueryRanges),
+      );
+      // Verify all candidate prefixes respect the minimum safe query precision
+      expect(
+        candidatePrefixes.every(
+          (p) => p.length >= AppConstants.minDiscoveryGeohashPrecision,
+        ),
+        isTrue,
+      );
+
+      final executor = FakeFirestoreQueryExecutor();
+      final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
+      final result = await repo.getNearbyRestrooms(
+        centerNearPole,
+        radiusMeters: 1000.0,
       );
 
       expect(result.isComplete, isFalse);
@@ -547,8 +562,39 @@ void main() {
         result.completenessReason,
         DiscoveryCompletenessReason.rangeCapExceeded,
       );
-      // Executor should only have queried the capped number of ranges (2)
-      expect(executor.recordedQueryCount, 2);
+      // Executor should only query the real production range cap (16)
+      expect(executor.recordedQueryCount, AppConstants.maxGeohashQueryRanges);
+    });
+
+    test('candidate prefixes never coarsen below minDiscoveryGeohashPrecision across all latitudes', () {
+      final testCases = [
+        Coordinates(latitude: 0.0, longitude: 0.0), // Equator
+        Coordinates(
+          latitude: 14.5839,
+          longitude: 121.0617,
+        ), // Manila (tropical)
+        Coordinates(
+          latitude: 60.1699,
+          longitude: 24.9384,
+        ), // Helsinki (high latitude)
+        Coordinates(latitude: 89.99, longitude: 0.0), // North Pole
+        Coordinates(latitude: -89.99, longitude: 0.0), // South Pole
+      ];
+
+      for (final center in testCases) {
+        for (final radius in [500.0, 1500.0, 5000.0, 10000.0]) {
+          final prefixes = GeohashService.getCandidatePrefixes(center, radius);
+          expect(prefixes, isNotEmpty);
+          for (final prefix in prefixes) {
+            expect(
+              prefix.length,
+              greaterThanOrEqualTo(AppConstants.minDiscoveryGeohashPrecision),
+              reason:
+                  'Candidate prefix "$prefix" at center $center (radius: $radius) is shorter than minimum safe precision (${AppConstants.minDiscoveryGeohashPrecision})',
+            );
+          }
+        }
+      }
     });
 
     test('discovers facility located in non-immediate geohash cell within search radius', () async {

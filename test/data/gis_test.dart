@@ -1,4 +1,5 @@
 import 'package:flutter_test/flutter_test.dart';
+import 'package:looradar/core/constants/app_constants.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
 import 'package:looradar/data/services/gis/haversine.dart';
 import 'package:looradar/domain/models/coordinates.dart';
@@ -188,7 +189,13 @@ void main() {
         1000.0,
       );
       expect(candidatesNorth, isNotEmpty);
-      expect(candidatesNorth.length, lessThanOrEqualTo(16));
+      // At polar coordinates with full-longitude envelope, precision floors at minDiscoveryGeohashPrecision (3),
+      // generating > 16 ranges (safe degradation) rather than collapsing to continental-scale precision 1
+      expect(candidatesNorth.length, greaterThan(16));
+      expect(
+        candidatesNorth.first.length,
+        equals(AppConstants.minDiscoveryGeohashPrecision),
+      );
       // North pole candidates cover the center coordinate
       final candidatePrecisionNorth = candidatesNorth.first.length;
       final centerNorthPrefix = GeohashService.encode(
@@ -217,7 +224,11 @@ void main() {
         1000.0,
       );
       expect(candidatesSouth, isNotEmpty);
-      expect(candidatesSouth.length, lessThanOrEqualTo(16));
+      expect(candidatesSouth.length, greaterThan(16));
+      expect(
+        candidatesSouth.first.length,
+        equals(AppConstants.minDiscoveryGeohashPrecision),
+      );
       final candidatePrecisionSouth = candidatesSouth.first.length;
       final centerSouthPrefix = GeohashService.encode(
         coordsNearSouthPole,
