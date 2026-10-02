@@ -230,38 +230,54 @@ class GeohashService {
     final minLat = (center.latitude - dLatDeg).clamp(-90.0, 90.0);
     final maxLat = (center.latitude + dLatDeg).clamp(-90.0, 90.0);
 
-    // 2. Calculate delta longitude in degrees at the maximum absolute latitude
-    final maxAbsLat = math.max(minLat.abs(), maxLat.abs());
-    final latRad = maxAbsLat * (math.pi / 180.0);
-    final cosLat = math.cos(latRad).clamp(0.01, 1.0);
-    final dLngDeg =
-        ((radiusMeters / Haversine.earthRadiusMeters) * (180.0 / math.pi)) /
-        cosLat;
+    // 2. Calculate delta longitude in degrees using exact spherical cap geometry.
+    // If the circular search cap reaches or encloses either geographic pole,
+    // it spans all longitudes [-180, 180].
+    final thetaRad = radiusMeters / Haversine.earthRadiusMeters;
+    final phiCenterRad = center.latitude.abs() * (math.pi / 180.0);
+    final reachesPole = (phiCenterRad + thetaRad) >= (math.pi / 2.0);
 
-    final envelopeCrossesAntimeridian = dLngDeg >= 180.0;
     final double minLng;
     final double maxLng;
-    if (envelopeCrossesAntimeridian) {
+
+    if (reachesPole) {
       minLng = -180.0;
       maxLng = 180.0;
     } else {
-      double rawMin = center.longitude - dLngDeg;
-      double rawMax = center.longitude + dLngDeg;
-      // Normalize to [-180, 180]
-      while (rawMin < -180.0) {
-        rawMin += 360.0;
+      // For a small circle on a sphere not enclosing the pole, the maximum longitude delta
+      // occurs at the tangent meridians: sin(dLng) = sin(theta) / cos(phiCenter).
+      final cosPhi = math.cos(phiCenterRad);
+      final sinTheta = math.sin(thetaRad);
+      final sinDlng = sinTheta / cosPhi;
+
+      if (sinDlng >= 1.0) {
+        minLng = -180.0;
+        maxLng = 180.0;
+      } else {
+        final dLngDeg = math.asin(sinDlng) * (180.0 / math.pi);
+        if (dLngDeg >= 180.0) {
+          minLng = -180.0;
+          maxLng = 180.0;
+        } else {
+          double rawMin = center.longitude - dLngDeg;
+          double rawMax = center.longitude + dLngDeg;
+          // Normalize to [-180, 180]
+          while (rawMin < -180.0) {
+            rawMin += 360.0;
+          }
+          while (rawMin > 180.0) {
+            rawMin -= 360.0;
+          }
+          while (rawMax < -180.0) {
+            rawMax += 360.0;
+          }
+          while (rawMax > 180.0) {
+            rawMax -= 360.0;
+          }
+          minLng = rawMin;
+          maxLng = rawMax;
+        }
       }
-      while (rawMin > 180.0) {
-        rawMin -= 360.0;
-      }
-      while (rawMax < -180.0) {
-        rawMax += 360.0;
-      }
-      while (rawMax > 180.0) {
-        rawMax -= 360.0;
-      }
-      minLng = rawMin;
-      maxLng = rawMax;
     }
 
     final envelope = GeoBoundingBox(
@@ -274,7 +290,7 @@ class GeohashService {
 
     // 4. Sample envelope. If sampling at this precision exceeds maxRanges, drop precision until it fits.
     List<String> candidatePrefixes = _tileBoundingBox(envelope, precision);
-    while (candidatePrefixes.length > maxRanges && precision > 3) {
+    while (candidatePrefixes.length > maxRanges && precision > 1) {
       precision--;
       candidatePrefixes = _tileBoundingBox(envelope, precision);
     }
@@ -309,7 +325,7 @@ class GeohashService {
     }
 
     var prefixes = _tileBoundingBox(bounds, precision);
-    while (prefixes.length > maxPrefixes && precision > 3) {
+    while (prefixes.length > maxPrefixes && precision > 1) {
       precision--;
       prefixes = _tileBoundingBox(bounds, precision);
     }

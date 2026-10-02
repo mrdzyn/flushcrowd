@@ -197,6 +197,19 @@ void main() {
       );
       expect(candidatesNorth, contains(centerNorthPrefix));
 
+      // Point at 89.99° N, 30° E has distance ~575m (< 1000m) and must be geometrically covered
+      final inRadiusPointNorth = Coordinates(latitude: 89.99, longitude: 30.0);
+      final distNorth = Haversine.distanceInMeters(
+        coordsNearNorthPole,
+        inRadiusPointNorth,
+      );
+      expect(distNorth, lessThanOrEqualTo(1000.0));
+      final inRadiusPrefixNorth = GeohashService.encode(
+        inRadiusPointNorth,
+        precision: candidatePrecisionNorth,
+      );
+      expect(candidatesNorth, contains(inRadiusPrefixNorth));
+
       // Near South Pole: latitude = -89.99
       final coordsNearSouthPole = Coordinates(latitude: -89.99, longitude: 0.0);
       final candidatesSouth = GeohashService.getCandidatePrefixes(
@@ -211,6 +224,22 @@ void main() {
         precision: candidatePrecisionSouth,
       );
       expect(candidatesSouth, contains(centerSouthPrefix));
+
+      // Point at -89.99° S, 45° W has distance ~832m (< 1000m) and must be geometrically covered
+      final inRadiusPointSouth = Coordinates(
+        latitude: -89.99,
+        longitude: -45.0,
+      );
+      final distSouth = Haversine.distanceInMeters(
+        coordsNearSouthPole,
+        inRadiusPointSouth,
+      );
+      expect(distSouth, lessThanOrEqualTo(1000.0));
+      final inRadiusPrefixSouth = GeohashService.encode(
+        inRadiusPointSouth,
+        precision: candidatePrecisionSouth,
+      );
+      expect(candidatesSouth, contains(inRadiusPrefixSouth));
     });
 
     test('candidate prefixes eliminate duplicates and are sorted', () {

@@ -87,12 +87,12 @@ Last validated Phase 0 evidence before merge:
 
 Remediated and implemented:
 
-- **Full geometric envelope coverage:** dynamic grid sampling of bounding envelopes across allowed radii (up to 10 km) and high latitudes (e.g. 60°N) ensuring 100% spatial coverage without fixed 3x3 assumptions;
+- **Full geometric envelope and spherical-cap polar coverage:** spherical-cap delta longitude formulation with full-world `[-180, 180]` coverage for caps enclosing geographic poles; dynamic grid sampling across allowed radii (up to 10 km) and high latitudes ensuring 100% spatial coverage without fixed 3x3 assumptions or artificial longitude clamping;
 - **Explicit completeness contract:** introduced domain `DiscoveryResult<T>` and `DiscoveryCompletenessReason` (`complete`, `rangeCapExceeded`, `perRangeLimitExceeded`, `candidateLimitExceeded`, `resultCapExceeded`) ensuring UI is never silently misled;
 - **Antimeridian viewport correctness:** `GeoBoundingBox` antimeridian spanning and wraparound containment;
-- **Domain layer purity:** `GeoBoundingBox` moved to `lib/domain/models/`, removing data-layer leakage into domain contracts;
+- **Domain layer purity:** `GeoBoundingBox` in `lib/domain/models/`, removing data-layer leakage into domain contracts;
 - **Injectable Firestore range executor:** `FirestoreQueryExecutor` enables deterministic verification of production query loops, candidate deduplication, status filtering, caps, and error mapping;
-- **Comprehensive test suites:** 72 unit/widget tests green, including dedicated Firestore range query tests and multi-radius geometric coverage tests.
+- **Comprehensive test suites:** 76 unit/widget tests green, including dedicated polar facility coverage across meridians, non-immediate geohash cell facility discovery, isolated candidate/range caps, and 10 km outer boundary cases.
 
 ### P1.2 — Query orchestration + markers/clustering (BLOCKED)
 
@@ -158,7 +158,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (72/72 passed)
+- `flutter test` — PASS (76/76 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending

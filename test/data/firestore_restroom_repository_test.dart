@@ -5,6 +5,7 @@ import 'package:looradar/core/errors/exceptions.dart';
 import 'package:looradar/data/repositories/firestore_restroom_repository.dart';
 import 'package:looradar/data/services/firebase/firestore_query_executor.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
+import 'package:looradar/data/services/gis/haversine.dart';
 import 'package:looradar/domain/models/coordinates.dart';
 import 'package:looradar/domain/models/discovery_result.dart';
 import 'package:looradar/domain/models/geo_bounding_box.dart';
@@ -333,32 +334,40 @@ void main() {
 
     test('surfaces candidateLimitExceeded reason when total candidate docs exceed safety cap', () async {
       final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
-      // Generate 205 docs across various prefixes
-      final docs = List.generate(
-        AppConstants.maxCandidateDocuments + 5,
-        (i) => _makeRestroomDoc(
+      final prefixes = GeohashService.getCandidatePrefixes(center, 2000.0);
+      expect(prefixes.length, greaterThanOrEqualTo(6));
+      expect(
+        prefixes.length,
+        lessThanOrEqualTo(AppConstants.maxGeohashQueryRanges),
+      );
+
+      // Generate 205 docs distributed across prefixes so no single prefix hits 50 docs
+      // (e.g. 205 docs across >= 6 prefixes gives at most ~35 docs per prefix < 50)
+      final docs = List.generate(AppConstants.maxCandidateDocuments + 5, (i) {
+        final prefix = prefixes[i % prefixes.length];
+        final doc = _makeRestroomDoc(
           id: 'rr_cand_$i',
           name: 'Cand $i',
-          latitude: 14.5839 + (i * 0.0001),
-          longitude: 121.0617,
-        ),
-      );
+          latitude: center.latitude,
+          longitude: center.longitude,
+        );
+        doc['geohash'] =
+            '$prefix${(i ~/ prefixes.length).toString().padLeft(3, '0')}';
+        return doc;
+      });
 
       final executor = FakeFirestoreQueryExecutor(documents: docs);
       final repo = FirestoreRestroomRepository(queryExecutor: executor);
 
       final result = await repo.getNearbyRestrooms(
         center,
-        radiusMeters: 5000.0,
+        radiusMeters: 2000.0,
       );
 
       expect(result.isComplete, isFalse);
       expect(
         result.completenessReason,
-        isIn([
-          DiscoveryCompletenessReason.candidateLimitExceeded,
-          DiscoveryCompletenessReason.perRangeLimitExceeded,
-        ]),
+        DiscoveryCompletenessReason.candidateLimitExceeded,
       );
     });
 
@@ -485,6 +494,144 @@ void main() {
         final ids = result.items.map((r) => r.id).toList();
         expect(ids, containsAll(['rr_fiji_east', 'rr_fiji_west']));
         expect(ids, isNot(contains('rr_fiji_out')));
+      },
+    );
+
+    test(
+      'discovers polar facilities across meridians with full completeness',
+      () async {
+        final centerNorth = Coordinates(latitude: 89.99, longitude: 0.0);
+        // Valid facility ~575m away (< 1000m radius) at 89.99° N, 30° E
+        final docNorth = _makeRestroomDoc(
+          id: 'rr_north_pole',
+          name: 'North Pole Station',
+          latitude: 89.99,
+          longitude: 30.0,
+        );
+
+        final executor = FakeFirestoreQueryExecutor(documents: [docNorth]);
+        final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
+        final result = await repo.getNearbyRestrooms(
+          centerNorth,
+          radiusMeters: 1000.0,
+        );
+
+        expect(result.isComplete, isTrue);
+        expect(result.completenessReason, DiscoveryCompletenessReason.complete);
+        expect(result.items.length, 1);
+        expect(result.items.first.id, 'rr_north_pole');
+      },
+    );
+
+    test('surfaces rangeCapExceeded reason deterministically when prefix count exceeds query limit', () async {
+      final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+      final prefixes = GeohashService.getCandidatePrefixes(center, 2000.0);
+      expect(prefixes.length, greaterThanOrEqualTo(4));
+
+      // Configure repository with overrideMaxRanges smaller than candidate prefix count (e.g. 2)
+      // to deterministically trigger rangeCapExceeded in isolation
+      final executor = FakeFirestoreQueryExecutor();
+      final repo = FirestoreRestroomRepository(
+        queryExecutor: executor,
+        overrideMaxRanges: 2,
+      );
+
+      final result = await repo.getNearbyRestrooms(
+        center,
+        radiusMeters: 2000.0,
+      );
+
+      expect(result.isComplete, isFalse);
+      expect(
+        result.completenessReason,
+        DiscoveryCompletenessReason.rangeCapExceeded,
+      );
+      // Executor should only have queried the capped number of ranges (2)
+      expect(executor.recordedQueryCount, 2);
+    });
+
+    test('discovers facility located in non-immediate geohash cell within search radius', () async {
+      final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+      // Precision 6 cell is ~610m tall x ~1180m wide.
+      // Center geohash prefix:
+      final centerHash6 = GeohashService.encode(center, precision: 6);
+      final centerNeighbors = GeohashService.neighbors(centerHash6);
+      final immediateCellSet = {
+        centerHash6,
+        ...centerNeighbors.values.whereType<String>(),
+      };
+
+      // At radius 2500m, precision 5 cells are used (~4.9km x ~4.9km).
+      // Let's place a facility at ~2100m away (inside 2500m radius).
+      // 2100m north: dLat = 2100 / 6371000 * (180 / pi) = ~0.01888 deg.
+      final nonImmediateCoords = Coordinates(
+        latitude: center.latitude + 0.01888,
+        longitude: center.longitude,
+      );
+      final nonImmediateHash6 = GeohashService.encode(
+        nonImmediateCoords,
+        precision: 6,
+      );
+      // Confirm this facility is outside immediate 9 precision-6 cells:
+      expect(immediateCellSet, isNot(contains(nonImmediateHash6)));
+
+      // And distance is inside 2500m radius:
+      final dist = Haversine.distanceInMeters(center, nonImmediateCoords);
+      expect(dist, lessThanOrEqualTo(2500.0));
+      expect(dist, greaterThan(1500.0));
+
+      final docNonImm = _makeRestroomDoc(
+        id: 'rr_non_immediate',
+        name: 'Non Immediate Cell Facility',
+        latitude: nonImmediateCoords.latitude,
+        longitude: nonImmediateCoords.longitude,
+      );
+
+      final executor = FakeFirestoreQueryExecutor(documents: [docNonImm]);
+      final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
+      final result = await repo.getNearbyRestrooms(
+        center,
+        radiusMeters: 2500.0,
+      );
+
+      expect(result.isComplete, isTrue);
+      expect(result.items.map((r) => r.id), contains('rr_non_immediate'));
+    });
+
+    test(
+      'discovers facility near 10 km boundary with complete status',
+      () async {
+        final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+        // Place facility at 9,900m (< 10,000m radius)
+        // dLat = 9900 / 6371000 * 180 / pi = 0.08905 deg
+        final boundaryCoords = Coordinates(
+          latitude: center.latitude + 0.08905,
+          longitude: center.longitude,
+        );
+        final dist = Haversine.distanceInMeters(center, boundaryCoords);
+        expect(dist, lessThanOrEqualTo(10000.0));
+        expect(dist, greaterThan(9800.0));
+
+        final docBoundary = _makeRestroomDoc(
+          id: 'rr_boundary_10km',
+          name: '10km Outer Edge Facility',
+          latitude: boundaryCoords.latitude,
+          longitude: boundaryCoords.longitude,
+        );
+
+        final executor = FakeFirestoreQueryExecutor(documents: [docBoundary]);
+        final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
+        final result = await repo.getNearbyRestrooms(
+          center,
+          radiusMeters: 10000.0,
+        );
+
+        expect(result.isComplete, isTrue);
+        expect(result.completenessReason, DiscoveryCompletenessReason.complete);
+        expect(result.items.map((r) => r.id), contains('rr_boundary_10km'));
       },
     );
   });

@@ -26,10 +26,12 @@ import '../services/gis/haversine.dart';
 class FirestoreRestroomRepository implements RestroomRepository {
   final FirebaseFirestore? _firestore;
   final FirestoreQueryExecutor _queryExecutor;
+  final int? overrideMaxRanges;
 
   FirestoreRestroomRepository({
     FirebaseFirestore? firestore,
     FirestoreQueryExecutor? queryExecutor,
+    this.overrideMaxRanges,
   }) : _firestore = firestore,
        _queryExecutor =
            queryExecutor ?? ProductionFirestoreQueryExecutor(firestore);
@@ -54,11 +56,14 @@ class FirestoreRestroomRepository implements RestroomRepository {
     }
 
     try {
+      final effectiveMaxRanges =
+          overrideMaxRanges ?? AppConstants.maxGeohashQueryRanges;
+
       // 2. Generate conservative candidate prefixes covering the entire search circle
       final prefixes = GeohashService.getCandidatePrefixes(
         center,
         radiusMeters,
-        maxRanges: AppConstants.maxGeohashQueryRanges,
+        maxRanges: effectiveMaxRanges,
       );
 
       bool rangeCapHit = false;
@@ -66,11 +71,9 @@ class FirestoreRestroomRepository implements RestroomRepository {
       bool candidateCapHit = false;
       bool resultCapHit = false;
 
-      final limitedPrefixes = prefixes
-          .take(AppConstants.maxGeohashQueryRanges)
-          .toList();
+      final limitedPrefixes = prefixes.take(effectiveMaxRanges).toList();
 
-      if (prefixes.length > AppConstants.maxGeohashQueryRanges) {
+      if (prefixes.length > effectiveMaxRanges) {
         rangeCapHit = true;
       }
 
@@ -203,10 +206,13 @@ class FirestoreRestroomRepository implements RestroomRepository {
     }
 
     try {
+      final effectiveMaxRanges =
+          overrideMaxRanges ?? AppConstants.maxGeohashQueryRanges;
+
       // 2. Generate candidate geohash prefixes covering viewport
       final prefixes = GeohashService.getViewportPrefixes(
         bounds,
-        maxPrefixes: AppConstants.maxGeohashQueryRanges,
+        maxPrefixes: effectiveMaxRanges,
       );
 
       bool rangeCapHit = false;
@@ -214,11 +220,9 @@ class FirestoreRestroomRepository implements RestroomRepository {
       bool candidateCapHit = false;
       bool resultCapHit = false;
 
-      final limitedPrefixes = prefixes
-          .take(AppConstants.maxGeohashQueryRanges)
-          .toList();
+      final limitedPrefixes = prefixes.take(effectiveMaxRanges).toList();
 
-      if (prefixes.length > AppConstants.maxGeohashQueryRanges) {
+      if (prefixes.length > effectiveMaxRanges) {
         rangeCapHit = true;
       }
 
