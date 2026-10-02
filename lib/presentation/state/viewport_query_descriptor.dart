@@ -21,22 +21,36 @@ class ViewportQueryDescriptor extends Equatable {
 
   /// Determines whether [other] is effectively equivalent to this descriptor
   /// within quantized coordinate and zoom tolerances.
+  ///
+  /// Correctly handles longitude comparisons across the antimeridian (180° / -180°)
+  /// using circular angular difference: min(|lngA - lngB|, 360 - |lngA - lngB|).
   bool isEffectivelyEquivalentTo(ViewportQueryDescriptor other) {
     final zoomDiff = (zoom - other.zoom).abs();
     if (zoomDiff > zoomTolerance) return false;
 
     final swLatDiff =
         (bounds.southWest.latitude - other.bounds.southWest.latitude).abs();
-    final swLngDiff =
-        (bounds.southWest.longitude - other.bounds.southWest.longitude).abs();
     final neLatDiff =
         (bounds.northEast.latitude - other.bounds.northEast.latitude).abs();
-    final neLngDiff =
-        (bounds.northEast.longitude - other.bounds.northEast.longitude).abs();
 
-    return swLatDiff <= coordinateToleranceDegrees &&
-        swLngDiff <= coordinateToleranceDegrees &&
-        neLatDiff <= coordinateToleranceDegrees &&
+    if (swLatDiff > coordinateToleranceDegrees ||
+        neLatDiff > coordinateToleranceDegrees) {
+      return false;
+    }
+
+    final rawSwLngDiff =
+        (bounds.southWest.longitude - other.bounds.southWest.longitude).abs();
+    final swLngDiff = rawSwLngDiff > 180.0
+        ? 360.0 - rawSwLngDiff
+        : rawSwLngDiff;
+
+    final rawNeLngDiff =
+        (bounds.northEast.longitude - other.bounds.northEast.longitude).abs();
+    final neLngDiff = rawNeLngDiff > 180.0
+        ? 360.0 - rawNeLngDiff
+        : rawNeLngDiff;
+
+    return swLngDiff <= coordinateToleranceDegrees &&
         neLngDiff <= coordinateToleranceDegrees;
   }
 

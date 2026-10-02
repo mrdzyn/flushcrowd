@@ -489,5 +489,204 @@ void main() {
         notifier.dispose();
       },
     );
+
+    test('20. BLOCKER-1: in-flight request ignored when camera moves before completion', () async {
+      fakeRepo.viewportCompleter = Completer<DiscoveryResult<Restroom>>();
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(notifier.isLoading, isTrue);
+
+      // User starts moving the camera while request is in flight
+      notifier.onCameraMoveStarted();
+
+      // Complete the in-flight request now
+      final lateRestroom = _sampleRestroom('stale_rr');
+      fakeRepo.viewportCompleter!.complete(
+        DiscoveryResult.complete(items: [lateRestroom]),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      // Result must NOT be committed
+      expect(notifier.discoveredRestrooms, isEmpty);
+      expect(notifier.selectedRestroom, isNull);
+      expect(notifier.lastExecutedDescriptor, isNull);
+      notifier.dispose();
+    });
+
+    test('21. BLOCKER-1: in-flight error ignored when camera moves before completion', () async {
+      fakeRepo.viewportCompleter = Completer<DiscoveryResult<Restroom>>();
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(notifier.isLoading, isTrue);
+
+      // User starts moving the camera
+      notifier.onCameraMoveStarted();
+
+      // Complete the in-flight request with error
+      fakeRepo.viewportCompleter!.completeError(
+        Exception('Late network failure'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+
+      // Error must NOT overwrite state
+      expect(notifier.hasError, isFalse);
+      expect(notifier.errorMessage, isNull);
+      notifier.dispose();
+    });
+
+    test(
+      '22. BLOCKER-1: in-flight request invalidated on zoom suppression',
+      () async {
+        fakeRepo.viewportCompleter = Completer<DiscoveryResult<Restroom>>();
+
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: testDebounce,
+        );
+
+        notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+        await Future<void>.delayed(const Duration(milliseconds: 70));
+
+        expect(notifier.isLoading, isTrue);
+
+        // Camera zooms out below threshold
+        notifier.onCameraIdle(bounds: standardBounds, zoom: 11.0);
+
+        expect(notifier.isSuppressed, isTrue);
+
+        // In-flight request completes
+        fakeRepo.viewportCompleter!.complete(
+          DiscoveryResult.complete(items: [_sampleRestroom('ignored_rr')]),
+        );
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+
+        // Suppressed state preserved, stale items not committed
+        expect(notifier.isSuppressed, isTrue);
+        expect(notifier.discoveredRestrooms, isEmpty);
+        notifier.dispose();
+      },
+    );
+
+    test('23. MAJOR-2: selected restroom lifecycle - survives if present in new results', () async {
+      final rr1 = _sampleRestroom('rr_1');
+      final rr2 = _sampleRestroom('rr_2');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rr1, rr2],
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // Select rr_2 explicitly as user
+      notifier.selectRestroom(rr2);
+      expect(notifier.selectedRestroom?.id, 'rr_2');
+      expect(notifier.selectionIsUserInitiated, isTrue);
+
+      // Next query returns updated rr_2 and rr_3
+      final rr2Updated = _sampleRestroom('rr_2', name: 'Updated RR 2');
+      final rr3 = _sampleRestroom('rr_3');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rr3, rr2Updated],
+      );
+
+      await notifier.refreshCurrentViewport(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // rr_2 should be preserved (updated instance), not overwritten by first item (rr_3)
+      expect(notifier.selectedRestroom?.id, 'rr_2');
+      expect(notifier.selectedRestroom?.name, 'Updated RR 2');
+      expect(notifier.selectionIsUserInitiated, isTrue);
+      notifier.dispose();
+    });
+
+    test('24. MAJOR-2: selected restroom cleared when not in new results without jumping to first', () async {
+      final rr1 = _sampleRestroom('rr_1');
+      final rr2 = _sampleRestroom('rr_2');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rr1, rr2],
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // User selects rr_1
+      notifier.selectRestroom(rr1);
+      expect(notifier.selectedRestroom?.id, 'rr_1');
+
+      // Next query does NOT contain rr_1 anymore (e.g. panned away)
+      final rr3 = _sampleRestroom('rr_3');
+      final rr4 = _sampleRestroom('rr_4');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rr3, rr4],
+      );
+
+      final pannedBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.6000, longitude: 121.0700),
+        northEast: Coordinates(latitude: 14.6100, longitude: 121.0800),
+      );
+      notifier.onCameraIdle(bounds: pannedBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // Selection must be cleared to null, NOT jump to rr_3
+      expect(notifier.selectedRestroom, isNull);
+      expect(notifier.selectionIsUserInitiated, isFalse);
+      expect(notifier.discoveredRestrooms.length, 2);
+      notifier.dispose();
+    });
+
+    test('25. MINOR-1: ViewportQueryDescriptor antimeridian equivalence', () {
+      final descriptorA = ViewportQueryDescriptor(
+        bounds: GeoBoundingBox(
+          southWest: Coordinates(latitude: -10.0, longitude: 179.99995),
+          northEast: Coordinates(latitude: 10.0, longitude: -179.99995),
+        ),
+        zoom: 15.0,
+      );
+
+      final descriptorB = ViewportQueryDescriptor(
+        bounds: GeoBoundingBox(
+          southWest: Coordinates(latitude: -10.0, longitude: 179.99996),
+          northEast: Coordinates(latitude: 10.0, longitude: -179.99994),
+        ),
+        zoom: 15.0,
+      );
+
+      // Micro shift across the antimeridian within tolerance should be equivalent
+      expect(descriptorA.isEffectivelyEquivalentTo(descriptorB), isTrue);
+
+      // Opposite side or large shift should not be equivalent
+      final descriptorFar = ViewportQueryDescriptor(
+        bounds: GeoBoundingBox(
+          southWest: Coordinates(latitude: -10.0, longitude: 170.0),
+          northEast: Coordinates(latitude: 10.0, longitude: -170.0),
+        ),
+        zoom: 15.0,
+      );
+      expect(descriptorA.isEffectivelyEquivalentTo(descriptorFar), isFalse);
+    });
   });
 }

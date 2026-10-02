@@ -68,6 +68,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   int _activeRequestToken = 0;
   ViewportQueryDescriptor? _lastExecutedDescriptor;
   bool _isDisposed = false;
+  bool _selectionIsUserInitiated = false;
 
   MapDiscoveryNotifier({
     required this.restroomRepository,
@@ -86,6 +87,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   int get candidateCount => _candidateCount;
   ViewportQueryDescriptor? get lastExecutedDescriptor =>
       _lastExecutedDescriptor;
+  bool get selectionIsUserInitiated => _selectionIsUserInitiated;
 
   bool get isLoading => _status == DiscoveryStatus.loading;
   bool get isEmpty => _status == DiscoveryStatus.empty;
@@ -119,15 +121,32 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Sets selected restroom as an explicit user-initiated action.
   void selectRestroom(Restroom? restroom) {
     _selectedRestroom = restroom;
+    _selectionIsUserInitiated = restroom != null;
     notifyListeners();
   }
 
+  /// Sets selected restroom programmatically (e.g. initial auto-selection).
+  void autoSelectRestroom(Restroom? restroom) {
+    _selectedRestroom = restroom;
+    _selectionIsUserInitiated = false;
+    notifyListeners();
+  }
+
+  /// Explicitly invalidates any in-flight asynchronous query generation.
+  /// Any later completions holding an older token will be safely discarded.
+  void _invalidateActiveRequest() {
+    _activeRequestToken++;
+  }
+
   /// Called when the map camera begins moving.
-  /// Cancels any pending debounce timer so that intermediate idle states don't fire.
+  /// Cancels any pending debounce timer and immediately invalidates any in-flight
+  /// query so that stale responses cannot commit to the moved map.
   void onCameraMoveStarted() {
     _cancelDebounce();
+    _invalidateActiveRequest();
   }
 
   /// Called during camera movement. Explicitly does NOT trigger any queries.
@@ -143,6 +162,16 @@ class MapDiscoveryNotifier extends ChangeNotifier {
 
     if (_isDisposed) return;
 
+    // Immediately handle zoom suppression synchronously so in-flight requests are
+    // invalidated without waiting for debounce expiration.
+    if (zoom < AppConstants.minViewportZoom) {
+      _invalidateActiveRequest();
+      _status = DiscoveryStatus.suppressed;
+      _errorMessage = null;
+      notifyListeners();
+      return;
+    }
+
     _debounceTimer = Timer(debounceDuration, () {
       if (_isDisposed) return;
       _orchestrateViewportQuery(bounds: bounds, zoom: zoom);
@@ -156,7 +185,9 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     bool forceRefresh = false,
   }) async {
     // 1. Zoom threshold check: below minViewportZoom, suppress discovery
+    // and invalidate any prior in-flight request so it cannot commit later.
     if (zoom < AppConstants.minViewportZoom) {
+      _invalidateActiveRequest();
       _status = DiscoveryStatus.suppressed;
       _errorMessage = null;
       notifyListeners();
@@ -182,7 +213,8 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     try {
       final result = await restroomRepository.getViewportRestrooms(bounds);
 
-      // 4. Stale response check: reject if a newer request was issued or notifier disposed
+      // 4. Stale response check: reject if a newer request was issued,
+      // request was invalidated (e.g. by camera movement or suppression), or notifier disposed
       if (_isDisposed || requestToken != _activeRequestToken) {
         return;
       }
@@ -192,6 +224,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     } on ViewportTooLargeException {
       if (_isDisposed || requestToken != _activeRequestToken) return;
       // ViewportTooLargeException is handled as intentional query suppression
+      _invalidateActiveRequest();
       _status = DiscoveryStatus.suppressed;
       _errorMessage = null;
       notifyListeners();
@@ -260,21 +293,31 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     if (result.items.isEmpty) {
       _status = DiscoveryStatus.empty;
       _selectedRestroom = null;
+      _selectionIsUserInitiated = false;
     } else {
       _status = result.isComplete
           ? DiscoveryStatus.loadedComplete
           : DiscoveryStatus.loadedDegraded;
 
-      // Preserve existing selected restroom if still present in current results,
-      // otherwise select the first result.
+      // Selection lifecycle enforcement:
+      // 1. If currently selected restroom survives in new results: preserve it.
+      // 2. If user-selected restroom no longer exists: clear selection (do NOT silently jump to another).
+      // 3. If there was no user selection (or initial load) and product UX expects a default card:
+      //    auto-select first result.
       if (_selectedRestroom != null) {
-        final stillPresent = result.items.any(
+        final matchingIndex = result.items.indexWhere(
           (r) => r.id == _selectedRestroom!.id,
         );
-        if (!stillPresent) {
-          _selectedRestroom = result.items.first;
+        if (matchingIndex != -1) {
+          // Update selected reference to refreshed model
+          _selectedRestroom = result.items[matchingIndex];
+        } else {
+          // Vanished restroom: clear selection completely
+          _selectedRestroom = null;
+          _selectionIsUserInitiated = false;
         }
-      } else {
+      } else if (!_selectionIsUserInitiated) {
+        // Initial automatic nearest selection
         _selectedRestroom = result.items.first;
       }
     }

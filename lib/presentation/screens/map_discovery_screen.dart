@@ -61,9 +61,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
           AppConstants.defaultZoomLevel,
         ),
       );
-      if (mounted) {
-        await context.read<MapDiscoveryNotifier>().loadNearbyRestrooms(coords);
-      }
     }
     if (mounted) {
       setState(() => _isRecentering = false);
