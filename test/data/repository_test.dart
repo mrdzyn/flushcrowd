@@ -7,6 +7,7 @@ import 'package:looradar/data/repositories/location_repository_impl.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
 import 'package:looradar/domain/models/coordinates.dart';
 import 'package:looradar/domain/models/enums.dart';
+import 'package:looradar/domain/models/geo_bounding_box.dart';
 import 'package:looradar/domain/models/restroom.dart';
 
 void main() {
@@ -17,19 +18,20 @@ void main() {
         final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
         final repo = InMemoryRestroomRepository();
 
-        final nearby = await repo.getNearbyRestrooms(
+        final result = await repo.getNearbyRestrooms(
           center,
           radiusMeters: 2000.0,
         );
-        expect(nearby, isNotEmpty);
+        expect(result.isComplete, isTrue);
+        expect(result.items, isNotEmpty);
 
         // Verify that all results are within 2000m
-        for (final r in nearby) {
+        for (final r in result.items) {
           expect(r.status, RestroomStatus.active);
         }
 
         // Verify retrieval by id
-        final first = nearby.first;
+        final first = result.items.first;
         final retrieved = await repo.getRestroomById(first.id);
         expect(retrieved, equals(first));
       },
@@ -42,9 +44,10 @@ void main() {
         northEast: Coordinates(latitude: 14.5900, longitude: 121.0700),
       );
 
-      final inView = await repo.getViewportRestrooms(bounds);
-      expect(inView, isNotEmpty);
-      for (final r in inView) {
+      final result = await repo.getViewportRestrooms(bounds);
+      expect(result.isComplete, isTrue);
+      expect(result.items, isNotEmpty);
+      for (final r in result.items) {
         expect(bounds.contains(r.coordinates), isTrue);
       }
     });

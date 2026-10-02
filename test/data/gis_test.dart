@@ -2,6 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
 import 'package:looradar/data/services/gis/haversine.dart';
 import 'package:looradar/domain/models/coordinates.dart';
+import 'package:looradar/domain/models/geo_bounding_box.dart';
 
 void main() {
   group('GIS and Haversine Services', () {
@@ -56,24 +57,26 @@ void main() {
       expect(bounds.contains(coords), isTrue);
     });
 
-    test('getCandidatePrefixes returns center and 8 neighbors with correct precision', () {
+    test('getCandidatePrefixes returns conservative covering prefixes with bounded count', () {
       final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
 
       final closePrefixes = GeohashService.getCandidatePrefixes(center, 150.0);
       expect(closePrefixes, isNotEmpty);
-      expect(closePrefixes.length, lessThanOrEqualTo(9));
-      expect(closePrefixes.first.length, 7);
+      expect(closePrefixes.length, lessThanOrEqualTo(16));
+      expect(closePrefixes.first.length, isIn([6, 7]));
 
       final mediumPrefixes = GeohashService.getCandidatePrefixes(
         center,
         1000.0,
       );
-      expect(mediumPrefixes.length, lessThanOrEqualTo(9));
-      expect(mediumPrefixes.first.length, 6);
+      expect(mediumPrefixes, isNotEmpty);
+      expect(mediumPrefixes.length, lessThanOrEqualTo(16));
+      expect(mediumPrefixes.first.length, isIn([5, 6]));
 
       final widePrefixes = GeohashService.getCandidatePrefixes(center, 5000.0);
-      expect(widePrefixes.length, lessThanOrEqualTo(9));
-      expect(widePrefixes.first.length, 5);
+      expect(widePrefixes, isNotEmpty);
+      expect(widePrefixes.length, lessThanOrEqualTo(16));
+      expect(widePrefixes.first.length, isIn([4, 5]));
     });
 
     test(
@@ -177,7 +180,7 @@ void main() {
       );
 
       final neighborsNorth = GeohashService.neighbors(hashNorth);
-      // North neighbor is null or clamped past pole
+      // South neighbor exists, north neighbor past pole is clamped/null
       expect(neighborsNorth['s'], isNotNull);
 
       final candidatesNorth = GeohashService.getCandidatePrefixes(
@@ -185,20 +188,29 @@ void main() {
         1000.0,
       );
       expect(candidatesNorth, isNotEmpty);
-      expect(candidatesNorth, contains(hashNorth));
+      expect(candidatesNorth.length, lessThanOrEqualTo(16));
+      // North pole candidates cover the center coordinate
+      final candidatePrecisionNorth = candidatesNorth.first.length;
+      final centerNorthPrefix = GeohashService.encode(
+        coordsNearNorthPole,
+        precision: candidatePrecisionNorth,
+      );
+      expect(candidatesNorth, contains(centerNorthPrefix));
 
       // Near South Pole: latitude = -89.99
       final coordsNearSouthPole = Coordinates(latitude: -89.99, longitude: 0.0);
-      final hashSouth = GeohashService.encode(
-        coordsNearSouthPole,
-        precision: 6,
-      );
       final candidatesSouth = GeohashService.getCandidatePrefixes(
         coordsNearSouthPole,
         1000.0,
       );
       expect(candidatesSouth, isNotEmpty);
-      expect(candidatesSouth, contains(hashSouth));
+      expect(candidatesSouth.length, lessThanOrEqualTo(16));
+      final candidatePrecisionSouth = candidatesSouth.first.length;
+      final centerSouthPrefix = GeohashService.encode(
+        coordsNearSouthPole,
+        precision: candidatePrecisionSouth,
+      );
+      expect(candidatesSouth, contains(centerSouthPrefix));
     });
 
     test('candidate prefixes eliminate duplicates and are sorted', () {
@@ -225,6 +237,115 @@ void main() {
         expect(prefixes, isNotEmpty);
         expect(prefixes.length, lessThanOrEqualTo(16));
         expect(prefixes.toSet().length, prefixes.length);
+      },
+    );
+
+    test('candidate prefixes completely cover 1.5 km, 5 km, and 10 km search circles', () {
+      final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+
+      for (final radius in [1500.0, 5000.0, 10000.0]) {
+        final prefixes = GeohashService.getCandidatePrefixes(center, radius);
+        expect(prefixes, isNotEmpty);
+        expect(prefixes.length, lessThanOrEqualTo(16));
+
+        // Test cardinal and diagonal points on the perimeter of the search circle
+        // Each point on perimeter (distance == radius * 0.98 to avoid exact edge ambiguity)
+        // MUST have its geohash covered by at least one candidate prefix.
+        final dLat =
+            (radius * 0.98 / Haversine.earthRadiusMeters) *
+            (180.0 / 3.141592653589793);
+        final dLng = dLat / 0.9677; // cos(14.58°) ~ 0.9677
+
+        final perimeterPoints = [
+          Coordinates(
+            latitude: center.latitude + dLat,
+            longitude: center.longitude,
+          ), // North
+          Coordinates(
+            latitude: center.latitude - dLat,
+            longitude: center.longitude,
+          ), // South
+          Coordinates(
+            latitude: center.latitude,
+            longitude: center.longitude + dLng,
+          ), // East
+          Coordinates(
+            latitude: center.latitude,
+            longitude: center.longitude - dLng,
+          ), // West
+          Coordinates(
+            latitude: center.latitude + dLat * 0.7,
+            longitude: center.longitude + dLng * 0.7,
+          ), // NE
+          Coordinates(
+            latitude: center.latitude - dLat * 0.7,
+            longitude: center.longitude - dLng * 0.7,
+          ), // SW
+        ];
+
+        for (final pt in perimeterPoints) {
+          final covered = prefixes.any((prefix) {
+            final ptHash = GeohashService.encode(pt, precision: prefix.length);
+            return ptHash == prefix;
+          });
+          expect(
+            covered,
+            isTrue,
+            reason:
+                'Point at perimeter of radius $radius m must be covered by candidates: $pt',
+          );
+        }
+      }
+    });
+
+    test('candidate prefixes conservatively cover high-latitude locations (e.g. 60°N)', () {
+      final oslo = Coordinates(latitude: 60.0, longitude: 10.75);
+      final prefixes = GeohashService.getCandidatePrefixes(oslo, 5000.0);
+
+      expect(prefixes, isNotEmpty);
+      expect(prefixes.length, lessThanOrEqualTo(16));
+
+      // Check east/west perimeter at high latitude where longitude degrees are shrunk by cos(60) = 0.5
+      const dLat =
+          (4800.0 / Haversine.earthRadiusMeters) * (180.0 / 3.141592653589793);
+      const dLng = dLat / 0.5; // cos(60) = 0.5
+
+      final eastPoint = Coordinates(
+        latitude: oslo.latitude,
+        longitude: oslo.longitude + dLng,
+      );
+      final westPoint = Coordinates(
+        latitude: oslo.latitude,
+        longitude: oslo.longitude - dLng,
+      );
+
+      final eastCovered = prefixes.any(
+        (p) => GeohashService.encode(eastPoint, precision: p.length) == p,
+      );
+      final westCovered = prefixes.any(
+        (p) => GeohashService.encode(westPoint, precision: p.length) == p,
+      );
+
+      expect(eastCovered, isTrue);
+      expect(westCovered, isTrue);
+    });
+
+    test(
+      'candidate prefixes cover search circles crossing the antimeridian',
+      () {
+        // 100 meters west of the antimeridian
+        final fijiPoint = Coordinates(latitude: -16.5, longitude: 179.999);
+        final prefixes = GeohashService.getCandidatePrefixes(fijiPoint, 2000.0);
+
+        expect(prefixes, isNotEmpty);
+        expect(prefixes.length, lessThanOrEqualTo(16));
+
+        // Point 500m across antimeridian into western hemisphere (negative longitude)
+        final crossedPoint = Coordinates(latitude: -16.5, longitude: -179.995);
+        final crossedCovered = prefixes.any(
+          (p) => GeohashService.encode(crossedPoint, precision: p.length) == p,
+        );
+        expect(crossedCovered, isTrue);
       },
     );
   });

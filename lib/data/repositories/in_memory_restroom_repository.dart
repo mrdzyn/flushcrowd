@@ -1,6 +1,9 @@
+import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
 import '../../domain/models/coordinates.dart';
+import '../../domain/models/discovery_result.dart';
 import '../../domain/models/enums.dart';
+import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
 import '../../domain/repositories/restroom_repository.dart';
 import '../services/gis/geohash_service.dart';
@@ -121,13 +124,15 @@ class InMemoryRestroomRepository implements RestroomRepository {
   }
 
   @override
-  Future<List<Restroom>> getNearbyRestrooms(
+  Future<DiscoveryResult<Restroom>> getNearbyRestrooms(
     Coordinates center, {
-    double radiusMeters = 1500.0,
+    double radiusMeters = AppConstants.defaultSearchRadiusMeters,
   }) async {
-    if (radiusMeters <= 0 || radiusMeters.isNaN || radiusMeters > 10000.0) {
+    if (radiusMeters <= 0 ||
+        radiusMeters.isNaN ||
+        radiusMeters > AppConstants.maxSearchRadiusMeters) {
       throw InvalidRadiusException(
-        'Search radius must be positive and not exceed 10000.0 meters. Received: $radiusMeters',
+        'Search radius must be positive and not exceed ${AppConstants.maxSearchRadiusMeters} meters. Received: $radiusMeters',
       );
     }
 
@@ -140,7 +145,7 @@ class InMemoryRestroomRepository implements RestroomRepository {
       return dist <= radiusMeters;
     }).toList();
 
-    // Sort nearest first
+    // Sort nearest first, then by ID
     results.sort((a, b) {
       final distA = Haversine.distanceInMeters(center, a.coordinates);
       final distB = Haversine.distanceInMeters(center, b.coordinates);
@@ -149,19 +154,33 @@ class InMemoryRestroomRepository implements RestroomRepository {
       return a.id.compareTo(b.id);
     });
 
-    return results;
+    List<Restroom> finalResults = results;
+    bool resultCapHit = false;
+    if (results.length > AppConstants.maxDiscoveryResults) {
+      resultCapHit = true;
+      finalResults = results.sublist(0, AppConstants.maxDiscoveryResults);
+    }
+
+    return DiscoveryResult(
+      items: finalResults,
+      isComplete: !resultCapHit,
+      completenessReason: resultCapHit
+          ? DiscoveryCompletenessReason.resultCapExceeded
+          : DiscoveryCompletenessReason.complete,
+      rangeCount: 1,
+      candidateCount: results.length,
+    );
   }
 
   @override
-  Future<List<Restroom>> getViewportRestrooms(GeoBoundingBox bounds) async {
-    final latSpan = (bounds.northEast.latitude - bounds.southWest.latitude)
-        .abs();
-    double lngSpan = bounds.northEast.longitude - bounds.southWest.longitude;
-    if (lngSpan < 0) {
-      lngSpan += 360.0;
-    }
+  Future<DiscoveryResult<Restroom>> getViewportRestrooms(
+    GeoBoundingBox bounds,
+  ) async {
+    final latSpan = bounds.latitudeSpan;
+    final lngSpan = bounds.longitudeSpan;
 
-    if (latSpan > 0.5 || lngSpan > 0.5) {
+    if (latSpan > AppConstants.maxViewportLatitudeSpan ||
+        lngSpan > AppConstants.maxViewportLongitudeSpan) {
       throw const ViewportTooLargeException(
         'Visible area exceeds safety bounds. Zoom in to discover restrooms.',
       );
@@ -176,7 +195,23 @@ class InMemoryRestroomRepository implements RestroomRepository {
     }).toList();
 
     results.sort((a, b) => a.id.compareTo(b.id));
-    return results;
+
+    List<Restroom> finalResults = results;
+    bool resultCapHit = false;
+    if (results.length > AppConstants.maxDiscoveryResults) {
+      resultCapHit = true;
+      finalResults = results.sublist(0, AppConstants.maxDiscoveryResults);
+    }
+
+    return DiscoveryResult(
+      items: finalResults,
+      isComplete: !resultCapHit,
+      completenessReason: resultCapHit
+          ? DiscoveryCompletenessReason.resultCapExceeded
+          : DiscoveryCompletenessReason.complete,
+      rangeCount: 1,
+      candidateCount: results.length,
+    );
   }
 
   @override

@@ -58,19 +58,19 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     notifyListeners();
 
     try {
-      final restrooms = await _restroomRepository.getNearbyRestrooms(
+      final result = await _restroomRepository.getNearbyRestrooms(
         center,
         radiusMeters: radiusMeters,
       );
 
-      _nearbyRestrooms = restrooms;
-      if (restrooms.isEmpty) {
+      _nearbyRestrooms = result.items;
+      if (result.items.isEmpty) {
         _status = DiscoveryStatus.empty;
         _selectedRestroom = null;
       } else {
         _status = DiscoveryStatus.loaded;
         // Default select the nearest restroom
-        _selectedRestroom ??= restrooms.first;
+        _selectedRestroom ??= result.items.first;
       }
     } catch (e) {
       _status = DiscoveryStatus.error;

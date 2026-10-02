@@ -1,29 +1,38 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../core/constants/app_constants.dart';
+import '../../core/errors/exceptions.dart';
 import '../../domain/models/coordinates.dart';
+import '../../domain/models/discovery_result.dart';
+import '../../domain/models/enums.dart';
+import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
 import '../../domain/repositories/restroom_repository.dart';
 import '../services/firebase/firestore_codec.dart';
+import '../services/firebase/firestore_query_executor.dart';
 import '../services/gis/geohash_service.dart';
-
-import '../../core/errors/exceptions.dart';
-import '../../domain/models/enums.dart';
 import '../services/gis/haversine.dart';
 
 /// Cloud Firestore implementation of [RestroomRepository].
 ///
 /// Implements P1.1 production GIS and Firestore discovery engine:
-/// - Geohash candidate range generation (center + neighbors)
-/// - Bounded queries per range with document and candidate safety caps
+/// - Conservative geometric search circle tiling covering 100% of the radius
+/// - Bounded queries per range with document, candidate, and result safety caps
 /// - Exact Haversine and viewport bounds post-filtering
 /// - Deterministic deduplication and distance sorting
 /// - Discoverable status filtering (active, unverified only)
+/// - Explicit DiscoveryResult completeness and reason indicators (no silent incompleteness)
 /// - FirebaseException mapping to repository exceptions
 class FirestoreRestroomRepository implements RestroomRepository {
   final FirebaseFirestore? _firestore;
+  final FirestoreQueryExecutor _queryExecutor;
 
-  FirestoreRestroomRepository({this._firestore});
+  FirestoreRestroomRepository({
+    FirebaseFirestore? firestore,
+    FirestoreQueryExecutor? queryExecutor,
+  }) : _firestore = firestore,
+       _queryExecutor =
+           queryExecutor ?? ProductionFirestoreQueryExecutor(firestore);
 
   CollectionReference<Map<String, dynamic>> get _collection =>
       (_firestore ?? FirebaseFirestore.instance).collection(
@@ -31,7 +40,7 @@ class FirestoreRestroomRepository implements RestroomRepository {
       );
 
   @override
-  Future<List<Restroom>> getNearbyRestrooms(
+  Future<DiscoveryResult<Restroom>> getNearbyRestrooms(
     Coordinates center, {
     double radiusMeters = AppConstants.defaultSearchRadiusMeters,
   }) async {
@@ -45,48 +54,65 @@ class FirestoreRestroomRepository implements RestroomRepository {
     }
 
     try {
-      // 2. Generate bounded candidate geohash prefixes (center + 8 neighbors)
+      // 2. Generate conservative candidate prefixes covering the entire search circle
       final prefixes = GeohashService.getCandidatePrefixes(
         center,
         radiusMeters,
+        maxRanges: AppConstants.maxGeohashQueryRanges,
       );
 
-      // Enforce query range cap
+      bool rangeCapHit = false;
+      bool perRangeDocLimitHit = false;
+      bool candidateCapHit = false;
+      bool resultCapHit = false;
+
       final limitedPrefixes = prefixes
           .take(AppConstants.maxGeohashQueryRanges)
           .toList();
+
+      if (prefixes.length > AppConstants.maxGeohashQueryRanges) {
+        rangeCapHit = true;
+      }
 
       // 3. Execute bounded Firestore reads across prefixes
       final Map<String, Restroom> candidateMap = {};
 
       for (final prefix in limitedPrefixes) {
         if (candidateMap.length >= AppConstants.maxCandidateDocuments) {
+          candidateCapHit = true;
           break;
         }
 
-        final querySnapshot = await _collection
-            .where('geohash', isGreaterThanOrEqualTo: prefix)
-            .where('geohash', isLessThanOrEqualTo: '$prefix~')
-            .limit(AppConstants.maxDocumentsPerRangeQuery)
-            .get();
+        final docs = await _queryExecutor.queryRange(
+          collectionPath: AppConstants.restroomsCollection,
+          field: 'geohash',
+          startAt: prefix,
+          endAt: '$prefix~',
+          limit: AppConstants.maxDocumentsPerRangeQuery,
+        );
 
-        for (final doc in querySnapshot.docs) {
-          if (candidateMap.containsKey(doc.id)) {
+        if (docs.length >= AppConstants.maxDocumentsPerRangeQuery) {
+          perRangeDocLimitHit = true;
+        }
+
+        for (final data in docs) {
+          final id = data['id'] as String? ?? '';
+          if (candidateMap.containsKey(id)) {
             continue; // Deduplicate overlapping candidate documents
           }
-          final data = doc.data();
           try {
             final restroom = RestroomFirestoreCodec.fromFirestore(
               data,
-              documentId: doc.id,
+              documentId: id,
             );
-            candidateMap[doc.id] = restroom;
+            candidateMap[id] = restroom;
           } catch (_) {
             // Skip documents with corrupted schema or non-compliant timestamps
             continue;
           }
 
           if (candidateMap.length >= AppConstants.maxCandidateDocuments) {
+            candidateCapHit = true;
             break;
           }
         }
@@ -113,12 +139,40 @@ class FirestoreRestroomRepository implements RestroomRepository {
         return a.id.compareTo(b.id);
       });
 
+      List<Restroom> finalResults = inRadius;
       // 7. Enforce max discovery results limit
       if (inRadius.length > AppConstants.maxDiscoveryResults) {
-        return inRadius.sublist(0, AppConstants.maxDiscoveryResults);
+        resultCapHit = true;
+        finalResults = inRadius.sublist(0, AppConstants.maxDiscoveryResults);
       }
 
-      return inRadius;
+      // Determine completeness
+      final isComplete =
+          !rangeCapHit &&
+          !perRangeDocLimitHit &&
+          !candidateCapHit &&
+          !resultCapHit;
+
+      final DiscoveryCompletenessReason reason;
+      if (rangeCapHit) {
+        reason = DiscoveryCompletenessReason.rangeCapExceeded;
+      } else if (perRangeDocLimitHit) {
+        reason = DiscoveryCompletenessReason.perRangeLimitExceeded;
+      } else if (candidateCapHit) {
+        reason = DiscoveryCompletenessReason.candidateLimitExceeded;
+      } else if (resultCapHit) {
+        reason = DiscoveryCompletenessReason.resultCapExceeded;
+      } else {
+        reason = DiscoveryCompletenessReason.complete;
+      }
+
+      return DiscoveryResult(
+        items: finalResults,
+        isComplete: isComplete,
+        completenessReason: reason,
+        rangeCount: limitedPrefixes.length,
+        candidateCount: candidateMap.length,
+      );
     } on AppException {
       rethrow;
     } on FirebaseException catch (e) {
@@ -134,14 +188,12 @@ class FirestoreRestroomRepository implements RestroomRepository {
   }
 
   @override
-  Future<List<Restroom>> getViewportRestrooms(GeoBoundingBox bounds) async {
+  Future<DiscoveryResult<Restroom>> getViewportRestrooms(
+    GeoBoundingBox bounds,
+  ) async {
     // 1. Validate viewport bounds scale (reject global/country-scale viewports)
-    final latSpan = (bounds.northEast.latitude - bounds.southWest.latitude)
-        .abs();
-    double lngSpan = bounds.northEast.longitude - bounds.southWest.longitude;
-    if (lngSpan < 0) {
-      lngSpan += 360.0;
-    }
+    final latSpan = bounds.latitudeSpan;
+    final lngSpan = bounds.longitudeSpan;
 
     if (latSpan > AppConstants.maxViewportLatitudeSpan ||
         lngSpan > AppConstants.maxViewportLongitudeSpan) {
@@ -157,35 +209,56 @@ class FirestoreRestroomRepository implements RestroomRepository {
         maxPrefixes: AppConstants.maxGeohashQueryRanges,
       );
 
+      bool rangeCapHit = false;
+      bool perRangeDocLimitHit = false;
+      bool candidateCapHit = false;
+      bool resultCapHit = false;
+
+      final limitedPrefixes = prefixes
+          .take(AppConstants.maxGeohashQueryRanges)
+          .toList();
+
+      if (prefixes.length > AppConstants.maxGeohashQueryRanges) {
+        rangeCapHit = true;
+      }
+
       final Map<String, Restroom> candidateMap = {};
 
-      for (final prefix in prefixes) {
+      for (final prefix in limitedPrefixes) {
         if (candidateMap.length >= AppConstants.maxCandidateDocuments) {
+          candidateCapHit = true;
           break;
         }
 
-        final querySnapshot = await _collection
-            .where('geohash', isGreaterThanOrEqualTo: prefix)
-            .where('geohash', isLessThanOrEqualTo: '$prefix~')
-            .limit(AppConstants.maxDocumentsPerRangeQuery)
-            .get();
+        final docs = await _queryExecutor.queryRange(
+          collectionPath: AppConstants.restroomsCollection,
+          field: 'geohash',
+          startAt: prefix,
+          endAt: '$prefix~',
+          limit: AppConstants.maxDocumentsPerRangeQuery,
+        );
 
-        for (final doc in querySnapshot.docs) {
-          if (candidateMap.containsKey(doc.id)) {
+        if (docs.length >= AppConstants.maxDocumentsPerRangeQuery) {
+          perRangeDocLimitHit = true;
+        }
+
+        for (final data in docs) {
+          final id = data['id'] as String? ?? '';
+          if (candidateMap.containsKey(id)) {
             continue; // Deduplicate
           }
-          final data = doc.data();
           try {
             final restroom = RestroomFirestoreCodec.fromFirestore(
               data,
-              documentId: doc.id,
+              documentId: id,
             );
-            candidateMap[doc.id] = restroom;
+            candidateMap[id] = restroom;
           } catch (_) {
             continue;
           }
 
           if (candidateMap.length >= AppConstants.maxCandidateDocuments) {
+            candidateCapHit = true;
             break;
           }
         }
@@ -197,7 +270,7 @@ class FirestoreRestroomRepository implements RestroomRepository {
             r.status == RestroomStatus.unverified;
       });
 
-      // 4. Exact bounding box post-filtering
+      // 4. Exact bounding box post-filtering (antimeridian-aware via GeoBoundingBox.contains)
       final inViewport = discoverable.where((r) {
         return bounds.contains(r.coordinates);
       }).toList();
@@ -205,11 +278,38 @@ class FirestoreRestroomRepository implements RestroomRepository {
       // 5. Deterministic sorting by ID
       inViewport.sort((a, b) => a.id.compareTo(b.id));
 
+      List<Restroom> finalResults = inViewport;
       if (inViewport.length > AppConstants.maxDiscoveryResults) {
-        return inViewport.sublist(0, AppConstants.maxDiscoveryResults);
+        resultCapHit = true;
+        finalResults = inViewport.sublist(0, AppConstants.maxDiscoveryResults);
       }
 
-      return inViewport;
+      final isComplete =
+          !rangeCapHit &&
+          !perRangeDocLimitHit &&
+          !candidateCapHit &&
+          !resultCapHit;
+
+      final DiscoveryCompletenessReason reason;
+      if (rangeCapHit) {
+        reason = DiscoveryCompletenessReason.rangeCapExceeded;
+      } else if (perRangeDocLimitHit) {
+        reason = DiscoveryCompletenessReason.perRangeLimitExceeded;
+      } else if (candidateCapHit) {
+        reason = DiscoveryCompletenessReason.candidateLimitExceeded;
+      } else if (resultCapHit) {
+        reason = DiscoveryCompletenessReason.resultCapExceeded;
+      } else {
+        reason = DiscoveryCompletenessReason.complete;
+      }
+
+      return DiscoveryResult(
+        items: finalResults,
+        isComplete: isComplete,
+        completenessReason: reason,
+        rangeCount: limitedPrefixes.length,
+        candidateCount: candidateMap.length,
+      );
     } on AppException {
       rethrow;
     } on FirebaseException catch (e) {

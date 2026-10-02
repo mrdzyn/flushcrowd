@@ -7,11 +7,11 @@
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.1 — GIS + Firestore discovery engine completed  
+**Current milestone:** P1.1 — GIS + Firestore discovery engine remediation completed (re-audit pending)  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 GIS and Firestore discovery engine implemented and verified; P1.2 query orchestration planned
+**Implementation status:** P1.1 audit findings (BLOCKER-1, BLOCKER-2, MAJOR-1, MAJOR-2, MINOR-1) remediated and verified; P1.2 query orchestration is BLOCKED pending exact-head re-audit approval
 
 ## Current objective
 
@@ -83,24 +83,22 @@ Last validated Phase 0 evidence before merge:
 
 - Production discovery behavior and limits documented in `docs/08-phase-1-map-discovery.md`.
 
-### P1.1 — GIS + Firestore discovery engine (COMPLETED)
+### P1.1 — GIS + Firestore discovery engine (REMEDIATION COMPLETED, RE-AUDIT PENDING)
 
-Implemented:
+Remediated and implemented:
 
-- 8-direction neighboring geohash candidate expansion (N, S, E, W, NE, NW, SE, SW);
-- antimeridian wrapping and polar latitude bounds handling;
-- bounded nearby discovery with radius-to-precision selection;
-- bounded viewport discovery with bounding box prefix sampling;
-- exact Haversine radius post-filtering and exact viewport bounds post-filtering;
-- deterministic deduplication and distance/ID sorting;
-- discoverable status filtering (`active` and `unverified` only);
-- explicit query/radius/result safety caps (10 km max radius, 0.5° max viewport span, 16 max query ranges, 50 docs per range, 200 max candidates, 100 max results);
-- repository-level error mapping (`InvalidRadiusException`, `ViewportTooLargeException`, `RepositoryException`);
-- targeted GIS boundary, antimeridian, polar, and repository limit tests (55/55 Flutter tests green).
+- **Full geometric envelope coverage:** dynamic grid sampling of bounding envelopes across allowed radii (up to 10 km) and high latitudes (e.g. 60°N) ensuring 100% spatial coverage without fixed 3x3 assumptions;
+- **Explicit completeness contract:** introduced domain `DiscoveryResult<T>` and `DiscoveryCompletenessReason` (`complete`, `rangeCapExceeded`, `perRangeLimitExceeded`, `candidateLimitExceeded`, `resultCapExceeded`) ensuring UI is never silently misled;
+- **Antimeridian viewport correctness:** `GeoBoundingBox` antimeridian spanning and wraparound containment;
+- **Domain layer purity:** `GeoBoundingBox` moved to `lib/domain/models/`, removing data-layer leakage into domain contracts;
+- **Injectable Firestore range executor:** `FirestoreQueryExecutor` enables deterministic verification of production query loops, candidate deduplication, status filtering, caps, and error mapping;
+- **Comprehensive test suites:** 72 unit/widget tests green, including dedicated Firestore range query tests and multi-radius geometric coverage tests.
 
-### P1.2 — Query orchestration + markers/clustering
+### P1.2 — Query orchestration + markers/clustering (BLOCKED)
 
-Planned next:
+BLOCKED pending exact-head re-audit of P1.1. Do NOT implement until P1.1 re-audit passes.
+
+Planned:
 
 - camera-idle debounce (300–500 ms);
 - equivalent-query reuse;
@@ -160,14 +158,14 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (55/55 passed)
+- `flutter test` — PASS (72/72 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform independent exact-head audit of **P1.1 — GIS + Firestore discovery engine** on `phase-1/map-discovery`. Upon passing audit, proceed to **P1.2 — Query orchestration + map markers/clustering**.
+Perform independent exact-head re-audit of **P1.1 — GIS + Firestore discovery engine remediation** on `phase-1/map-discovery`. Do NOT begin P1.2 until re-audit passes.
 
 ## Handoff template
 
