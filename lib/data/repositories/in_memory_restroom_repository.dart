@@ -1,3 +1,4 @@
+import '../../core/errors/exceptions.dart';
 import '../../domain/models/coordinates.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/restroom.dart';
@@ -124,6 +125,12 @@ class InMemoryRestroomRepository implements RestroomRepository {
     Coordinates center, {
     double radiusMeters = 1500.0,
   }) async {
+    if (radiusMeters <= 0 || radiusMeters.isNaN || radiusMeters > 10000.0) {
+      throw InvalidRadiusException(
+        'Search radius must be positive and not exceed 10000.0 meters. Received: $radiusMeters',
+      );
+    }
+
     final results = _storage.where((r) {
       if (r.status != RestroomStatus.active &&
           r.status != RestroomStatus.unverified) {
@@ -137,7 +144,9 @@ class InMemoryRestroomRepository implements RestroomRepository {
     results.sort((a, b) {
       final distA = Haversine.distanceInMeters(center, a.coordinates);
       final distB = Haversine.distanceInMeters(center, b.coordinates);
-      return distA.compareTo(distB);
+      final cmp = distA.compareTo(distB);
+      if (cmp != 0) return cmp;
+      return a.id.compareTo(b.id);
     });
 
     return results;
@@ -145,13 +154,29 @@ class InMemoryRestroomRepository implements RestroomRepository {
 
   @override
   Future<List<Restroom>> getViewportRestrooms(GeoBoundingBox bounds) async {
-    return _storage.where((r) {
+    final latSpan = (bounds.northEast.latitude - bounds.southWest.latitude)
+        .abs();
+    double lngSpan = bounds.northEast.longitude - bounds.southWest.longitude;
+    if (lngSpan < 0) {
+      lngSpan += 360.0;
+    }
+
+    if (latSpan > 0.5 || lngSpan > 0.5) {
+      throw const ViewportTooLargeException(
+        'Visible area exceeds safety bounds. Zoom in to discover restrooms.',
+      );
+    }
+
+    final results = _storage.where((r) {
       if (r.status != RestroomStatus.active &&
           r.status != RestroomStatus.unverified) {
         return false;
       }
       return bounds.contains(r.coordinates);
     }).toList();
+
+    results.sort((a, b) => a.id.compareTo(b.id));
+    return results;
   }
 
   @override
