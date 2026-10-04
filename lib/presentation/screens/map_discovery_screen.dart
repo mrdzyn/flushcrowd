@@ -136,9 +136,15 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                     onRequestPermission: () async {
                       await locationNotifier.requestLocationPermission();
                       if (locationNotifier.hasLocation && mounted) {
-                        await discoveryNotifier.loadNearbyRestrooms(
-                          locationNotifier.effectiveCoordinates,
-                        );
+                        final coords = locationNotifier.currentCoordinates;
+                        if (coords != null && _mapController != null) {
+                          await _mapController!.animateCamera(
+                            CameraUpdate.newLatLngZoom(
+                              LatLng(coords.latitude, coords.longitude),
+                              AppConstants.defaultZoomLevel,
+                            ),
+                          );
+                        }
                       }
                     },
                   ),

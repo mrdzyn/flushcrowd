@@ -933,5 +933,116 @@ void main() {
 
       notifier.dispose();
     });
+
+    test('32. Permission grant flow animates camera and converges on viewport discovery with zero nearby calls', () async {
+      final rrUser = _sampleRestroom('rr_user_loc');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rrUser],
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Initial startup at default coordinates (manual exploration):
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(fakeRepo.getNearbyCalls, 0);
+
+      // 2. User grants location permission:
+      // Map screen animates camera to user's location.
+      // In-flight debounce/query on previous region is cancelled or superseded.
+      // When camera arrives at user location, onCameraIdle fires with user location bounds.
+      final userLocationBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.5500, longitude: 121.0200),
+        northEast: Coordinates(latitude: 14.5600, longitude: 121.0300),
+      );
+
+      notifier.onCameraMoveStarted();
+      notifier.onCameraMove();
+      notifier.onCameraIdle(bounds: userLocationBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // Discovery must happen purely through viewport query; zero nearby calls:
+      expect(fakeRepo.getViewportCalls, 2);
+      expect(fakeRepo.getNearbyCalls, 0);
+      expect(fakeRepo.requestedBounds.last, userLocationBounds);
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_user_loc');
+
+      notifier.dispose();
+    });
+
+    test('33. Denied permission preserves manual exploration with zero nearby calls', () async {
+      final rrManual = _sampleRestroom('rr_manual');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rrManual],
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // Startup in denied/fallback exploration mode
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(fakeRepo.getNearbyCalls, 0);
+
+      // Pan around manually
+      final pannedBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.6000, longitude: 121.0700),
+        northEast: Coordinates(latitude: 14.6100, longitude: 121.0800),
+      );
+      notifier.onCameraMoveStarted();
+      notifier.onCameraMove();
+      notifier.onCameraIdle(bounds: pannedBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 2);
+      expect(fakeRepo.getNearbyCalls, 0);
+      expect(fakeRepo.requestedBounds.last, pannedBounds);
+
+      notifier.dispose();
+    });
+
+    test('34. Recenter button flow animates camera and converges on viewport discovery with zero nearby calls', () async {
+      final rrRecentered = _sampleRestroom('rr_recentered');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rrRecentered],
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Initial state
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(fakeRepo.getNearbyCalls, 0);
+
+      // 2. User presses recenter button:
+      // MapDiscoveryScreen._recenterOnUser() fetches coordinates and animates camera.
+      // Moving camera fires onCameraMoveStarted(), then settles at user position with onCameraIdle().
+      final recenteredBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.5200, longitude: 121.0100),
+        northEast: Coordinates(latitude: 14.5300, longitude: 121.0200),
+      );
+      notifier.onCameraMoveStarted();
+      notifier.onCameraIdle(bounds: recenteredBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 2);
+      expect(fakeRepo.getNearbyCalls, 0);
+      expect(fakeRepo.requestedBounds.last, recenteredBounds);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_recentered');
+
+      notifier.dispose();
+    });
   });
 }
