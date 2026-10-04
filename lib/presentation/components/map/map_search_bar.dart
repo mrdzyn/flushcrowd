@@ -6,10 +6,18 @@ import '../../../core/theme/app_typography.dart';
 
 /// Floating search and filter header over the map.
 class MapSearchBar extends StatelessWidget {
+  final String? initialQuery;
   final ValueChanged<String>? onChanged;
   final VoidCallback? onFilterTap;
+  final int activeFilterCount;
 
-  const MapSearchBar({super.key, this.onChanged, this.onFilterTap});
+  const MapSearchBar({
+    super.key,
+    this.initialQuery,
+    this.onChanged,
+    this.onFilterTap,
+    this.activeFilterCount = 0,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +26,10 @@ class MapSearchBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: AppRadii.pillBorder,
-        border: Border.all(color: AppColors.border, width: 1),
+        border: Border.all(
+          color: activeFilterCount > 0 ? AppColors.primary : AppColors.border,
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.textPrimary.withValues(alpha: 0.08),
@@ -38,6 +49,9 @@ class MapSearchBar extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
+              controller: initialQuery != null
+                  ? TextEditingController(text: initialQuery)
+                  : null,
               onChanged: onChanged,
               style: AppTypography.bodyMedium.copyWith(
                 color: AppColors.textPrimary,
@@ -61,16 +75,46 @@ class MapSearchBar extends StatelessWidget {
               color: AppColors.border,
               margin: const EdgeInsets.symmetric(horizontal: 8),
             ),
-            IconButton(
-              icon: const Icon(
-                Icons.tune_rounded,
-                color: AppColors.textPrimary,
-                size: 20,
-              ),
-              onPressed: onFilterTap,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              splashRadius: 20,
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.tune_rounded,
+                    color: activeFilterCount > 0
+                        ? AppColors.primary
+                        : AppColors.textPrimary,
+                    size: 20,
+                  ),
+                  onPressed: onFilterTap,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  splashRadius: 20,
+                ),
+                if (activeFilterCount > 0)
+                  Positioned(
+                    top: 6,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '$activeFilterCount',
+                        style: const TextStyle(
+                          color: AppColors.textOnPrimary,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ],

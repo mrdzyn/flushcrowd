@@ -2,16 +2,16 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-**Last updated:** 2026-10-02  
+**Last updated:** 2026-10-04  
 **Project:** LooRadar — global community-powered restroom finder  
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.2 — final closure remediation complete; independent audit pending  
+**Current milestone:** P1.3 — Restroom preview, nearby list, and local filters implementation complete; independent audit pending  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audited (0 findings); P1.2 query orchestration, markers, clustering, and permission grant convergence completed (116/116 tests green); P1.3 preview/list/filters is BLOCKED pending final independent P1.2 exact-head re-audit approval
+**Implementation status:** P1.1 audited (0 findings); P1.2 audited (0 findings); P1.3 preview, nearby list, and local filters completed (140/140 tests green); P1.4 hardening/QA is BLOCKED pending final independent P1.3 exact-head audit approval
 
 ## Current objective
 
@@ -114,21 +114,43 @@ Implemented, remediated, and verified:
 - **Restroom marker model & adapter:** presentation model `RestroomMarkerItem` and `MapMarkerAdapter` providing stable identity by restroom ID, visual selection distinction (`hueAzure` vs `hueBlue`), and strict 1:1 deduplication.
 - **Marker clustering:** integrated Google Maps native clustering (`ClusterManager`), cluster tap zooms into cluster region without arbitrarily selecting an individual restroom.
 - **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking.
-- **Comprehensive test suites:** 116 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, committed-state restoration, startup single-path, selection lifecycle, and permission-grant viewport convergence.
+- **Comprehensive test suites:** 116 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, committed-state restoration, startup single-path, selection lifecycle, and permission-grant viewport convergence. Audited and approved at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 findings.
 
-### P1.3 — Preview/list/filters (BLOCKED)
+### P1.3 — Restroom preview, nearby list & local filters (IMPLEMENTATION COMPLETE, AUDIT PENDING)
 
-Planned after final P1.2 re-audit:
+Implemented, verified, and strictly isolated to zero additional Firestore reads:
 
-- restroom preview/bottom sheet;
-- nearby list;
-- Phase 1 filters;
-- loading/empty/error/offline/degraded states;
-- accessibility refinements.
+- **Zero-read local execution invariant:** Restroom preview, nearby list, local search, and filter matching operate 100% in-memory against `_discoveredRestrooms` already retrieved by the P1.1/P1.2 viewport discovery pipeline. Zero additional Firestore or repository queries are issued when opening preview, scrolling list, typing query text, applying filters, or resetting filters.
+- **Restroom Preview Bottom Sheet (`RestroomPreviewSheet`):**
+  - Displays facility title, rating badge, review count, access type pill, status badge, indoor navigation hierarchy (`buildingName · buildingSection · floor · unitOrArea`), landmark callout, directions note, and verification freshness badge.
+  - Safe Haversine distance display when foreground location is available; cleanly omitted with zero distance assumptions when location is unavailable.
+  - Amenity chip row for verified features (wheelchair accessibility, baby changing, bidet, free/paid, etc.).
+  - Primary "Get Directions" action (designed for external navigation handoff) and secondary Share/Dismiss actions.
+  - Gracefully omits empty or absent optional fields without layout glitches or placeholder clutter.
+- **Nearby Restrooms List Sheet (`NearbyRestroomsSheet`):**
+  - Draggable, scrollable modal bottom sheet listing visible/filtered facilities using compact `RestroomSummaryCard`.
+  - Deterministic sorting: sorts by computed Haversine distance when user location is known; sorts alphabetically by name and ID when user location is absent.
+  - Fully synchronized with map markers: tapping a list item selects the facility, updates preview, and triggers camera centering.
+  - Explicit distinction between geographic emptiness ("No restrooms found in this area") and filter-driven emptiness ("No restrooms match the selected filters" with an inline "Reset Filters" action).
+- **Domain Filter Model & Matching Semantics (`DiscoveryFilters`):**
+  - Pure domain value object in `lib/domain/models/discovery_filters.dart`.
+  - Filter categories: access types (`free`, `paid`, `customer_only`, `key_required`), gender designations (`female`, `male`, `all_gender`), amenities (`isAccessible`, `hasBabyChanging`, `hasBidet`, `hasToiletPaper`, `hasSoap`, `hasHandDryer`), quality & freshness (`minRating`, `recentlyVerifiedOnly` within 90 days).
+  - Strict matching semantics: within-category **OR** (e.g. matching any selected access type or gender), across-category **AND** (all active amenity, rating, verification, and category criteria must be met).
+  - Helper properties: `isActive`, `activeFilterCount`.
+- **Search & Filter Modal (`FilterBottomSheet` & `MapSearchBar`):**
+  - Filter modal with staged local state: users can stage changes and tap "Apply Filters" or "Reset All".
+  - Search bar displays active filter count badge indicator when filters are active.
+  - In-memory case-insensitive search matching name, building name, landmark, and directions note.
+- **Selection Lifecycle Synchronization:**
+  - When active filters hide the currently selected restroom, `_selectedRestroom` is safely cleared to `null` and `_selectionOrigin` becomes `SelectionOrigin.clearedAfterUserSelection`. The app never jumps to an arbitrary alternative facility.
+  - When filters or search are reset and the previously selected restroom reappears, it is cleanly restored without disrupting user focus.
+- **Degraded Status Preservation:**
+  - Underlying discovery status (`loadedComplete`, `loadedDegraded`, `suppressed`, `error`) is preserved intact when filters or search are applied. Filter emptiness triggers `isFilteredEmpty` without corrupting underlying query state.
+- **Comprehensive test suites:** 140/140 unit and widget tests green, including 24 dedicated P1.3 tests verifying all preview fields, distance handling, sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, filter reset, and filter bottom sheet interactions.
 
-### P1.4 — Hardening and human QA
+### P1.4 — Hardening and human QA (BLOCKED)
 
-Planned final Phase 1 milestone:
+Planned final Phase 1 milestone (strictly blocked pending independent P1.3 exact-head audit):
 
 - Firestore read/cost review;
 - Android/iOS live QA where credentials are available;
@@ -167,14 +189,14 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (116/116 passed)
+- `flutter test` — PASS (140/140 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform independent exact-head re-audit of **P1.2 — Map query orchestration + markers/clustering** on `phase-1/map-discovery`. Do NOT begin P1.3 until audit passes.
+Perform independent exact-head audit of **P1.3 — Restroom Preview, Nearby List & Local Filters** on `phase-1/map-discovery`. Do NOT begin P1.4 until audit passes.
 
 ## Handoff template
 

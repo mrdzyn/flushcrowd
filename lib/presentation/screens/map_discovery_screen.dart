@@ -9,9 +9,13 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
+import '../../data/services/gis/haversine.dart';
 import '../../domain/models/coordinates.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
+import '../components/bottom_sheets/filter_bottom_sheet.dart';
+import '../components/bottom_sheets/nearby_restrooms_sheet.dart';
+import '../components/bottom_sheets/restroom_preview_sheet.dart';
 import '../components/cards/restroom_summary_card.dart';
 import '../components/map/map_marker_adapter.dart';
 import '../components/map/map_recenter_button.dart';
@@ -93,7 +97,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
 
     final userCoords = locationNotifier.currentCoordinates;
     final effectiveCoords = locationNotifier.effectiveCoordinates;
-    final nearbyRestrooms = discoveryNotifier.nearbyRestrooms;
     final selectedRestroom = discoveryNotifier.selectedRestroom;
     final markerItems = discoveryNotifier.markerItems;
 
@@ -112,21 +115,24 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                // Floating Search Bar
+                // Floating Search Bar with Filter Badge
                 Padding(
                   padding: const EdgeInsets.symmetric(
                     horizontal: AppSpacing.screenHorizontal,
                     vertical: AppSpacing.sm,
                   ),
                   child: MapSearchBar(
+                    initialQuery: discoveryNotifier.searchQuery.isNotEmpty
+                        ? discoveryNotifier.searchQuery
+                        : null,
+                    activeFilterCount:
+                        discoveryNotifier.filters.activeFilterCount,
                     onChanged: (q) => discoveryNotifier.setSearchQuery(q),
-                    onFilterTap: () {
-                      _showFilterPlaceholder(context);
-                    },
+                    onFilterTap: () => _showFilterSheet(context),
                   ),
                 ),
 
-                // Map discovery status pill (loading / zoom-in suppressed / degraded)
+                // Map discovery status pill (loading / zoom-in suppressed / degraded / filtered empty)
                 _buildStatusOverlay(discoveryNotifier),
 
                 // Degraded Location Permission Banner
@@ -188,7 +194,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                             TextButton(
                               onPressed: () => _showNearbyListSheet(
                                 context,
-                                nearbyRestrooms,
+                                discoveryNotifier,
                                 userCoords,
                               ),
                               style: TextButton.styleFrom(
@@ -210,9 +216,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                         RestroomSummaryCard(
                           restroom: selectedRestroom,
                           userLocation: userCoords,
-                          onTap: () => _showRestroomDetailsSheet(
+                          onTap: () => _showRestroomPreviewSheet(
                             context,
                             selectedRestroom,
+                            userCoords,
                           ),
                         ),
                       ],
@@ -345,6 +352,55 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       );
     }
 
+    if (notifier.isFilteredEmpty) {
+      return Center(
+        child: Container(
+          margin: const EdgeInsets.only(top: AppSpacing.xs),
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+          decoration: BoxDecoration(
+            color: AppColors.surface.withValues(alpha: 0.95),
+            borderRadius: AppRadii.pillBorder,
+            boxShadow: const [
+              BoxShadow(
+                color: Color(0x1A000000),
+                blurRadius: 8,
+                offset: Offset(0, 2),
+              ),
+            ],
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Icon(
+                Icons.filter_alt_off_rounded,
+                size: 16,
+                color: AppColors.textSecondary,
+              ),
+              const SizedBox(width: 6),
+              Text(
+                'No matches for current filters',
+                style: AppTypography.bodySmall.copyWith(
+                  fontWeight: FontWeight.w500,
+                  color: AppColors.textSecondary,
+                ),
+              ),
+              const SizedBox(width: 6),
+              GestureDetector(
+                onTap: () => notifier.resetFilters(),
+                child: Text(
+                  'Reset',
+                  style: AppTypography.bodySmall.copyWith(
+                    fontWeight: FontWeight.w700,
+                    color: AppColors.primary,
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
     return const SizedBox.shrink();
   }
 
@@ -394,154 +450,73 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     );
   }
 
-  void _showFilterPlaceholder(BuildContext context) {
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: AppRadii.topSheetBorder,
-      ),
-      backgroundColor: AppColors.surface,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                const Text('Filters', style: AppTypography.headlineMedium),
-                TextButton(
-                  onPressed: () => Navigator.pop(ctx),
-                  child: const Text(
-                    'Reset',
-                    style: TextStyle(color: AppColors.primary),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: AppSpacing.md),
-            const Text(
-              'Phase 1 Filter Controls will be fully activated here.',
-              style: AppTypography.bodyMedium,
-            ),
-            const SizedBox(height: AppSpacing.xl),
-          ],
-        ),
-      ),
+  void _showFilterSheet(BuildContext context) {
+    final notifier = context.read<MapDiscoveryNotifier>();
+    FilterBottomSheet.show(
+      context,
+      initialFilters: notifier.filters,
+      onApply: (newFilters) => notifier.setFilters(newFilters),
+      onReset: () => notifier.resetFilters(),
     );
   }
 
   void _showNearbyListSheet(
     BuildContext context,
-    List<Restroom> restrooms,
+    MapDiscoveryNotifier notifier,
     Coordinates? userLocation,
   ) {
-    showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: AppRadii.topSheetBorder,
-      ),
-      backgroundColor: AppColors.surface,
-      builder: (ctx) => DraggableScrollableSheet(
-        initialChildSize: 0.6,
-        minChildSize: 0.3,
-        maxChildSize: 0.9,
-        expand: false,
-        builder: (_, scrollController) => Padding(
-          padding: const EdgeInsets.symmetric(
-            horizontal: AppSpacing.screenHorizontal,
-          ),
-          child: ListView.separated(
-            controller: scrollController,
-            itemCount: restrooms.length + 1,
-            separatorBuilder: (_, _) => const SizedBox(height: AppSpacing.md),
-            itemBuilder: (_, index) {
-              if (index == 0) {
-                return Padding(
-                  padding: const EdgeInsets.symmetric(vertical: AppSpacing.lg),
-                  child: Text(
-                    'Nearby Restrooms (${restrooms.length})',
-                    style: AppTypography.headlineMedium,
-                  ),
-                );
-              }
-              final item = restrooms[index - 1];
-              return RestroomSummaryCard(
-                restroom: item,
-                userLocation: userLocation,
-                onTap: () {
-                  Navigator.pop(ctx);
-                  context.read<MapDiscoveryNotifier>().selectRestroom(item);
-                },
-              );
-            },
-          ),
-        ),
-      ),
+    // Sort results: distance-sorted if userLocation exists, name-sorted otherwise
+    final sortedList = List<Restroom>.from(notifier.visibleRestrooms);
+    if (userLocation != null) {
+      sortedList.sort((a, b) {
+        final distA = Haversine.distanceInMeters(userLocation, a.coordinates);
+        final distB = Haversine.distanceInMeters(userLocation, b.coordinates);
+        return distA.compareTo(distB);
+      });
+    } else {
+      sortedList.sort((a, b) => a.name.compareTo(b.name));
+    }
+
+    NearbyRestroomsSheet.show(
+      context,
+      restrooms: sortedList,
+      userLocation: userLocation,
+      selectedRestroomId: notifier.selectedRestroom?.id,
+      isFilteredEmpty: notifier.isFilteredEmpty,
+      onResetFilters: () => notifier.resetFilters(),
+      onSelectRestroom: (restroom) {
+        notifier.selectRestroom(restroom);
+        if (_mapController != null) {
+          _mapController!.animateCamera(
+            CameraUpdate.newLatLng(
+              LatLng(
+                restroom.coordinates.latitude,
+                restroom.coordinates.longitude,
+              ),
+            ),
+          );
+        }
+      },
     );
   }
 
-  void _showRestroomDetailsSheet(BuildContext context, Restroom restroom) {
-    showModalBottomSheet<void>(
-      context: context,
-      shape: const RoundedRectangleBorder(
-        borderRadius: AppRadii.topSheetBorder,
-      ),
-      backgroundColor: AppColors.surface,
-      builder: (ctx) => Padding(
-        padding: const EdgeInsets.all(AppSpacing.xxl),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(restroom.name, style: AppTypography.headlineMedium),
-            if (restroom.buildingName != null) ...[
-              const SizedBox(height: 4),
-              Text(
-                '${restroom.buildingName} · ${restroom.floor ?? ""}',
-                style: AppTypography.bodyMedium,
-              ),
-            ],
-            if (restroom.directionsNote != null) ...[
-              const SizedBox(height: 8),
-              Container(
-                padding: const EdgeInsets.all(12),
-                decoration: const BoxDecoration(
-                  color: AppColors.primaryLight,
-                  borderRadius: AppRadii.mdBorder,
-                ),
-                child: Row(
-                  children: [
-                    const Icon(
-                      Icons.info_outline_rounded,
-                      color: AppColors.primary,
-                      size: 20,
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        restroom.directionsNote!,
-                        style: AppTypography.bodySmall.copyWith(
-                          color: AppColors.primaryDark,
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-            const SizedBox(height: AppSpacing.lg),
-            Text(
-              'Phase 1 will deliver the complete interactive details modal and navigation handoff.',
-              style: AppTypography.bodySmall.copyWith(
-                color: AppColors.textTertiary,
-              ),
-            ),
-          ],
-        ),
-      ),
+  void _showRestroomPreviewSheet(
+    BuildContext context,
+    Restroom restroom,
+    Coordinates? userLocation,
+  ) {
+    RestroomPreviewSheet.show(
+      context,
+      restroom: restroom,
+      userLocation: userLocation,
+      onDirectionsTap: () {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Directions to ${restroom.name}'),
+            duration: const Duration(seconds: 2),
+          ),
+        );
+      },
     );
   }
 }

@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
 import '../../domain/models/coordinates.dart';
+import '../../domain/models/discovery_filters.dart';
 import '../../domain/models/discovery_result.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
@@ -85,6 +86,12 @@ class _LastCommittedViewportState {
 /// - Zoom/oversized viewport suppression (zoom < minViewportZoom or ViewportTooLargeException)
 /// - Explicit propagation of DiscoveryResult completeness metadata
 /// - Restroom marker mapping with stable identity and selection state
+///
+/// Implements P1.3 Filter & Visible Results Derivation:
+/// - Maintains strict separation between source [_discoveredRestrooms] and derived [visibleRestrooms]
+/// - Applies local search and [DiscoveryFilters] without creating independent Firestore queries
+/// - Safely clears selection if active filters or search filter out the selected facility
+/// - Distinguishes between geographic emptiness ([isEmpty]) and filtered emptiness ([isFilteredEmpty])
 class MapDiscoveryNotifier extends ChangeNotifier {
   final RestroomRepository restroomRepository;
   final Duration debounceDuration;
@@ -94,6 +101,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   Restroom? _selectedRestroom;
   String? _errorMessage;
   String _searchQuery = '';
+  DiscoveryFilters _filters = DiscoveryFilters.empty;
 
   // Metadata propagation
   bool _isComplete = true;
@@ -120,6 +128,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   Restroom? get selectedRestroom => _selectedRestroom;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
+  DiscoveryFilters get filters => _filters;
 
   bool get isComplete => _isComplete;
   DiscoveryCompletenessReason get completenessReason => _completenessReason;
@@ -136,30 +145,100 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   bool get isSuppressed => _status == DiscoveryStatus.suppressed;
   bool get isDegraded => _status == DiscoveryStatus.loadedDegraded;
 
-  /// Discovered restrooms filtered by in-memory search query.
-  List<Restroom> get nearbyRestrooms {
-    if (_searchQuery.trim().isEmpty) {
-      return _discoveredRestrooms;
+  /// Visible restrooms derived from source discovered results by applying local
+  /// text search and active [DiscoveryFilters].
+  ///
+  /// Zero-read invariant: filters and searches operate purely in-memory on the
+  /// already bounded discovery result set without triggering any Firestore queries.
+  List<Restroom> get visibleRestrooms {
+    List<Restroom> results = _discoveredRestrooms;
+
+    // 1. Apply local search query if present
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase().trim();
+      results = results.where((r) {
+        return r.name.toLowerCase().contains(q) ||
+            (r.buildingName?.toLowerCase().contains(q) ?? false) ||
+            (r.buildingSection?.toLowerCase().contains(q) ?? false) ||
+            (r.landmark?.toLowerCase().contains(q) ?? false) ||
+            (r.floor?.toLowerCase().contains(q) ?? false) ||
+            (r.unitOrArea?.toLowerCase().contains(q) ?? false) ||
+            (r.directionsNote?.toLowerCase().contains(q) ?? false);
+      }).toList();
     }
-    final q = _searchQuery.toLowerCase();
-    return _discoveredRestrooms.where((r) {
-      return r.name.toLowerCase().contains(q) ||
-          (r.buildingName?.toLowerCase().contains(q) ?? false) ||
-          (r.landmark?.toLowerCase().contains(q) ?? false);
-    }).toList();
+
+    // 2. Apply local filters if active
+    if (_filters.isActive) {
+      results = results.where((r) => _filters.matches(r)).toList();
+    }
+
+    return results;
   }
 
-  /// Presentation marker items derived from current restrooms and selection state.
+  /// Backward-compatible alias for [visibleRestrooms].
+  List<Restroom> get nearbyRestrooms => visibleRestrooms;
+
+  /// Presentation marker items derived from current visible restrooms and selection state.
   List<RestroomMarkerItem> get markerItems {
     final selectedId = _selectedRestroom?.id;
-    return nearbyRestrooms.map((r) {
+    return visibleRestrooms.map((r) {
       return RestroomMarkerItem.fromRestroom(r, isSelected: r.id == selectedId);
     }).toList();
   }
 
+  /// True when discovery actually returned facilities, but active local filters or search
+  /// hide all of them from [visibleRestrooms].
+  bool get isFilteredEmpty =>
+      _discoveredRestrooms.isNotEmpty && visibleRestrooms.isEmpty;
+
+  /// Sets in-memory search query and cleans up selection if filtered out.
   void setSearchQuery(String query) {
+    if (_searchQuery == query) return;
     _searchQuery = query;
+    _syncSelectionWithVisibleResults();
     notifyListeners();
+  }
+
+  /// Updates active local filters and cleans up selection if filtered out.
+  /// Causes ZERO network reads.
+  void setFilters(DiscoveryFilters newFilters) {
+    if (_filters == newFilters) return;
+    _filters = newFilters;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Resets active filters to [DiscoveryFilters.empty] with zero network reads.
+  void resetFilters() {
+    if (!_filters.isActive) return;
+    _filters = DiscoveryFilters.empty;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Resets both search query and filters with zero network reads.
+  void resetSearchAndFilters() {
+    if (_searchQuery.isEmpty && !_filters.isActive) return;
+    _searchQuery = '';
+    _filters = DiscoveryFilters.empty;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Synchronizes [_selectedRestroom] with newly derived [visibleRestrooms]:
+  /// If the currently selected restroom is filtered out by search/filters,
+  /// clears selection safely without arbitrarily jumping to another restroom.
+  void _syncSelectionWithVisibleResults() {
+    if (_selectedRestroom == null) return;
+    final isStillVisible = visibleRestrooms.any(
+      (r) => r.id == _selectedRestroom!.id,
+    );
+    if (!isStillVisible) {
+      _selectedRestroom = null;
+      if (_selectionOrigin == SelectionOrigin.user) {
+        _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
+      }
+    }
   }
 
   /// Sets selected restroom as an explicit user-initiated action.
@@ -400,26 +479,30 @@ class MapDiscoveryNotifier extends ChangeNotifier {
       return;
     }
 
+    final visible = visibleRestrooms;
+
     if (_selectedRestroom != null) {
-      final matchingIndex = items.indexWhere(
+      final matchingIndex = visible.indexWhere(
         (r) => r.id == _selectedRestroom!.id,
       );
       if (matchingIndex != -1) {
-        _selectedRestroom = items[matchingIndex];
+        _selectedRestroom = visible[matchingIndex];
       } else {
-        // Vanished restroom
+        // Vanished or filtered out restroom
         _selectedRestroom = null;
         if (_selectionOrigin == SelectionOrigin.user) {
           _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
         } else if (_selectionOrigin == SelectionOrigin.automatic) {
-          _selectedRestroom = items.first;
+          _selectedRestroom = visible.isNotEmpty ? visible.first : null;
         }
       }
     } else if (_selectionOrigin == SelectionOrigin.none ||
         _selectionOrigin == SelectionOrigin.automatic) {
-      // Initial automatic selection
-      _selectedRestroom = items.first;
-      _selectionOrigin = SelectionOrigin.automatic;
+      // Initial automatic selection if visible facilities exist
+      if (visible.isNotEmpty) {
+        _selectedRestroom = visible.first;
+        _selectionOrigin = SelectionOrigin.automatic;
+      }
     }
   }
 
