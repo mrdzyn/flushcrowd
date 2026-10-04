@@ -33,21 +33,6 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   GoogleMapController? _mapController;
   bool _isRecentering = false;
 
-  @override
-  void initState() {
-    super.initState();
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _initializeDiscovery();
-    });
-  }
-
-  void _initializeDiscovery() {
-    final locationNotifier = context.read<LocationNotifier>();
-    final discoveryNotifier = context.read<MapDiscoveryNotifier>();
-    final coords = locationNotifier.effectiveCoordinates;
-    unawaited(discoveryNotifier.loadNearbyRestrooms(coords));
-  }
-
   Future<void> _recenterOnUser() async {
     setState(() => _isRecentering = true);
     final locationNotifier = context.read<LocationNotifier>();

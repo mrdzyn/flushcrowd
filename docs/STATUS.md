@@ -7,11 +7,11 @@
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.2 — audit remediation completed; re-audit pending  
+**Current milestone:** P1.2 — final remediation completed; exact-head re-audit pending  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audited (0 findings); P1.2 query orchestration, markers, clustering, and audit remediation completed (107/107 tests green); P1.3 preview/list/filters is next pending P1.2 re-audit approval
+**Implementation status:** P1.1 audited (0 findings); P1.2 query orchestration, markers, clustering, and final audit remediation completed (113/113 tests green); P1.3 preview/list/filters is BLOCKED pending final independent P1.2 exact-head re-audit approval
 
 ## Current objective
 
@@ -96,27 +96,28 @@ Capabilities:
 - Deterministic 16-range query limit safety cap under real production constraints;
 - Center-distance prioritization for candidate prefixes under range-cap degradation.
 
-### P1.2 — Query orchestration + markers/clustering (AUDIT REMEDIATED, RE-AUDIT PENDING)
+### P1.2 — Query orchestration + markers/clustering (FINAL REMEDIATION COMPLETED, RE-AUDIT PENDING)
 
 Implemented, remediated, and verified:
 
-- **BLOCKER-1 Remediated:** In-flight request invalidation implemented via `_invalidateActiveRequest()`. Any in-flight asynchronous query generation is invalidated on `onCameraMoveStarted()` and on intentional suppression (`zoom < minViewportZoom` and `ViewportTooLargeException`). Stale responses and stale errors from prior camera positions cannot commit or overwrite map state;
-- **MAJOR-1 Remediated:** Duplicate read elimination on recenter. Removed redundant `loadNearbyRestrooms` call in `_recenterOnUser()`; camera animation to user coordinates triggers `onCameraIdle`, which alone performs the debounced, quantized query;
-- **MAJOR-2 Remediated:** Selected restroom lifecycle hardened. User-selected restrooms are tracked with `_selectionIsUserInitiated`; surviving selected restrooms are preserved across queries; disappearing restrooms are cleared to `null` without silently jumping to the first result; auto-selection of first result only applies when `_selectedRestroom == null` and `!_selectionIsUserInitiated`;
-- **MINOR-1 Remediated:** Antimeridian-aware viewport query descriptor equivalence. Circular angular distance `min(|lngA - lngB|, 360 - |lngA - lngB|) <= coordinateToleranceDegrees` correctly detects equivalent viewports spanning ±180°;
-- **Camera lifecycle debounce:** central `AppConstants.cameraIdleDebounceDuration = 400ms`; no repository queries during camera pan/zoom movement (`onCameraMove`);
-- **Query equivalence & quantization:** `ViewportQueryDescriptor` value object with coordinate tolerance (0.0001° ~ 11m) and zoom quantization (0.1) suppresses redundant Firestore reads on programmatic recentering or duplicate idle events;
-- **Zoom & oversized viewport suppression:** queries suppressed when zoom < `AppConstants.minViewportZoom` (12.0) or on `ViewportTooLargeException`; UI displays non-blocking "Zoom in to see restrooms" pill;
-- **DiscoveryResult completeness propagation:** `MapDiscoveryNotifier` exposes `isComplete`, `completenessReason`, `rangeCount`, and `candidateCount`; partial results render with `loadedDegraded` status;
-- **Center/local prefix prioritization:** candidate geohash prefixes in nearby and viewport queries are prioritized nearest to center coordinates so that any range-cap degradation covers the visible user area;
-- **Restroom marker model & adapter:** presentation model `RestroomMarkerItem` and `MapMarkerAdapter` providing stable identity by restroom ID, visual selection distinction (`hueAzure` vs `hueBlue`), and strict 1:1 deduplication;
-- **Marker clustering:** integrated Google Maps native clustering (`ClusterManager`), cluster tap zooms into cluster region without arbitrarily selecting an individual restroom;
-- **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking;
-- **Comprehensive test suites:** 107 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, and selection lifecycle.
+- **MAJOR-1 Remediated (Single Startup Discovery Path):** Removed automatic startup `loadNearbyRestrooms()` bootstrap from `MapDiscoveryScreen`. The map now has a single authoritative discovery path: map creation → camera settles → `onCameraIdle` → debounced viewport discovery. Verified normal map startup issues 1 viewport discovery call and 0 nearby discovery calls.
+- **MAJOR-2 Remediated (Last Committed Viewport State Restoration):** Introduced ephemeral runtime snapshot `_LastCommittedViewportState` storing the descriptor, items, status (`loadedComplete`, `loadedDegraded`, `empty`), and completeness metadata of the last committed viewport query. When returning to an equivalent viewport, notifier restores the committed snapshot rather than staying stuck in `loading` or `suppressed`. Explicit refresh bypasses reuse and queries again. Materially different descriptors and uncommitted/error states never trigger restoration.
+- **MAJOR-3 Remediated (Sticky User-Selection History):** Introduced `SelectionOrigin` enum (`none`, `automatic`, `user`, `clearedAfterUserSelection`). Once a user explicitly taps/selects a facility, their selection history is preserved. If that chosen facility disappears from the visible area, selection clears to `null` and transitions to `clearedAfterUserSelection`. Future query results remain intentionally unselected until the user explicitly selects another facility; automatic fallback selection never resumes after user interaction.
+- **BLOCKER-1 Remediated:** In-flight request invalidation implemented via `_invalidateActiveRequest()`. Any in-flight asynchronous query generation is invalidated on `onCameraMoveStarted()` and on intentional suppression (`zoom < minViewportZoom` and `ViewportTooLargeException`). Stale responses and stale errors from prior camera positions cannot commit or overwrite map state.
+- **Recenter Duplicate Read Elimination:** Programmatic camera animation in `_recenterOnUser()` relies exclusively on `onCameraIdle` to trigger debounced discovery, eliminating duplicate nearby reads.
+- **Antimeridian-aware Viewport Equivalence:** Circular angular distance `min(|lngA - lngB|, 360 - |lngA - lngB|) <= coordinateToleranceDegrees` correctly detects equivalent viewports spanning ±180°.
+- **Camera lifecycle debounce:** central `AppConstants.cameraIdleDebounceDuration = 400ms`; zero repository queries during camera pan/zoom movement (`onCameraMove`).
+- **Zoom & oversized viewport suppression:** queries suppressed when zoom < `AppConstants.minViewportZoom` (12.0) or on `ViewportTooLargeException`; UI displays non-blocking "Zoom in to see restrooms" pill.
+- **DiscoveryResult completeness propagation:** `MapDiscoveryNotifier` exposes `isComplete`, `completenessReason`, `rangeCount`, and `candidateCount`; partial results render with `loadedDegraded` status.
+- **Center/local prefix prioritization:** candidate geohash prefixes in nearby and viewport queries are prioritized nearest to center coordinates.
+- **Restroom marker model & adapter:** presentation model `RestroomMarkerItem` and `MapMarkerAdapter` providing stable identity by restroom ID, visual selection distinction (`hueAzure` vs `hueBlue`), and strict 1:1 deduplication.
+- **Marker clustering:** integrated Google Maps native clustering (`ClusterManager`), cluster tap zooms into cluster region without arbitrarily selecting an individual restroom.
+- **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking.
+- **Comprehensive test suites:** 113 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, committed-state restoration, startup single-path, and selection lifecycle.
 
-### P1.3 — Preview/list/filters (NEXT)
+### P1.3 — Preview/list/filters (BLOCKED)
 
-Planned after P1.2 audit:
+Planned after final P1.2 re-audit:
 
 - restroom preview/bottom sheet;
 - nearby list;
@@ -165,7 +166,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (107/107 passed)
+- `flutter test` — PASS (113/113 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending

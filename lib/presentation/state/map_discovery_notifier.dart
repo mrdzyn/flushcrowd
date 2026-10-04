@@ -37,6 +37,45 @@ enum DiscoveryStatus {
   error,
 }
 
+/// Tracks the origin and history of restroom selection.
+enum SelectionOrigin {
+  /// No selection has been made yet.
+  none,
+
+  /// Selection was automatically set (e.g. initial auto-selection of nearest restroom).
+  automatic,
+
+  /// User explicitly tapped/selected a restroom.
+  user,
+
+  /// User had explicitly selected a restroom, but it subsequently vanished from query results.
+  /// Sticky state preventing automatic fallback selection from resuming.
+  clearedAfterUserSelection,
+}
+
+/// Ephemeral runtime snapshot of the last successfully committed viewport query.
+/// Used to restore committed state when returning to an equivalent viewport without
+/// issuing redundant Firestore reads.
+class _LastCommittedViewportState {
+  final ViewportQueryDescriptor descriptor;
+  final List<Restroom> restrooms;
+  final DiscoveryStatus status;
+  final bool isComplete;
+  final DiscoveryCompletenessReason completenessReason;
+  final int rangeCount;
+  final int candidateCount;
+
+  const _LastCommittedViewportState({
+    required this.descriptor,
+    required this.restrooms,
+    required this.status,
+    required this.isComplete,
+    required this.completenessReason,
+    required this.rangeCount,
+    required this.candidateCount,
+  });
+}
+
 /// Primary application state notifier for map restroom discovery.
 ///
 /// Implements P1.2 Query Orchestration:
@@ -67,8 +106,9 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   Timer? _debounceTimer;
   int _activeRequestToken = 0;
   ViewportQueryDescriptor? _lastExecutedDescriptor;
+  _LastCommittedViewportState? _lastCommittedViewportState;
   bool _isDisposed = false;
-  bool _selectionIsUserInitiated = false;
+  SelectionOrigin _selectionOrigin = SelectionOrigin.none;
 
   MapDiscoveryNotifier({
     required this.restroomRepository,
@@ -87,7 +127,8 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   int get candidateCount => _candidateCount;
   ViewportQueryDescriptor? get lastExecutedDescriptor =>
       _lastExecutedDescriptor;
-  bool get selectionIsUserInitiated => _selectionIsUserInitiated;
+  SelectionOrigin get selectionOrigin => _selectionOrigin;
+  bool get selectionIsUserInitiated => _selectionOrigin == SelectionOrigin.user;
 
   bool get isLoading => _status == DiscoveryStatus.loading;
   bool get isEmpty => _status == DiscoveryStatus.empty;
@@ -124,14 +165,18 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   /// Sets selected restroom as an explicit user-initiated action.
   void selectRestroom(Restroom? restroom) {
     _selectedRestroom = restroom;
-    _selectionIsUserInitiated = restroom != null;
+    _selectionOrigin = restroom != null
+        ? SelectionOrigin.user
+        : SelectionOrigin.clearedAfterUserSelection;
     notifyListeners();
   }
 
   /// Sets selected restroom programmatically (e.g. initial auto-selection).
   void autoSelectRestroom(Restroom? restroom) {
     _selectedRestroom = restroom;
-    _selectionIsUserInitiated = false;
+    _selectionOrigin = restroom != null
+        ? SelectionOrigin.automatic
+        : SelectionOrigin.none;
     notifyListeners();
   }
 
@@ -198,8 +243,11 @@ class MapDiscoveryNotifier extends ChangeNotifier {
 
     // 2. Query equivalence check: avoid redundant query if bounds/zoom are effectively identical
     if (!forceRefresh &&
-        _lastExecutedDescriptor != null &&
-        _lastExecutedDescriptor!.isEffectivelyEquivalentTo(descriptor)) {
+        _lastCommittedViewportState != null &&
+        _lastCommittedViewportState!.descriptor.isEffectivelyEquivalentTo(
+          descriptor,
+        )) {
+      _restoreLastCommittedViewportState(_lastCommittedViewportState!);
       return;
     }
 
@@ -220,7 +268,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
       }
 
       _lastExecutedDescriptor = descriptor;
-      _commitDiscoveryResult(result);
+      _commitDiscoveryResult(result, descriptor: descriptor);
     } on ViewportTooLargeException {
       if (_isDisposed || requestToken != _activeRequestToken) return;
       // ViewportTooLargeException is handled as intentional query suppression
@@ -236,7 +284,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     }
   }
 
-  /// Loads nearby restrooms explicitly (e.g. for initial load, recenter on user, or retry).
+  /// Loads nearby restrooms explicitly (e.g. for non-map usage or retry).
   Future<void> loadNearbyRestrooms(
     Coordinates center, {
     double radiusMeters = AppConstants.defaultSearchRadiusMeters,
@@ -282,8 +330,28 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     );
   }
 
-  /// Commits a successful discovery result into notifier state.
-  void _commitDiscoveryResult(DiscoveryResult<Restroom> result) {
+  /// Restores the ephemeral snapshot of the last successfully committed viewport state.
+  void _restoreLastCommittedViewportState(
+    _LastCommittedViewportState snapshot,
+  ) {
+    _discoveredRestrooms = snapshot.restrooms;
+    _isComplete = snapshot.isComplete;
+    _completenessReason = snapshot.completenessReason;
+    _rangeCount = snapshot.rangeCount;
+    _candidateCount = snapshot.candidateCount;
+    _status = snapshot.status;
+    _errorMessage = null;
+
+    _applySelectionLifecycle(snapshot.restrooms);
+    notifyListeners();
+  }
+
+  /// Commits a successful discovery result into notifier state and caches
+  /// the committed snapshot if a viewport descriptor is provided.
+  void _commitDiscoveryResult(
+    DiscoveryResult<Restroom> result, {
+    ViewportQueryDescriptor? descriptor,
+  }) {
     _discoveredRestrooms = result.items;
     _isComplete = result.isComplete;
     _completenessReason = result.completenessReason;
@@ -292,36 +360,67 @@ class MapDiscoveryNotifier extends ChangeNotifier {
 
     if (result.items.isEmpty) {
       _status = DiscoveryStatus.empty;
-      _selectedRestroom = null;
-      _selectionIsUserInitiated = false;
     } else {
       _status = result.isComplete
           ? DiscoveryStatus.loadedComplete
           : DiscoveryStatus.loadedDegraded;
-
-      // Selection lifecycle enforcement:
-      // 1. If currently selected restroom survives in new results: preserve it.
-      // 2. If user-selected restroom no longer exists: clear selection (do NOT silently jump to another).
-      // 3. If there was no user selection (or initial load) and product UX expects a default card:
-      //    auto-select first result.
-      if (_selectedRestroom != null) {
-        final matchingIndex = result.items.indexWhere(
-          (r) => r.id == _selectedRestroom!.id,
-        );
-        if (matchingIndex != -1) {
-          // Update selected reference to refreshed model
-          _selectedRestroom = result.items[matchingIndex];
-        } else {
-          // Vanished restroom: clear selection completely
-          _selectedRestroom = null;
-          _selectionIsUserInitiated = false;
-        }
-      } else if (!_selectionIsUserInitiated) {
-        // Initial automatic nearest selection
-        _selectedRestroom = result.items.first;
-      }
     }
+
+    _applySelectionLifecycle(result.items);
+
+    if (descriptor != null) {
+      _lastCommittedViewportState = _LastCommittedViewportState(
+        descriptor: descriptor,
+        restrooms: result.items,
+        status: _status,
+        isComplete: _isComplete,
+        completenessReason: _completenessReason,
+        rangeCount: _rangeCount,
+        candidateCount: _candidateCount,
+      );
+    }
+
     notifyListeners();
+  }
+
+  /// Enforces selection invariants across new or restored restroom results:
+  /// 1. If currently selected restroom survives in results: preserve it (updating reference).
+  /// 2. If user-selected restroom no longer exists: clear selection to null and record
+  ///    [SelectionOrigin.clearedAfterUserSelection], so automatic selection does not resume.
+  /// 3. If automatic selection was in effect and disappeared: clear selection (or re-select first if none).
+  /// 4. Auto-select first result ONLY when selection has never been user-initiated
+  ///    (_selectionOrigin == SelectionOrigin.none || _selectionOrigin == SelectionOrigin.automatic)
+  ///    and _selectedRestroom is null.
+  void _applySelectionLifecycle(List<Restroom> items) {
+    if (items.isEmpty) {
+      _selectedRestroom = null;
+      if (_selectionOrigin == SelectionOrigin.user) {
+        _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
+      }
+      return;
+    }
+
+    if (_selectedRestroom != null) {
+      final matchingIndex = items.indexWhere(
+        (r) => r.id == _selectedRestroom!.id,
+      );
+      if (matchingIndex != -1) {
+        _selectedRestroom = items[matchingIndex];
+      } else {
+        // Vanished restroom
+        _selectedRestroom = null;
+        if (_selectionOrigin == SelectionOrigin.user) {
+          _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
+        } else if (_selectionOrigin == SelectionOrigin.automatic) {
+          _selectedRestroom = items.first;
+        }
+      }
+    } else if (_selectionOrigin == SelectionOrigin.none ||
+        _selectionOrigin == SelectionOrigin.automatic) {
+      // Initial automatic selection
+      _selectedRestroom = items.first;
+      _selectionOrigin = SelectionOrigin.automatic;
+    }
   }
 
   void _cancelDebounce() {

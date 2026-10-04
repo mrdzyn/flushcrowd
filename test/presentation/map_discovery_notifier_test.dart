@@ -618,7 +618,7 @@ void main() {
       notifier.dispose();
     });
 
-    test('24. MAJOR-2: selected restroom cleared when not in new results without jumping to first', () async {
+    test('24. MAJOR-3: selected restroom cleared when not in new results without jumping to first, and stays unselected', () async {
       final rr1 = _sampleRestroom('rr_1');
       final rr2 = _sampleRestroom('rr_2');
       fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
@@ -636,6 +636,8 @@ void main() {
       // User selects rr_1
       notifier.selectRestroom(rr1);
       expect(notifier.selectedRestroom?.id, 'rr_1');
+      expect(notifier.selectionOrigin, SelectionOrigin.user);
+      expect(notifier.selectionIsUserInitiated, isTrue);
 
       // Next query does NOT contain rr_1 anymore (e.g. panned away)
       final rr3 = _sampleRestroom('rr_3');
@@ -653,8 +655,36 @@ void main() {
 
       // Selection must be cleared to null, NOT jump to rr_3
       expect(notifier.selectedRestroom, isNull);
+      expect(
+        notifier.selectionOrigin,
+        SelectionOrigin.clearedAfterUserSelection,
+      );
       expect(notifier.selectionIsUserInitiated, isFalse);
       expect(notifier.discoveredRestrooms.length, 2);
+
+      // Third query returns yet another set of restrooms
+      final rr5 = _sampleRestroom('rr_5');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(items: [rr5]);
+      final pannedBounds2 = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.6200, longitude: 121.0900),
+        northEast: Coordinates(latitude: 14.6300, longitude: 121.1000),
+      );
+      notifier.onCameraIdle(bounds: pannedBounds2, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // Selection must STAY null — auto-selection must NOT resume!
+      expect(notifier.selectedRestroom, isNull);
+      expect(
+        notifier.selectionOrigin,
+        SelectionOrigin.clearedAfterUserSelection,
+      );
+
+      // User subsequently selects rr_5 explicitly
+      notifier.selectRestroom(rr5);
+      expect(notifier.selectedRestroom?.id, 'rr_5');
+      expect(notifier.selectionOrigin, SelectionOrigin.user);
+      expect(notifier.selectionIsUserInitiated, isTrue);
+
       notifier.dispose();
     });
 
@@ -687,6 +717,221 @@ void main() {
         zoom: 15.0,
       );
       expect(descriptorA.isEffectivelyEquivalentTo(descriptorFar), isFalse);
+    });
+
+    test('26. MAJOR-2: Complete A -> start B -> invalidate B -> return to A restores loadedComplete without querying', () async {
+      final rrA = _sampleRestroom('rr_A');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: [rrA],
+        rangeCount: 3,
+        candidateCount: 8,
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Viewport A executes and completes
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+      expect(notifier.discoveredRestrooms.length, 1);
+
+      // 2. Query B starts (in-flight)
+      final boundsB = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.6500, longitude: 121.1200),
+        northEast: Coordinates(latitude: 14.6600, longitude: 121.1300),
+      );
+      fakeRepo.viewportCompleter = Completer<DiscoveryResult<Restroom>>();
+      notifier.onCameraIdle(bounds: boundsB, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 2);
+      expect(notifier.isLoading, isTrue);
+
+      // 3. User moves camera back, invalidating B
+      notifier.onCameraMoveStarted();
+
+      // 4. User settles back on viewport equivalent to A
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // 5. No new repository query should have been made
+      expect(fakeRepo.getViewportCalls, 2);
+      // Status must be restored to loadedComplete (not stuck in loading!)
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_A');
+      expect(notifier.rangeCount, 3);
+      expect(notifier.candidateCount, 8);
+
+      notifier.dispose();
+    });
+
+    test('27. MAJOR-2: Degraded A -> leave A -> return to equivalent A restores loadedDegraded and metadata', () async {
+      final rrDegraded = _sampleRestroom('rr_degraded');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.partial(
+        items: [rrDegraded],
+        reason: DiscoveryCompletenessReason.rangeCapExceeded,
+        rangeCount: 16,
+        candidateCount: 150,
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Viewport A executes and completes degraded
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(notifier.status, DiscoveryStatus.loadedDegraded);
+      expect(notifier.isDegraded, isTrue);
+      expect(
+        notifier.completenessReason,
+        DiscoveryCompletenessReason.rangeCapExceeded,
+      );
+
+      // 2. Leave A and invalidate
+      notifier.onCameraMoveStarted();
+
+      // 3. Return to equivalent A
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // Repos call count still 1
+      expect(fakeRepo.getViewportCalls, 1);
+      // State restored to loadedDegraded with completeness reason preserved
+      expect(notifier.status, DiscoveryStatus.loadedDegraded);
+      expect(notifier.isDegraded, isTrue);
+      expect(
+        notifier.completenessReason,
+        DiscoveryCompletenessReason.rangeCapExceeded,
+      );
+      expect(notifier.rangeCount, 16);
+      expect(notifier.candidateCount, 150);
+
+      notifier.dispose();
+    });
+
+    test('28. MAJOR-2: Empty A -> leave -> return restores empty status without new query', () async {
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(items: []);
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(notifier.status, DiscoveryStatus.empty);
+
+      // Invalidate via camera move
+      notifier.onCameraMoveStarted();
+
+      // Return to equivalent A
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(notifier.status, DiscoveryStatus.empty);
+      expect(notifier.discoveredRestrooms, isEmpty);
+
+      notifier.dispose();
+    });
+
+    test('29. MAJOR-2: Complete A -> zoom below min (suppressed) -> return to equivalent A restores complete and unsuppresses', () async {
+      final rrA = _sampleRestroom('rr_A');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(items: [rrA]);
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Viewport A executes and completes
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+
+      // 2. Zoom out below minimum -> suppressed
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 10.0);
+      expect(notifier.status, DiscoveryStatus.suppressed);
+      expect(notifier.isSuppressed, isTrue);
+
+      // 3. Zoom back into equivalent A
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // No new query
+      expect(fakeRepo.getViewportCalls, 1);
+      // Status must be restored to loadedComplete, NOT stuck in suppressed
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+      expect(notifier.isSuppressed, isFalse);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_A');
+
+      notifier.dispose();
+    });
+
+    test('30. MAJOR-2: Reuse does NOT restore snapshot for materially different descriptor', () async {
+      final rrA = _sampleRestroom('rr_A');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(items: [rrA]);
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Viewport A executes and completes
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+      expect(fakeRepo.getViewportCalls, 1);
+
+      // 2. Query B with materially different bounds executes a real query
+      final rrB = _sampleRestroom('rr_B');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(items: [rrB]);
+      final boundsB = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.6500, longitude: 121.1200),
+        northEast: Coordinates(latitude: 14.6600, longitude: 121.1300),
+      );
+      notifier.onCameraIdle(bounds: boundsB, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(fakeRepo.getViewportCalls, 2);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_B');
+
+      notifier.dispose();
+    });
+
+    test('31. MAJOR-1: Normal map startup issues only one viewport discovery call and zero nearby calls', () async {
+      final rr = _sampleRestroom('rr_startup');
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(items: [rr]);
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // Normal map startup lifecycle:
+      // GoogleMap widget is created, camera settles at initial position,
+      // and triggers onCameraIdle. There is NO automatic loadNearbyRestrooms called.
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // Exact call assertions:
+      expect(fakeRepo.getViewportCalls, 1);
+      expect(fakeRepo.getNearbyCalls, 0);
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+
+      notifier.dispose();
     });
   });
 }
