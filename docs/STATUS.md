@@ -7,11 +7,11 @@
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.3 — Restroom preview, nearby list, and local filters implementation complete; independent audit pending  
+**Current milestone:** P1.3 — audit remediation complete; independent re-audit pending  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audited (0 findings); P1.2 audited (0 findings); P1.3 preview, nearby list, and local filters completed (140/140 tests green); P1.4 hardening/QA is BLOCKED pending final independent P1.3 exact-head audit approval
+**Implementation status:** P1.1 audited (0 findings); P1.2 audited (0 findings); P1.3 preview, nearby list, and local filters remediated and verified (159/159 tests green); P1.4 hardening/QA is BLOCKED pending independent P1.3 remediation exact-head re-audit approval
 
 ## Current objective
 
@@ -116,37 +116,45 @@ Implemented, remediated, and verified:
 - **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking.
 - **Comprehensive test suites:** 116 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, committed-state restoration, startup single-path, selection lifecycle, and permission-grant viewport convergence. Audited and approved at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 findings.
 
-### P1.3 — Restroom preview, nearby list & local filters (IMPLEMENTATION COMPLETE, AUDIT PENDING)
+### P1.3 — Restroom preview, nearby list & local filters (AUDIT REMEDIATION COMPLETE, RE-AUDIT PENDING)
 
-Implemented, verified, and strictly isolated to zero additional Firestore reads:
+Implemented, remediated against independent audit findings, verified, and strictly isolated to zero additional Firestore reads:
 
 - **Zero-read local execution invariant:** Restroom preview, nearby list, local search, and filter matching operate 100% in-memory against `_discoveredRestrooms` already retrieved by the P1.1/P1.2 viewport discovery pipeline. Zero additional Firestore or repository queries are issued when opening preview, scrolling list, typing query text, applying filters, or resetting filters.
+- **MAJOR-1 Remediated (Derived-Empty State & Semantic Reset):**
+  - Distinguishes search-only empty (`DerivedEmptyReason.search`), filter-only empty (`DerivedEmptyReason.filters`), and search+filter empty (`DerivedEmptyReason.searchAndFilters`).
+  - Overlay and list empty states show tailored messages (`No restrooms match your search`, `No restrooms match your filters`, `No restrooms match your search & filters`).
+  - Action buttons cleanly target the causing factor: `Clear search` invokes `resetSearch()`, `Reset filters` invokes `resetFilters()`, `Clear search & filters` invokes `resetSearchAndFilters()`.
+  - When discovery is degraded, messages preserve the partial status context (e.g. `No search matches (partial results)`) without claiming complete geographic emptiness.
+- **MAJOR-2 Remediated (Truthful Verification Freshness):**
+  - Strict 90-day rule: `recentlyVerifiedOnly` requires `lastVerifiedAt != null` AND `now.difference(lastVerifiedAt!) <= 90 days`. Missing timestamps or timestamps older than 90 days fail strictly, regardless of `verificationCount`.
+  - Preview freshness banner labels verifications truthfully (`Verified today`, `Verified yesterday`, `Verified X days ago`, `Verified X months/years ago`, `Previously verified by community (N)`). Stale verifications (>30 days) are never labeled "Verified recently". Supports testable deterministic clock injection.
+- **MAJOR-3 Remediated (Stable MapSearchBar Lifecycle):**
+  - Converted `MapSearchBar` to `StatefulWidget`. `TextEditingController` is instantiated once in `initState` and disposed in `dispose`.
+  - Preserves cursor position and composing state during active typing across notifier updates.
+  - Implements `didUpdateWidget` to synchronize external resets (e.g. clearing text) without overwriting active user typing. Zero controller allocations in `build()`.
+- **MINOR-1 Remediated (Truly Deterministic List Ordering):**
+  - Extracted pure helper `RestroomSorting`:
+    - With location: primary Haversine distance ascending, tie-break normalized name ascending, final tie-break restroom ID ascending.
+    - Without location: primary normalized name ascending, tie-break restroom ID ascending.
+- **MINOR-2 Remediated (Accurate Documentation Claims):**
+  - Dismissing or closing preview uses the standard close icon / modal dismiss.
+  - When filters or search hide an explicitly selected restroom, selection clears to `null` with `SelectionOrigin.clearedAfterUserSelection`. Resetting filters/search does NOT arbitrarily reselect the old facility; the user selects again explicitly.
 - **Restroom Preview Bottom Sheet (`RestroomPreviewSheet`):**
-  - Displays facility title, rating badge, review count, access type pill, status badge, indoor navigation hierarchy (`buildingName · buildingSection · floor · unitOrArea`), landmark callout, directions note, and verification freshness badge.
+  - Displays facility title, rating badge, review count, access type pill, status badge, indoor navigation hierarchy (`buildingName · buildingSection · floor · unitOrArea`), landmark callout, directions note, and truthful verification freshness badge.
   - Safe Haversine distance display when foreground location is available; cleanly omitted with zero distance assumptions when location is unavailable.
   - Amenity chip row for verified features (wheelchair accessibility, baby changing, bidet, free/paid, etc.).
-  - Primary "Get Directions" action (designed for external navigation handoff) and secondary Share/Dismiss actions.
-  - Gracefully omits empty or absent optional fields without layout glitches or placeholder clutter.
+  - Primary "Get Directions" action (external navigation handoff) and close button. Gracefully omits empty or absent optional fields.
 - **Nearby Restrooms List Sheet (`NearbyRestroomsSheet`):**
   - Draggable, scrollable modal bottom sheet listing visible/filtered facilities using compact `RestroomSummaryCard`.
-  - Deterministic sorting: sorts by computed Haversine distance when user location is known; sorts alphabetically by name and ID when user location is absent.
+  - Uses `RestroomSorting` for deterministic ordering.
   - Fully synchronized with map markers: tapping a list item selects the facility, updates preview, and triggers camera centering.
-  - Explicit distinction between geographic emptiness ("No restrooms found in this area") and filter-driven emptiness ("No restrooms match the selected filters" with an inline "Reset Filters" action).
+  - Differentiates geographic emptiness from search/filter empty states with specific recovery buttons.
 - **Domain Filter Model & Matching Semantics (`DiscoveryFilters`):**
   - Pure domain value object in `lib/domain/models/discovery_filters.dart`.
-  - Filter categories: access types (`free`, `paid`, `customer_only`, `key_required`), gender designations (`female`, `male`, `all_gender`), amenities (`isAccessible`, `hasBabyChanging`, `hasBidet`, `hasToiletPaper`, `hasSoap`, `hasHandDryer`), quality & freshness (`minRating`, `recentlyVerifiedOnly` within 90 days).
-  - Strict matching semantics: within-category **OR** (e.g. matching any selected access type or gender), across-category **AND** (all active amenity, rating, verification, and category criteria must be met).
-  - Helper properties: `isActive`, `activeFilterCount`.
-- **Search & Filter Modal (`FilterBottomSheet` & `MapSearchBar`):**
-  - Filter modal with staged local state: users can stage changes and tap "Apply Filters" or "Reset All".
-  - Search bar displays active filter count badge indicator when filters are active.
-  - In-memory case-insensitive search matching name, building name, landmark, and directions note.
-- **Selection Lifecycle Synchronization:**
-  - When active filters hide the currently selected restroom, `_selectedRestroom` is safely cleared to `null` and `_selectionOrigin` becomes `SelectionOrigin.clearedAfterUserSelection`. The app never jumps to an arbitrary alternative facility.
-  - When filters or search are reset and the previously selected restroom reappears, it is cleanly restored without disrupting user focus.
-- **Degraded Status Preservation:**
-  - Underlying discovery status (`loadedComplete`, `loadedDegraded`, `suppressed`, `error`) is preserved intact when filters or search are applied. Filter emptiness triggers `isFilteredEmpty` without corrupting underlying query state.
-- **Comprehensive test suites:** 140/140 unit and widget tests green, including 24 dedicated P1.3 tests verifying all preview fields, distance handling, sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, filter reset, and filter bottom sheet interactions.
+  - Filter categories: access types, gender designations, amenities, quality & freshness (minimum rating, recently verified within 90 days).
+  - Strict matching semantics: within-category **OR**, across-category **AND**.
+- **Comprehensive test suites:** 159/159 unit and widget tests green (43 dedicated P1.3 tests verifying all preview fields, distance handling, deterministic sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, search field lifecycle, truthful verification freshness, derived-empty states, and filter bottom sheet interactions).
 
 ### P1.4 — Hardening and human QA (BLOCKED)
 
@@ -189,14 +197,14 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (140/140 passed)
+- `flutter test` — PASS (159/159 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform independent exact-head audit of **P1.3 — Restroom Preview, Nearby List & Local Filters** on `phase-1/map-discovery`. Do NOT begin P1.4 until audit passes.
+Perform independent exact-head re-audit of **P1.3 — Restroom Preview, Nearby List & Local Filters** on `phase-1/map-discovery`. Do NOT begin P1.4 until audit passes.
 
 ## Handoff template
 

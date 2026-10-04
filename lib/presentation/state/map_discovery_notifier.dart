@@ -54,6 +54,18 @@ enum SelectionOrigin {
   clearedAfterUserSelection,
 }
 
+/// Reason why [visibleRestrooms] is empty despite underlying discovery having facilities.
+enum DerivedEmptyReason {
+  /// Both search query and filters are active and together produced 0 visible matches.
+  searchAndFilters,
+
+  /// Search query is active (filters inactive) and produced 0 visible matches.
+  search,
+
+  /// Filters are active (search query empty) and produced 0 visible matches.
+  filters,
+}
+
 /// Ephemeral runtime snapshot of the last successfully committed viewport query.
 /// Used to restore committed state when returning to an equivalent viewport without
 /// issuing redundant Firestore reads.
@@ -186,15 +198,47 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     }).toList();
   }
 
+  /// Whether a non-empty search query is currently active.
+  bool get hasActiveSearch => _searchQuery.trim().isNotEmpty;
+
+  /// Whether non-empty discovery filters are currently active.
+  bool get hasActiveFilters => _filters.isActive;
+
   /// True when discovery actually returned facilities, but active local filters or search
   /// hide all of them from [visibleRestrooms].
-  bool get isFilteredEmpty =>
+  bool get hasDerivedEmptyResults =>
       _discoveredRestrooms.isNotEmpty && visibleRestrooms.isEmpty;
+
+  /// Backward-compatible alias for [hasDerivedEmptyResults].
+  bool get isFilteredEmpty => hasDerivedEmptyResults;
+
+  /// Specific reason why visible results are empty when [hasDerivedEmptyResults] is true.
+  DerivedEmptyReason? get derivedEmptyReason {
+    if (!hasDerivedEmptyResults) return null;
+    if (hasActiveSearch && hasActiveFilters) {
+      return DerivedEmptyReason.searchAndFilters;
+    }
+    if (hasActiveSearch) {
+      return DerivedEmptyReason.search;
+    }
+    if (hasActiveFilters) {
+      return DerivedEmptyReason.filters;
+    }
+    return null;
+  }
 
   /// Sets in-memory search query and cleans up selection if filtered out.
   void setSearchQuery(String query) {
     if (_searchQuery == query) return;
     _searchQuery = query;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Resets in-memory search query with zero network reads.
+  void resetSearch() {
+    if (_searchQuery.isEmpty) return;
+    _searchQuery = '';
     _syncSelectionWithVisibleResults();
     notifyListeners();
   }

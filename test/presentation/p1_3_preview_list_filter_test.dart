@@ -9,7 +9,9 @@ import 'package:looradar/domain/models/restroom.dart';
 import 'package:looradar/presentation/components/bottom_sheets/filter_bottom_sheet.dart';
 import 'package:looradar/presentation/components/bottom_sheets/nearby_restrooms_sheet.dart';
 import 'package:looradar/presentation/components/bottom_sheets/restroom_preview_sheet.dart';
+import 'package:looradar/presentation/components/map/map_search_bar.dart';
 import 'package:looradar/presentation/state/map_discovery_notifier.dart';
+import 'package:looradar/presentation/utils/restroom_sorting.dart';
 
 import 'map_discovery_notifier_test.dart';
 
@@ -340,9 +342,9 @@ void main() {
     });
 
     test('9. Deterministic ordering: distance when location available', () {
-      final list = List<Restroom>.from(restrooms);
-      list.sort((a, b) => a.name.compareTo(b.name));
-      expect(list.first.id, 'rr_close');
+      final sorted = RestroomSorting.sort(restrooms, userLocation: userCoords);
+      expect(sorted.first.id, 'rr_close');
+      expect(sorted.last.id, 'rr_far');
     });
 
     testWidgets('10. Distance omitted cleanly when location unavailable', (
@@ -851,6 +853,579 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(resetCalled, isTrue);
+    });
+  });
+
+  group('P1.3 Remediation — Goal 1: Derived-Empty State and Reset Semantics', () {
+    late FakeRestroomRepository fakeRepo;
+    late List<Restroom> dataset;
+
+    setUp(() {
+      fakeRepo = FakeRestroomRepository();
+      dataset = [
+        _testRestroom(
+          id: 'rr_1',
+          name: 'Central Mall Restroom',
+          buildingName: 'Central Mall',
+          accessType: AccessType.free,
+          pwdAccessible: true,
+          hasBidet: true,
+        ),
+        _testRestroom(
+          id: 'rr_2',
+          name: 'City Station Toilet',
+          buildingName: 'City Station',
+          accessType: AccessType.paid,
+          pwdAccessible: false,
+          hasBidet: false,
+        ),
+      ];
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: dataset,
+      );
+    });
+
+    test('1. Search-only zero match sets derivedEmptyReason.search and resets correctly', () async {
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: const Duration(milliseconds: 10),
+      );
+      final bounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+        northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+      );
+      notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      notifier.setSearchQuery('nonexistent query');
+      expect(notifier.discoveredRestrooms.length, 2);
+      expect(notifier.visibleRestrooms.isEmpty, isTrue);
+      expect(notifier.hasDerivedEmptyResults, isTrue);
+      expect(notifier.hasActiveSearch, isTrue);
+      expect(notifier.hasActiveFilters, isFalse);
+      expect(notifier.derivedEmptyReason, DerivedEmptyReason.search);
+
+      // Reset search action recovers visible restrooms
+      notifier.resetSearch();
+      expect(notifier.visibleRestrooms.length, 2);
+      expect(notifier.hasDerivedEmptyResults, isFalse);
+      expect(notifier.derivedEmptyReason, isNull);
+
+      notifier.dispose();
+    });
+
+    test('2. Filter-only zero match sets derivedEmptyReason.filters and resets correctly', () async {
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: const Duration(milliseconds: 10),
+      );
+      final bounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+        northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+      );
+      notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      notifier.setFilters(const DiscoveryFilters(babyChangingOnly: true));
+      expect(notifier.discoveredRestrooms.length, 2);
+      expect(notifier.visibleRestrooms.isEmpty, isTrue);
+      expect(notifier.hasDerivedEmptyResults, isTrue);
+      expect(notifier.hasActiveSearch, isFalse);
+      expect(notifier.hasActiveFilters, isTrue);
+      expect(notifier.derivedEmptyReason, DerivedEmptyReason.filters);
+
+      // Reset filters recovers visible restrooms
+      notifier.resetFilters();
+      expect(notifier.visibleRestrooms.length, 2);
+      expect(notifier.hasDerivedEmptyResults, isFalse);
+
+      notifier.dispose();
+    });
+
+    test('3. Search + filter zero match sets derivedEmptyReason.searchAndFilters and resets correctly', () async {
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: const Duration(milliseconds: 10),
+      );
+      final bounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+        northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+      );
+      notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      notifier.setSearchQuery('Central');
+      notifier.setFilters(
+        const DiscoveryFilters(accessTypes: {AccessType.paid}),
+      );
+      expect(notifier.visibleRestrooms.isEmpty, isTrue);
+      expect(notifier.hasDerivedEmptyResults, isTrue);
+      expect(notifier.hasActiveSearch, isTrue);
+      expect(notifier.hasActiveFilters, isTrue);
+      expect(notifier.derivedEmptyReason, DerivedEmptyReason.searchAndFilters);
+
+      // Reset all clears both search and filters
+      notifier.resetSearchAndFilters();
+      expect(notifier.visibleRestrooms.length, 2);
+      expect(notifier.searchQuery.isEmpty, isTrue);
+      expect(notifier.filters.isActive, isFalse);
+      expect(notifier.hasDerivedEmptyResults, isFalse);
+
+      notifier.dispose();
+    });
+
+    test(
+      '4. Degraded result + zero visible matches preserves degraded semantics',
+      () async {
+        fakeRepo.viewportResultToReturn = DiscoveryResult.partial(
+          items: dataset,
+          reason: DiscoveryCompletenessReason.rangeCapExceeded,
+          rangeCount: 16,
+          candidateCount: 45,
+        );
+
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+          northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+        );
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await Future<void>.delayed(const Duration(milliseconds: 30));
+
+        notifier.setSearchQuery('unknown');
+        expect(notifier.status, DiscoveryStatus.loadedDegraded);
+        expect(notifier.isDegraded, isTrue);
+        expect(
+          notifier.completenessReason,
+          DiscoveryCompletenessReason.rangeCapExceeded,
+        );
+        expect(notifier.hasDerivedEmptyResults, isTrue);
+        expect(notifier.derivedEmptyReason, DerivedEmptyReason.search);
+
+        notifier.dispose();
+      },
+    );
+
+    testWidgets(
+      '5. Nearby list displays correct search-only empty message and action',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: NearbyRestroomsSheet(
+                restrooms: const [],
+                isFilteredEmpty: true,
+                derivedEmptyReason: DerivedEmptyReason.search,
+                onResetSearch: () {},
+                onSelectRestroom: (_) {},
+              ),
+            ),
+          ),
+        );
+
+        expect(find.text('No restrooms match your search'), findsOneWidget);
+        expect(find.text('Clear search'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '6. Nearby list displays correct filter-only empty message and action',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: NearbyRestroomsSheet(
+                restrooms: const [],
+                isFilteredEmpty: true,
+                derivedEmptyReason: DerivedEmptyReason.filters,
+                onResetFilters: () {},
+                onSelectRestroom: (_) {},
+              ),
+            ),
+          ),
+        );
+
+        expect(find.text('No restrooms match your filters'), findsOneWidget);
+        expect(find.text('Reset filters'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '7. Nearby list displays correct search+filter empty message and action',
+      (tester) async {
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: NearbyRestroomsSheet(
+                restrooms: const [],
+                isFilteredEmpty: true,
+                derivedEmptyReason: DerivedEmptyReason.searchAndFilters,
+                onResetSearchAndFilters: () {},
+                onSelectRestroom: (_) {},
+              ),
+            ),
+          ),
+        );
+
+        expect(
+          find.text('No restrooms match your search & filters'),
+          findsOneWidget,
+        );
+        expect(find.text('Clear search & filters'), findsOneWidget);
+      },
+    );
+  });
+
+  group('P1.3 Remediation — Goal 2: Truthful Verification Freshness', () {
+    final fixedNow = DateTime(2026, 10, 4, 12, 0, 0);
+
+    test('8. Timestamp within 90 days passes recentlyVerifiedOnly filter', () {
+      final rr = _testRestroom(
+        id: 'rr_fresh',
+        name: 'Fresh Restroom',
+        lastVerifiedAt: fixedNow.subtract(const Duration(days: 45)),
+        verificationCount: 1,
+      );
+      const filters = DiscoveryFilters(recentlyVerifiedOnly: true);
+      expect(filters.matches(rr, now: fixedNow), isTrue);
+    });
+
+    test('9. Timestamp >90 days fails recentlyVerifiedOnly filter even with verificationCount > 0', () {
+      final rr = _testRestroom(
+        id: 'rr_stale',
+        name: 'Stale Restroom',
+        lastVerifiedAt: fixedNow.subtract(const Duration(days: 91)),
+        verificationCount: 10,
+      );
+      const filters = DiscoveryFilters(recentlyVerifiedOnly: true);
+      expect(filters.matches(rr, now: fixedNow), isFalse);
+    });
+
+    test('10. Missing timestamp fails recentlyVerifiedOnly filter even with verificationCount > 0', () {
+      final rr = _testRestroom(
+        id: 'rr_no_time',
+        name: 'No Timestamp Restroom',
+        lastVerifiedAt: null,
+        verificationCount: 10,
+      );
+      const filters = DiscoveryFilters(recentlyVerifiedOnly: true);
+      expect(filters.matches(rr, now: fixedNow), isFalse);
+    });
+
+    testWidgets(
+      '11. Preview truthfully labels verification freshness using fixed dates',
+      (tester) async {
+        // Today
+        final rrToday = _testRestroom(
+          id: 'rr_today',
+          name: 'Today Restroom',
+          lastVerifiedAt: fixedNow,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(restroom: rrToday, clock: fixedNow),
+            ),
+          ),
+        );
+        expect(find.text('Verified today by community'), findsOneWidget);
+
+        // Yesterday
+        final rrYesterday = _testRestroom(
+          id: 'rr_yest',
+          name: 'Yesterday Restroom',
+          lastVerifiedAt: fixedNow.subtract(const Duration(days: 1)),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(
+                restroom: rrYesterday,
+                clock: fixedNow,
+              ),
+            ),
+          ),
+        );
+        expect(find.text('Verified yesterday'), findsOneWidget);
+
+        // 10 days ago
+        final rr10Days = _testRestroom(
+          id: 'rr_10d',
+          name: '10 Days Restroom',
+          lastVerifiedAt: fixedNow.subtract(const Duration(days: 10)),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(restroom: rr10Days, clock: fixedNow),
+            ),
+          ),
+        );
+        expect(find.text('Verified 10 days ago'), findsOneWidget);
+
+        // 4 months ago (stale - must not say 'Verified recently')
+        final rr4Months = _testRestroom(
+          id: 'rr_4m',
+          name: '4 Months Restroom',
+          lastVerifiedAt: fixedNow.subtract(const Duration(days: 120)),
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(restroom: rr4Months, clock: fixedNow),
+            ),
+          ),
+        );
+        expect(find.text('Verified recently'), findsNothing);
+        expect(find.text('Verified 4 months ago'), findsOneWidget);
+
+        // No timestamp, verificationCount > 0
+        final rrNoTs = _testRestroom(
+          id: 'rr_nots',
+          name: 'No Ts Restroom',
+          lastVerifiedAt: null,
+          verificationCount: 5,
+        );
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(restroom: rrNoTs, clock: fixedNow),
+            ),
+          ),
+        );
+        expect(
+          find.text('Previously verified by community (5)'),
+          findsOneWidget,
+        );
+        expect(find.text('Verified recently'), findsNothing);
+      },
+    );
+  });
+
+  group(
+    'P1.3 Remediation — Goal 3: Stabilize MapSearchBar Controller Lifecycle',
+    () {
+      testWidgets(
+        '12. Continuous multi-character typing survives widget rebuild',
+        (tester) async {
+          String latestQuery = '';
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: StatefulBuilder(
+                  builder: (ctx, setState) {
+                    return Column(
+                      children: [
+                        MapSearchBar(
+                          initialQuery: latestQuery,
+                          onChanged: (q) {
+                            setState(() {
+                              latestQuery = q;
+                            });
+                          },
+                        ),
+                        Text('Query: $latestQuery'),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+
+          // Type text into search field character by character
+          final searchField = find.byType(TextField);
+          await tester.enterText(searchField, 'Terminal');
+          await tester.pumpAndSettle();
+
+          expect(latestQuery, 'Terminal');
+          expect(find.text('Query: Terminal'), findsOneWidget);
+          final textFieldWidget = tester.widget<TextField>(searchField);
+          expect(textFieldWidget.controller?.text, 'Terminal');
+        },
+      );
+
+      testWidgets(
+        '13. External reset to empty string clears the text field properly',
+        (tester) async {
+          String query = 'initial';
+
+          await tester.pumpWidget(
+            MaterialApp(
+              home: Scaffold(
+                body: StatefulBuilder(
+                  builder: (ctx, setState) {
+                    return Column(
+                      children: [
+                        MapSearchBar(
+                          initialQuery: query,
+                          onChanged: (q) => query = q,
+                        ),
+                        ElevatedButton(
+                          onPressed: () {
+                            setState(() {
+                              query = '';
+                            });
+                          },
+                          child: const Text('Clear'),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+              ),
+            ),
+          );
+
+          final searchField = find.byType(TextField);
+          var textFieldWidget = tester.widget<TextField>(searchField);
+          expect(textFieldWidget.controller?.text, 'initial');
+
+          // Tap Clear button
+          await tester.tap(find.text('Clear'));
+          await tester.pumpAndSettle();
+
+          textFieldWidget = tester.widget<TextField>(searchField);
+          expect(textFieldWidget.controller?.text, '');
+        },
+      );
+    },
+  );
+
+  group('P1.3 Remediation — Goal 4: Truly Deterministic Restroom Sorting', () {
+    final userPos = Coordinates(latitude: 14.5800, longitude: 121.0500);
+
+    test('14. Sorting primary: distance ascending', () {
+      final rNear = _testRestroom(
+        id: 'b_near',
+        name: 'Zoo Restroom',
+        latitude: 14.5801,
+        longitude: 121.0501,
+      );
+      final rFar = _testRestroom(
+        id: 'a_far',
+        name: 'Airport Restroom',
+        latitude: 14.5900,
+        longitude: 121.0600,
+      );
+
+      final sorted = RestroomSorting.sort([rFar, rNear], userLocation: userPos);
+      expect(sorted[0].id, 'b_near');
+      expect(sorted[1].id, 'a_far');
+    });
+
+    test('15. Sorting tie-break: equal distance sorted by normalized name', () {
+      // Both restrooms at exact same coordinates (distance tie)
+      final rBravo = _testRestroom(
+        id: 'id_2',
+        name: 'Bravo Toilet',
+        latitude: 14.5801,
+        longitude: 121.0501,
+      );
+      final rAlpha = _testRestroom(
+        id: 'id_1',
+        name: 'Alpha Toilet',
+        latitude: 14.5801,
+        longitude: 121.0501,
+      );
+
+      final sorted = RestroomSorting.sort([
+        rBravo,
+        rAlpha,
+      ], userLocation: userPos);
+      expect(sorted[0].id, 'id_1');
+      expect(sorted[1].id, 'id_2');
+    });
+
+    test(
+      '16. Sorting tie-break: duplicate name sorted by stable restroom ID',
+      () {
+        final rSecond = _testRestroom(
+          id: 'id_z',
+          name: 'Same Name',
+          latitude: 14.5801,
+          longitude: 121.0501,
+        );
+        final rFirst = _testRestroom(
+          id: 'id_a',
+          name: 'Same Name',
+          latitude: 14.5801,
+          longitude: 121.0501,
+        );
+
+        final sorted = RestroomSorting.sort([
+          rSecond,
+          rFirst,
+        ], userLocation: userPos);
+        expect(sorted[0].id, 'id_a');
+        expect(sorted[1].id, 'id_z');
+      },
+    );
+
+    test(
+      '17. No location sorting: normalized name ascending then ID ascending',
+      () {
+        final r1 = _testRestroom(id: 'id_b', name: 'Zeta');
+        final r2 = _testRestroom(id: 'id_2', name: 'Alpha');
+        final r3 = _testRestroom(id: 'id_1', name: 'Alpha');
+
+        final sorted = RestroomSorting.sort([r1, r2, r3], userLocation: null);
+        expect(sorted[0].id, 'id_1');
+        expect(sorted[1].id, 'id_2');
+        expect(sorted[2].id, 'id_b');
+      },
+    );
+  });
+
+  group('P1.3 Remediation — Goal 5: Selection Persistence & Invariants', () {
+    test('18. Explicit user selection cleared when filtered out, reset does NOT reselect automatically', () async {
+      final fakeRepo = FakeRestroomRepository();
+      final dataset = [
+        _testRestroom(id: 'rr_1', name: 'Restroom 1', hasBidet: true),
+        _testRestroom(id: 'rr_2', name: 'Restroom 2', hasBidet: false),
+      ];
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: dataset,
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: const Duration(milliseconds: 10),
+      );
+      final bounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+        northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+      );
+      notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+
+      // User selects rr_2
+      notifier.selectRestroom(dataset[1]);
+      expect(notifier.selectedRestroom?.id, 'rr_2');
+      expect(notifier.selectionOrigin, SelectionOrigin.user);
+
+      // Filter bidet only (rr_2 disappears)
+      notifier.setFilters(const DiscoveryFilters(bidetOnly: true));
+      expect(notifier.selectedRestroom, isNull);
+      expect(
+        notifier.selectionOrigin,
+        SelectionOrigin.clearedAfterUserSelection,
+      );
+
+      // Reset filters (rr_2 reappears): selection must STAY null!
+      notifier.resetFilters();
+      expect(notifier.visibleRestrooms.length, 2);
+      expect(notifier.selectedRestroom, isNull);
+      expect(
+        notifier.selectionOrigin,
+        SelectionOrigin.clearedAfterUserSelection,
+      );
+
+      notifier.dispose();
     });
   });
 }

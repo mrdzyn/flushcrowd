@@ -10,8 +10,7 @@ import 'restroom.dart';
 /// - Across categories: AND logic.
 /// - Boolean amenity flags: if true, requires the corresponding amenity (AND).
 /// - [minRating]: requires [restroom.averageRating] >= [minRating].
-/// - [recentlyVerifiedOnly]: requires restroom to have [lastVerifiedAt] within [recentVerificationThreshold]
-///   or [verificationCount] > 0.
+/// - [recentlyVerifiedOnly]: requires restroom to have [lastVerifiedAt] within [recentVerificationThreshold].
 class DiscoveryFilters extends Equatable {
   final Set<AccessType> accessTypes;
   final Set<GenderTypeFilter> genderTypes;
@@ -113,15 +112,12 @@ class DiscoveryFilters extends Equatable {
     // 5. Recently Verified
     if (recentlyVerifiedOnly) {
       if (restroom.lastVerifiedAt == null) {
-        // If no timestamp, check if positive verification count > 0 as fallback
-        if (restroom.verificationCount <= 0) return false;
-      } else {
-        final reference = now ?? DateTime.now();
-        final diff = reference.difference(restroom.lastVerifiedAt!);
-        if (diff > recentVerificationThreshold &&
-            restroom.verificationCount <= 0) {
-          return false;
-        }
+        return false;
+      }
+      final reference = now ?? DateTime.now();
+      final diff = reference.difference(restroom.lastVerifiedAt!);
+      if (diff < Duration.zero || diff > recentVerificationThreshold) {
+        return false;
       }
     }
 

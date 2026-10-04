@@ -9,7 +9,6 @@ import '../../core/theme/app_colors.dart';
 import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
 import '../../core/theme/app_typography.dart';
-import '../../data/services/gis/haversine.dart';
 import '../../domain/models/coordinates.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
@@ -23,6 +22,7 @@ import '../components/map/map_search_bar.dart';
 import '../components/map/permission_banner.dart';
 import '../models/restroom_marker_item.dart';
 import '../state/location_notifier.dart';
+import '../utils/restroom_sorting.dart';
 import '../state/map_discovery_notifier.dart';
 
 /// Primary map discovery screen matching canonical UX mockup Item 2.
@@ -352,7 +352,36 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       );
     }
 
-    if (notifier.isFilteredEmpty) {
+    if (notifier.hasDerivedEmptyResults) {
+      String message;
+      String actionText;
+      VoidCallback onAction;
+
+      switch (notifier.derivedEmptyReason) {
+        case DerivedEmptyReason.search:
+          message = notifier.isDegraded
+              ? 'No search matches (partial results)'
+              : 'No restrooms match your search';
+          actionText = 'Clear search';
+          onAction = () => notifier.resetSearch();
+          break;
+        case DerivedEmptyReason.filters:
+          message = notifier.isDegraded
+              ? 'No filter matches (partial results)'
+              : 'No restrooms match your filters';
+          actionText = 'Reset filters';
+          onAction = () => notifier.resetFilters();
+          break;
+        case DerivedEmptyReason.searchAndFilters:
+        case null:
+          message = notifier.isDegraded
+              ? 'No search & filter matches (partial results)'
+              : 'No restrooms match your search & filters';
+          actionText = 'Clear all';
+          onAction = () => notifier.resetSearchAndFilters();
+          break;
+      }
+
       return Center(
         child: Container(
           margin: const EdgeInsets.only(top: AppSpacing.xs),
@@ -378,17 +407,17 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
               ),
               const SizedBox(width: 6),
               Text(
-                'No matches for current filters',
+                message,
                 style: AppTypography.bodySmall.copyWith(
                   fontWeight: FontWeight.w500,
                   color: AppColors.textSecondary,
                 ),
               ),
-              const SizedBox(width: 6),
+              const SizedBox(width: 8),
               GestureDetector(
-                onTap: () => notifier.resetFilters(),
+                onTap: onAction,
                 child: Text(
-                  'Reset',
+                  actionText,
                   style: AppTypography.bodySmall.copyWith(
                     fontWeight: FontWeight.w700,
                     color: AppColors.primary,
@@ -465,25 +494,23 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     MapDiscoveryNotifier notifier,
     Coordinates? userLocation,
   ) {
-    // Sort results: distance-sorted if userLocation exists, name-sorted otherwise
-    final sortedList = List<Restroom>.from(notifier.visibleRestrooms);
-    if (userLocation != null) {
-      sortedList.sort((a, b) {
-        final distA = Haversine.distanceInMeters(userLocation, a.coordinates);
-        final distB = Haversine.distanceInMeters(userLocation, b.coordinates);
-        return distA.compareTo(distB);
-      });
-    } else {
-      sortedList.sort((a, b) => a.name.compareTo(b.name));
-    }
+    // Sort results deterministically: distance-sorted if userLocation exists, name/ID sorted otherwise
+    final sortedList = RestroomSorting.sort(
+      notifier.visibleRestrooms,
+      userLocation: userLocation,
+    );
 
     NearbyRestroomsSheet.show(
       context,
       restrooms: sortedList,
       userLocation: userLocation,
       selectedRestroomId: notifier.selectedRestroom?.id,
-      isFilteredEmpty: notifier.isFilteredEmpty,
+      isFilteredEmpty: notifier.hasDerivedEmptyResults,
+      derivedEmptyReason: notifier.derivedEmptyReason,
+      isDegraded: notifier.isDegraded,
       onResetFilters: () => notifier.resetFilters(),
+      onResetSearch: () => notifier.resetSearch(),
+      onResetSearchAndFilters: () => notifier.resetSearchAndFilters(),
       onSelectRestroom: (restroom) {
         notifier.selectRestroom(restroom);
         if (_mapController != null) {

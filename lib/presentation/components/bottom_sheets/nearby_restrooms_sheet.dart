@@ -6,6 +6,7 @@ import '../../../core/theme/app_spacing.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../domain/models/coordinates.dart';
 import '../../../domain/models/restroom.dart';
+import '../../state/map_discovery_notifier.dart';
 import '../cards/restroom_summary_card.dart';
 
 /// Modal bottom sheet displaying the list of all currently visible/filtered restrooms.
@@ -14,13 +15,17 @@ import '../cards/restroom_summary_card.dart';
 /// - Uses existing in-memory discovery/filter results with zero additional network reads.
 /// - Deterministic ordering: distance-sorted when [userLocation] is available, name/ID sorted otherwise.
 /// - Selecting a list item synchronizes with canonical map/marker selection and closes sheet.
-/// - Differentiates between geographic emptiness and filter-induced emptiness.
+/// - Differentiates between geographic emptiness, search-only, filter-only, and search+filter emptiness.
 class NearbyRestroomsSheet extends StatelessWidget {
   final List<Restroom> restrooms;
   final Coordinates? userLocation;
   final String? selectedRestroomId;
   final bool isFilteredEmpty;
+  final DerivedEmptyReason? derivedEmptyReason;
+  final bool isDegraded;
   final VoidCallback? onResetFilters;
+  final VoidCallback? onResetSearch;
+  final VoidCallback? onResetSearchAndFilters;
   final ValueChanged<Restroom> onSelectRestroom;
 
   const NearbyRestroomsSheet({
@@ -29,7 +34,11 @@ class NearbyRestroomsSheet extends StatelessWidget {
     this.userLocation,
     this.selectedRestroomId,
     this.isFilteredEmpty = false,
+    this.derivedEmptyReason,
+    this.isDegraded = false,
     this.onResetFilters,
+    this.onResetSearch,
+    this.onResetSearchAndFilters,
     required this.onSelectRestroom,
   });
 
@@ -40,7 +49,11 @@ class NearbyRestroomsSheet extends StatelessWidget {
     Coordinates? userLocation,
     String? selectedRestroomId,
     bool isFilteredEmpty = false,
+    DerivedEmptyReason? derivedEmptyReason,
+    bool isDegraded = false,
     VoidCallback? onResetFilters,
+    VoidCallback? onResetSearch,
+    VoidCallback? onResetSearchAndFilters,
     required ValueChanged<Restroom> onSelectRestroom,
   }) {
     return showModalBottomSheet<void>(
@@ -55,7 +68,11 @@ class NearbyRestroomsSheet extends StatelessWidget {
         userLocation: userLocation,
         selectedRestroomId: selectedRestroomId,
         isFilteredEmpty: isFilteredEmpty,
+        derivedEmptyReason: derivedEmptyReason,
+        isDegraded: isDegraded,
         onResetFilters: onResetFilters,
+        onResetSearch: onResetSearch,
+        onResetSearchAndFilters: onResetSearchAndFilters,
         onSelectRestroom: onSelectRestroom,
       ),
     );
@@ -160,6 +177,29 @@ class NearbyRestroomsSheet extends StatelessWidget {
 
   Widget _buildEmptyState(BuildContext context) {
     if (isFilteredEmpty) {
+      String title;
+      String actionLabel;
+      VoidCallback? onAction;
+
+      switch (derivedEmptyReason) {
+        case DerivedEmptyReason.search:
+          title = 'No restrooms match your search';
+          actionLabel = 'Clear search';
+          onAction = onResetSearch ?? onResetSearchAndFilters;
+          break;
+        case DerivedEmptyReason.filters:
+          title = 'No restrooms match your filters';
+          actionLabel = 'Reset filters';
+          onAction = onResetFilters ?? onResetSearchAndFilters;
+          break;
+        case DerivedEmptyReason.searchAndFilters:
+        case null:
+          title = 'No restrooms match your search & filters';
+          actionLabel = 'Clear search & filters';
+          onAction = onResetSearchAndFilters ?? onResetFilters;
+          break;
+      }
+
       return Center(
         child: Padding(
           padding: const EdgeInsets.all(AppSpacing.xxl),
@@ -172,26 +212,28 @@ class NearbyRestroomsSheet extends StatelessWidget {
                 color: AppColors.textTertiary,
               ),
               const SizedBox(height: AppSpacing.md),
-              const Text(
-                'No restrooms match your filters',
+              Text(
+                title,
                 style: AppTypography.titleMedium,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.xs),
-              const Text(
-                'Try clearing or broadening your search criteria.',
+              Text(
+                isDegraded
+                    ? 'Showing partial results for this area. Try clearing your search criteria.'
+                    : 'Try clearing or broadening your search criteria.',
                 style: AppTypography.bodySmall,
                 textAlign: TextAlign.center,
               ),
               const SizedBox(height: AppSpacing.lg),
-              if (onResetFilters != null)
+              if (onAction != null)
                 TextButton.icon(
                   onPressed: () {
-                    onResetFilters?.call();
+                    onAction?.call();
                     Navigator.of(context).pop();
                   },
                   icon: const Icon(Icons.refresh_rounded, size: 18),
-                  label: const Text('Reset filters'),
+                  label: Text(actionLabel),
                   style: TextButton.styleFrom(
                     foregroundColor: AppColors.primary,
                   ),

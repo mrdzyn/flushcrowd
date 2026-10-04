@@ -21,12 +21,14 @@ class RestroomPreviewSheet extends StatelessWidget {
   final Restroom restroom;
   final Coordinates? userLocation;
   final VoidCallback? onDirectionsTap;
+  final DateTime? clock;
 
   const RestroomPreviewSheet({
     super.key,
     required this.restroom,
     this.userLocation,
     this.onDirectionsTap,
+    this.clock,
   });
 
   /// Static helper to display the sheet modal.
@@ -35,6 +37,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     required Restroom restroom,
     Coordinates? userLocation,
     VoidCallback? onDirectionsTap,
+    DateTime? clock,
   }) {
     return showModalBottomSheet<void>(
       context: context,
@@ -47,6 +50,7 @@ class RestroomPreviewSheet extends StatelessWidget {
         restroom: restroom,
         userLocation: userLocation,
         onDirectionsTap: onDirectionsTap,
+        clock: clock,
       ),
     );
   }
@@ -364,18 +368,30 @@ class RestroomPreviewSheet extends StatelessWidget {
 
   String _formatVerificationInfo() {
     if (restroom.lastVerifiedAt != null) {
-      final days = DateTime.now().difference(restroom.lastVerifiedAt!).inDays;
+      final now = clock ?? DateTime.now();
+      final diff = now.difference(restroom.lastVerifiedAt!);
+      final days = diff.inDays;
+
       if (days <= 0) {
         return 'Verified today by community';
       } else if (days == 1) {
         return 'Verified yesterday';
       } else if (days < 30) {
         return 'Verified $days days ago';
+      } else if (days < 365) {
+        final months = (days / 30).floor();
+        return months <= 1
+            ? 'Verified 1 month ago'
+            : 'Verified $months months ago';
       } else {
-        return 'Verified recently';
+        final years = (days / 365).floor();
+        return years <= 1 ? 'Verified 1 year ago' : 'Verified $years years ago';
       }
     }
-    return 'Verified by community (${restroom.verificationCount})';
+    if (restroom.verificationCount > 0) {
+      return 'Previously verified by community (${restroom.verificationCount})';
+    }
+    return 'Unverified';
   }
 
   List<Widget> _buildAmenityPills() {
