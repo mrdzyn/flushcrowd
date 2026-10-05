@@ -38,6 +38,27 @@ class GisFailure extends Failure {
   const GisFailure(super.message, [super.code]);
 }
 
+class InvalidRadiusFailure extends GisFailure {
+  const InvalidRadiusFailure([
+    super.message =
+        'The requested search radius is invalid or exceeds maximum limit.',
+  ]);
+}
+
+class ViewportTooLargeFailure extends GisFailure {
+  const ViewportTooLargeFailure([
+    super.message =
+        'The visible area is too large. Zoom in to discover restrooms.',
+  ]);
+}
+
+class RepositoryFailure extends Failure {
+  const RepositoryFailure([
+    super.message = 'Failed to load restroom data.',
+    super.code,
+  ]);
+}
+
 class AuthFailure extends Failure {
   const AuthFailure(super.message, [super.code]);
 }

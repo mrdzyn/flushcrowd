@@ -142,7 +142,7 @@ void main() {
         expect(find.text('4.6'), findsOneWidget);
         expect(find.text('(128)'), findsOneWidget);
         expect(find.textContaining('3F ·'), findsOneWidget);
-        expect(find.text('Open'), findsOneWidget);
+        expect(find.text('Open'), findsNothing);
       },
     );
 

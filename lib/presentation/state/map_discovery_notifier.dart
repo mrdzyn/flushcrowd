@@ -1,81 +1,579 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
+import '../../core/constants/app_constants.dart';
+import '../../core/errors/exceptions.dart';
 import '../../domain/models/coordinates.dart';
+import '../../domain/models/discovery_filters.dart';
+import '../../domain/models/discovery_result.dart';
+import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
 import '../../domain/repositories/restroom_repository.dart';
+import '../models/restroom_marker_item.dart';
+import 'viewport_query_descriptor.dart';
 
-enum DiscoveryStatus { initial, loading, loaded, empty, error }
+/// Discovery lifecycle status for map querying.
+enum DiscoveryStatus {
+  /// Initial idle state before first discovery query.
+  initial,
 
-/// State notifier for map restroom discovery.
+  /// Actively querying Firestore for nearby or viewport facilities.
+  loading,
+
+  /// Successfully discovered results with 100% geometric and candidate completeness.
+  loadedComplete,
+
+  /// Discovered results, but results are partial/degraded due to a safety cap
+  /// (e.g. rangeCapExceeded, perRangeLimitExceeded, candidateLimitExceeded, resultCapExceeded).
+  loadedDegraded,
+
+  /// Discovered zero facilities in the visible area.
+  empty,
+
+  /// Map camera zoom is below minimum or viewport is oversized; query intentionally suppressed.
+  suppressed,
+
+  /// Discovery operation encountered an unhandled repository error.
+  error,
+}
+
+/// Tracks the origin and history of restroom selection.
+enum SelectionOrigin {
+  /// No selection has been made yet.
+  none,
+
+  /// Selection was automatically set (e.g. initial auto-selection of nearest restroom).
+  automatic,
+
+  /// User explicitly tapped/selected a restroom.
+  user,
+
+  /// User had explicitly selected a restroom, but it subsequently vanished from query results.
+  /// Sticky state preventing automatic fallback selection from resuming.
+  clearedAfterUserSelection,
+}
+
+/// Reason why [visibleRestrooms] is empty despite underlying discovery having facilities.
+enum DerivedEmptyReason {
+  /// Both search query and filters are active and together produced 0 visible matches.
+  searchAndFilters,
+
+  /// Search query is active (filters inactive) and produced 0 visible matches.
+  search,
+
+  /// Filters are active (search query empty) and produced 0 visible matches.
+  filters,
+}
+
+/// Ephemeral runtime snapshot of the last successfully committed viewport query.
+/// Used to restore committed state when returning to an equivalent viewport without
+/// issuing redundant Firestore reads.
+class _LastCommittedViewportState {
+  final ViewportQueryDescriptor descriptor;
+  final List<Restroom> restrooms;
+  final DiscoveryStatus status;
+  final bool isComplete;
+  final DiscoveryCompletenessReason completenessReason;
+  final int rangeCount;
+  final int candidateCount;
+
+  const _LastCommittedViewportState({
+    required this.descriptor,
+    required this.restrooms,
+    required this.status,
+    required this.isComplete,
+    required this.completenessReason,
+    required this.rangeCount,
+    required this.candidateCount,
+  });
+}
+
+/// Primary application state notifier for map restroom discovery.
+///
+/// Implements P1.2 Query Orchestration:
+/// - Single owner of camera-idle debounce (configurable, default 400ms)
+/// - Viewport query equivalence / quantization to prevent duplicate reads
+/// - Monotonically increasing request generation token for stale/superseded response protection
+/// - Zoom/oversized viewport suppression (zoom < minViewportZoom or ViewportTooLargeException)
+/// - Explicit propagation of DiscoveryResult completeness metadata
+/// - Restroom marker mapping with stable identity and selection state
+///
+/// Implements P1.3 Filter & Visible Results Derivation:
+/// - Maintains strict separation between source [_discoveredRestrooms] and derived [visibleRestrooms]
+/// - Applies local search and [DiscoveryFilters] without creating independent Firestore queries
+/// - Safely clears selection if active filters or search filter out the selected facility
+/// - Distinguishes between geographic emptiness ([isEmpty]) and filtered emptiness ([isFilteredEmpty])
 class MapDiscoveryNotifier extends ChangeNotifier {
-  final RestroomRepository _restroomRepository;
+  final RestroomRepository restroomRepository;
+  final Duration debounceDuration;
 
   DiscoveryStatus _status = DiscoveryStatus.initial;
-  List<Restroom> _nearbyRestrooms = [];
+  List<Restroom> _discoveredRestrooms = [];
   Restroom? _selectedRestroom;
   String? _errorMessage;
   String _searchQuery = '';
+  DiscoveryFilters _filters = DiscoveryFilters.empty;
 
-  MapDiscoveryNotifier({required this._restroomRepository});
+  // Metadata propagation
+  bool _isComplete = true;
+  DiscoveryCompletenessReason _completenessReason =
+      DiscoveryCompletenessReason.complete;
+  int _rangeCount = 0;
+  int _candidateCount = 0;
+
+  // Ephemeral query orchestration state
+  Timer? _debounceTimer;
+  int _activeRequestToken = 0;
+  ViewportQueryDescriptor? _lastExecutedDescriptor;
+  ViewportQueryDescriptor? _lastAttemptedDescriptor;
+  _LastCommittedViewportState? _lastCommittedViewportState;
+  bool _isDisposed = false;
+  SelectionOrigin _selectionOrigin = SelectionOrigin.none;
+
+  MapDiscoveryNotifier({
+    required this.restroomRepository,
+    this.debounceDuration = AppConstants.cameraIdleDebounceDuration,
+  });
 
   DiscoveryStatus get status => _status;
-  List<Restroom> get nearbyRestrooms {
-    if (_searchQuery.trim().isEmpty) {
-      return _nearbyRestrooms;
-    }
-    final q = _searchQuery.toLowerCase();
-    return _nearbyRestrooms.where((r) {
-      return r.name.toLowerCase().contains(q) ||
-          (r.buildingName?.toLowerCase().contains(q) ?? false) ||
-          (r.landmark?.toLowerCase().contains(q) ?? false);
-    }).toList();
-  }
-
+  List<Restroom> get discoveredRestrooms => _discoveredRestrooms;
   Restroom? get selectedRestroom => _selectedRestroom;
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
+  DiscoveryFilters get filters => _filters;
+
+  bool get isComplete => _isComplete;
+  DiscoveryCompletenessReason get completenessReason => _completenessReason;
+  int get rangeCount => _rangeCount;
+  int get candidateCount => _candidateCount;
+  ViewportQueryDescriptor? get lastExecutedDescriptor =>
+      _lastExecutedDescriptor;
+  ViewportQueryDescriptor? get lastAttemptedDescriptor =>
+      _lastAttemptedDescriptor;
+  bool get canRetryViewportQuery => _lastAttemptedDescriptor != null;
+  SelectionOrigin get selectionOrigin => _selectionOrigin;
+  bool get selectionIsUserInitiated => _selectionOrigin == SelectionOrigin.user;
 
   bool get isLoading => _status == DiscoveryStatus.loading;
   bool get isEmpty => _status == DiscoveryStatus.empty;
   bool get hasError => _status == DiscoveryStatus.error;
+  bool get isSuppressed => _status == DiscoveryStatus.suppressed;
+  bool get isDegraded => _status == DiscoveryStatus.loadedDegraded;
 
+  /// Visible restrooms derived from source discovered results by applying local
+  /// text search and active [DiscoveryFilters].
+  ///
+  /// Zero-read invariant: filters and searches operate purely in-memory on the
+  /// already bounded discovery result set without triggering any Firestore queries.
+  List<Restroom> get visibleRestrooms {
+    List<Restroom> results = _discoveredRestrooms;
+
+    // 1. Apply local search query if present
+    if (_searchQuery.trim().isNotEmpty) {
+      final q = _searchQuery.toLowerCase().trim();
+      results = results.where((r) {
+        return r.name.toLowerCase().contains(q) ||
+            (r.buildingName?.toLowerCase().contains(q) ?? false) ||
+            (r.buildingSection?.toLowerCase().contains(q) ?? false) ||
+            (r.landmark?.toLowerCase().contains(q) ?? false) ||
+            (r.floor?.toLowerCase().contains(q) ?? false) ||
+            (r.unitOrArea?.toLowerCase().contains(q) ?? false) ||
+            (r.directionsNote?.toLowerCase().contains(q) ?? false);
+      }).toList();
+    }
+
+    // 2. Apply local filters if active
+    if (_filters.isActive) {
+      results = results.where((r) => _filters.matches(r)).toList();
+    }
+
+    return results;
+  }
+
+  /// Backward-compatible alias for [visibleRestrooms].
+  List<Restroom> get nearbyRestrooms => visibleRestrooms;
+
+  /// Presentation marker items derived from current visible restrooms and selection state.
+  List<RestroomMarkerItem> get markerItems {
+    final selectedId = _selectedRestroom?.id;
+    return visibleRestrooms.map((r) {
+      return RestroomMarkerItem.fromRestroom(r, isSelected: r.id == selectedId);
+    }).toList();
+  }
+
+  /// Whether a non-empty search query is currently active.
+  bool get hasActiveSearch => _searchQuery.trim().isNotEmpty;
+
+  /// Whether non-empty discovery filters are currently active.
+  bool get hasActiveFilters => _filters.isActive;
+
+  /// True when discovery actually returned facilities, but active local filters or search
+  /// hide all of them from [visibleRestrooms].
+  bool get hasDerivedEmptyResults =>
+      _discoveredRestrooms.isNotEmpty && visibleRestrooms.isEmpty;
+
+  /// Backward-compatible alias for [hasDerivedEmptyResults].
+  bool get isFilteredEmpty => hasDerivedEmptyResults;
+
+  /// Specific reason why visible results are empty when [hasDerivedEmptyResults] is true.
+  DerivedEmptyReason? get derivedEmptyReason {
+    if (!hasDerivedEmptyResults) return null;
+    if (hasActiveSearch && hasActiveFilters) {
+      return DerivedEmptyReason.searchAndFilters;
+    }
+    if (hasActiveSearch) {
+      return DerivedEmptyReason.search;
+    }
+    if (hasActiveFilters) {
+      return DerivedEmptyReason.filters;
+    }
+    return null;
+  }
+
+  /// Sets in-memory search query and cleans up selection if filtered out.
   void setSearchQuery(String query) {
+    if (_searchQuery == query) return;
     _searchQuery = query;
+    _syncSelectionWithVisibleResults();
     notifyListeners();
   }
 
+  /// Resets in-memory search query with zero network reads.
+  void resetSearch() {
+    if (_searchQuery.isEmpty) return;
+    _searchQuery = '';
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Updates active local filters and cleans up selection if filtered out.
+  /// Causes ZERO network reads.
+  void setFilters(DiscoveryFilters newFilters) {
+    if (_filters == newFilters) return;
+    _filters = newFilters;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Resets active filters to [DiscoveryFilters.empty] with zero network reads.
+  void resetFilters() {
+    if (!_filters.isActive) return;
+    _filters = DiscoveryFilters.empty;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Resets both search query and filters with zero network reads.
+  void resetSearchAndFilters() {
+    if (_searchQuery.isEmpty && !_filters.isActive) return;
+    _searchQuery = '';
+    _filters = DiscoveryFilters.empty;
+    _syncSelectionWithVisibleResults();
+    notifyListeners();
+  }
+
+  /// Synchronizes [_selectedRestroom] with newly derived [visibleRestrooms]:
+  /// If the currently selected restroom is filtered out by search/filters,
+  /// clears selection safely without arbitrarily jumping to another restroom.
+  void _syncSelectionWithVisibleResults() {
+    if (_selectedRestroom == null) return;
+    final isStillVisible = visibleRestrooms.any(
+      (r) => r.id == _selectedRestroom!.id,
+    );
+    if (!isStillVisible) {
+      _selectedRestroom = null;
+      if (_selectionOrigin == SelectionOrigin.user) {
+        _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
+      }
+    }
+  }
+
+  /// Sets selected restroom as an explicit user-initiated action.
   void selectRestroom(Restroom? restroom) {
     _selectedRestroom = restroom;
+    _selectionOrigin = restroom != null
+        ? SelectionOrigin.user
+        : SelectionOrigin.clearedAfterUserSelection;
     notifyListeners();
   }
 
-  Future<void> loadNearbyRestrooms(
-    Coordinates center, {
-    double radiusMeters = 1500.0,
+  /// Sets selected restroom programmatically (e.g. initial auto-selection).
+  void autoSelectRestroom(Restroom? restroom) {
+    _selectedRestroom = restroom;
+    _selectionOrigin = restroom != null
+        ? SelectionOrigin.automatic
+        : SelectionOrigin.none;
+    notifyListeners();
+  }
+
+  /// Explicitly invalidates any in-flight asynchronous query generation.
+  /// Any later completions holding an older token will be safely discarded.
+  void _invalidateActiveRequest() {
+    _activeRequestToken++;
+  }
+
+  /// Called when the map camera begins moving.
+  /// Cancels any pending debounce timer and immediately invalidates any in-flight
+  /// query so that stale responses cannot commit to the moved map.
+  void onCameraMoveStarted() {
+    _cancelDebounce();
+    _invalidateActiveRequest();
+  }
+
+  /// Called during camera movement. Explicitly does NOT trigger any queries.
+  void onCameraMove() {
+    // Zero-query guard: camera movement frame updates never query Firestore.
+  }
+
+  /// Called when map camera becomes idle at a given [bounds] and [zoom].
+  ///
+  /// Orchestrates debounce, zoom validation, query equivalence, and execution.
+  void onCameraIdle({required GeoBoundingBox bounds, required double zoom}) {
+    _cancelDebounce();
+
+    if (_isDisposed) return;
+
+    // Immediately handle zoom suppression synchronously so in-flight requests are
+    // invalidated without waiting for debounce expiration.
+    if (zoom < AppConstants.minViewportZoom) {
+      _invalidateActiveRequest();
+      _status = DiscoveryStatus.suppressed;
+      _errorMessage = null;
+      notifyListeners();
+      return;
+    }
+
+    _debounceTimer = Timer(debounceDuration, () {
+      if (_isDisposed) return;
+      _orchestrateViewportQuery(bounds: bounds, zoom: zoom);
+    });
+  }
+
+  /// Orchestrates the actual viewport query after debounce.
+  Future<void> _orchestrateViewportQuery({
+    required GeoBoundingBox bounds,
+    required double zoom,
+    bool forceRefresh = false,
   }) async {
+    // 1. Zoom threshold check: below minViewportZoom, suppress discovery
+    // and invalidate any prior in-flight request so it cannot commit later.
+    if (zoom < AppConstants.minViewportZoom) {
+      _invalidateActiveRequest();
+      _status = DiscoveryStatus.suppressed;
+      _errorMessage = null;
+      notifyListeners();
+      return;
+    }
+
+    final descriptor = ViewportQueryDescriptor(bounds: bounds, zoom: zoom);
+    _lastAttemptedDescriptor = descriptor;
+
+    // 2. Query equivalence check: avoid redundant query if bounds/zoom are effectively identical
+    if (!forceRefresh &&
+        _lastCommittedViewportState != null &&
+        _lastCommittedViewportState!.descriptor.isEffectivelyEquivalentTo(
+          descriptor,
+        )) {
+      _restoreLastCommittedViewportState(_lastCommittedViewportState!);
+      return;
+    }
+
+    // 3. Increment request token for stale response protection
+    final requestToken = ++_activeRequestToken;
+
     _status = DiscoveryStatus.loading;
     _errorMessage = null;
     notifyListeners();
 
     try {
-      final restrooms = await _restroomRepository.getNearbyRestrooms(
+      final result = await restroomRepository.getViewportRestrooms(bounds);
+
+      // 4. Stale response check: reject if a newer request was issued,
+      // request was invalidated (e.g. by camera movement or suppression), or notifier disposed
+      if (_isDisposed || requestToken != _activeRequestToken) {
+        return;
+      }
+
+      _lastExecutedDescriptor = descriptor;
+      _commitDiscoveryResult(result, descriptor: descriptor);
+    } on ViewportTooLargeException {
+      if (_isDisposed || requestToken != _activeRequestToken) return;
+      // ViewportTooLargeException is handled as intentional query suppression
+      _invalidateActiveRequest();
+      _status = DiscoveryStatus.suppressed;
+      _errorMessage = null;
+      notifyListeners();
+    } catch (e) {
+      if (_isDisposed || requestToken != _activeRequestToken) return;
+      _status = DiscoveryStatus.error;
+      _errorMessage = e.toString();
+      notifyListeners();
+    }
+  }
+
+  /// Loads nearby restrooms explicitly (e.g. for non-map usage or retry).
+  Future<void> loadNearbyRestrooms(
+    Coordinates center, {
+    double radiusMeters = AppConstants.defaultSearchRadiusMeters,
+    bool forceRefresh = false,
+  }) async {
+    _cancelDebounce();
+
+    final requestToken = ++_activeRequestToken;
+
+    _status = DiscoveryStatus.loading;
+    _errorMessage = null;
+    notifyListeners();
+
+    try {
+      final result = await restroomRepository.getNearbyRestrooms(
         center,
         radiusMeters: radiusMeters,
       );
 
-      _nearbyRestrooms = restrooms;
-      if (restrooms.isEmpty) {
-        _status = DiscoveryStatus.empty;
-        _selectedRestroom = null;
-      } else {
-        _status = DiscoveryStatus.loaded;
-        // Default select the nearest restroom
-        _selectedRestroom ??= restrooms.first;
+      if (_isDisposed || requestToken != _activeRequestToken) {
+        return;
       }
+
+      _commitDiscoveryResult(result);
     } catch (e) {
+      if (_isDisposed || requestToken != _activeRequestToken) return;
       _status = DiscoveryStatus.error;
       _errorMessage = e.toString();
+      notifyListeners();
     }
+  }
+
+  /// Explicit refresh hook for a specified viewport.
+  Future<void> refreshCurrentViewport({
+    required GeoBoundingBox bounds,
+    required double zoom,
+  }) async {
+    _cancelDebounce();
+    await _orchestrateViewportQuery(
+      bounds: bounds,
+      zoom: zoom,
+      forceRefresh: true,
+    );
+  }
+
+  /// Retries the most recently attempted viewport query if available.
+  Future<void> retryLastViewportQuery() async {
+    final descriptor = _lastAttemptedDescriptor;
+    if (descriptor == null) return;
+    await refreshCurrentViewport(
+      bounds: descriptor.bounds,
+      zoom: descriptor.zoom,
+    );
+  }
+
+  /// Restores the ephemeral snapshot of the last successfully committed viewport state.
+  void _restoreLastCommittedViewportState(
+    _LastCommittedViewportState snapshot,
+  ) {
+    _discoveredRestrooms = snapshot.restrooms;
+    _isComplete = snapshot.isComplete;
+    _completenessReason = snapshot.completenessReason;
+    _rangeCount = snapshot.rangeCount;
+    _candidateCount = snapshot.candidateCount;
+    _status = snapshot.status;
+    _errorMessage = null;
+
+    _applySelectionLifecycle(snapshot.restrooms);
     notifyListeners();
+  }
+
+  /// Commits a successful discovery result into notifier state and caches
+  /// the committed snapshot if a viewport descriptor is provided.
+  void _commitDiscoveryResult(
+    DiscoveryResult<Restroom> result, {
+    ViewportQueryDescriptor? descriptor,
+  }) {
+    _discoveredRestrooms = result.items;
+    _isComplete = result.isComplete;
+    _completenessReason = result.completenessReason;
+    _rangeCount = result.rangeCount;
+    _candidateCount = result.candidateCount;
+
+    if (result.items.isEmpty) {
+      _status = DiscoveryStatus.empty;
+    } else {
+      _status = result.isComplete
+          ? DiscoveryStatus.loadedComplete
+          : DiscoveryStatus.loadedDegraded;
+    }
+
+    _applySelectionLifecycle(result.items);
+
+    if (descriptor != null) {
+      _lastCommittedViewportState = _LastCommittedViewportState(
+        descriptor: descriptor,
+        restrooms: result.items,
+        status: _status,
+        isComplete: _isComplete,
+        completenessReason: _completenessReason,
+        rangeCount: _rangeCount,
+        candidateCount: _candidateCount,
+      );
+    }
+
+    notifyListeners();
+  }
+
+  /// Enforces selection invariants across new or restored restroom results:
+  /// 1. If currently selected restroom survives in results: preserve it (updating reference).
+  /// 2. If user-selected restroom no longer exists: clear selection to null and record
+  ///    [SelectionOrigin.clearedAfterUserSelection], so automatic selection does not resume.
+  /// 3. If automatic selection was in effect and disappeared: clear selection (or re-select first if none).
+  /// 4. Auto-select first result ONLY when selection has never been user-initiated
+  ///    (_selectionOrigin == SelectionOrigin.none || _selectionOrigin == SelectionOrigin.automatic)
+  ///    and _selectedRestroom is null.
+  void _applySelectionLifecycle(List<Restroom> items) {
+    if (items.isEmpty) {
+      _selectedRestroom = null;
+      if (_selectionOrigin == SelectionOrigin.user) {
+        _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
+      }
+      return;
+    }
+
+    final visible = visibleRestrooms;
+
+    if (_selectedRestroom != null) {
+      final matchingIndex = visible.indexWhere(
+        (r) => r.id == _selectedRestroom!.id,
+      );
+      if (matchingIndex != -1) {
+        _selectedRestroom = visible[matchingIndex];
+      } else {
+        // Vanished or filtered out restroom
+        _selectedRestroom = null;
+        if (_selectionOrigin == SelectionOrigin.user) {
+          _selectionOrigin = SelectionOrigin.clearedAfterUserSelection;
+        } else if (_selectionOrigin == SelectionOrigin.automatic) {
+          _selectedRestroom = visible.isNotEmpty ? visible.first : null;
+        }
+      }
+    } else if (_selectionOrigin == SelectionOrigin.none ||
+        _selectionOrigin == SelectionOrigin.automatic) {
+      // Initial automatic selection if visible facilities exist
+      if (visible.isNotEmpty) {
+        _selectedRestroom = visible.first;
+        _selectionOrigin = SelectionOrigin.automatic;
+      }
+    }
+  }
+
+  void _cancelDebounce() {
+    _debounceTimer?.cancel();
+    _debounceTimer = null;
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    _cancelDebounce();
+    super.dispose();
   }
 }

@@ -40,6 +40,18 @@ class InvalidCoordinatesException extends GisException {
   const InvalidCoordinatesException(super.message);
 }
 
+class InvalidRadiusException extends GisException {
+  const InvalidRadiusException(super.message);
+}
+
+class ViewportTooLargeException extends GisException {
+  const ViewportTooLargeException(super.message);
+}
+
+class RepositoryException extends AppException {
+  const RepositoryException(super.message, [super.code]);
+}
+
 class AuthException extends AppException {
   const AuthException(super.message, [super.code]);
 }

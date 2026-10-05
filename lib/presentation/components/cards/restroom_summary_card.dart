@@ -5,6 +5,7 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/services/gis/haversine.dart';
 import '../../../domain/models/coordinates.dart';
+import '../../../domain/models/enums.dart';
 import '../../../domain/models/restroom.dart';
 import '../chips/status_chip.dart';
 
@@ -119,9 +120,14 @@ class RestroomSummaryCard extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                // Open status badge
-                const StatusChip(label: 'Open', type: StatusChipType.success),
+                if (restroom.status ==
+                    RestroomStatus.temporarilyUnavailable) ...[
+                  const SizedBox(width: 8),
+                  const StatusChip(
+                    label: 'Unavailable',
+                    type: StatusChipType.warning,
+                  ),
+                ],
               ],
             ),
           ),

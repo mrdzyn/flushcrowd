@@ -2,122 +2,206 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-**Last updated:** 2026-09-30  
+**Last updated:** 2026-10-05  
 **Project:** LooRadar — global community-powered restroom finder  
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
-**Current phase:** Phase 0 — Foundation + UI shell/design system  
-**Current branch:** `phase-0/foundation`  
-**Current PR:** [#2](https://github.com/mrdzyn/looradar/pull/2) — `feat: establish LooRadar Phase 0 application foundation`  
-**Audited implementation head:** `cbdbae417505c3ffd8dece347f37975b67dc3b45`  
-**Implementation status:** Passed Exact-Head Re-Audit (0 BLOCKER / 0 MAJOR findings; ready for merge decision)
+**Current phase:** Phase 1 — Map Discovery  
+**Current milestone:** P1.4 — final remediation complete; final independent Phase 1 exact-head re-audit pending  
+**Current branch:** `phase-1/map-discovery`  
+**Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
+**Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
+**Implementation status:** P1.1 audited (PASS); P1.2 audited (PASS); P1.3 audited (PASS); P1.4 hardening, platform builds, accessibility polish, CI modernization, bounds documentation, error overlay precedence, and failure resilience complete; ready for final independent Phase 1 / P1.4 exact-head audit.
 
 ## Current objective
 
-Establish the production-oriented Flutter foundation, architecture boundaries, design system tokens, UI shell, GIS utilities, Firebase/Maps boundaries, and CI baseline ready for Phase 1 Map Discovery.
+Implement production-quality, bounded, cost-conscious map discovery on top of the merged Phase 0 foundation without weakening privacy/security or prematurely expanding into later product phases.
+
+The active specification is:
+
+- `docs/08-phase-1-map-discovery.md`
 
 ## Locked decisions
 
 - Product name: **LooRadar**.
-- Global-first, mobile-first product.
-- UI/UX-first delivery approach.
+- Global-first, mobile-first, UI/UX-first product.
 - Flutter for iOS and Android.
-- Google Maps SDK for map visualization.
+- Google Maps SDK for visualization.
 - Firebase Anonymous Authentication; no mandatory traditional login in V1.
-- Cloud Firestore + geohashes for MVP GIS/nearby queries.
-- Firebase App Check and restrictive Firestore rules are part of the security baseline.
-- Foreground location only in V1.
-- No persisted user movement/location history.
-- External navigation handoff instead of building routing.
-- Indoor location metadata (building/floor/wing/landmark/directions) is first-class.
-- Photos deferred until after the core MVP workflow is proven.
-- Optional donation/support model; no intrusive advertising planned for initial release.
-- Low infrastructure cost and privacy-by-default are architectural constraints.
+- Cloud Firestore + geohash candidate retrieval for MVP discovery.
+- Exact Haversine filtering after geohash candidate retrieval.
+- Foreground location only; no background location or persisted movement history.
+- Discovery reads only sanitized public restroom data.
+- External navigation handoff; no built-in routing.
+- Avoid Places, Routes, Directions, Street View, and other unnecessary paid APIs.
+- Low Firestore/Maps cost is an architectural constraint.
+- Canonical UI reference remains `docs/assets/looradar-mobile-ux-reference.png`.
 
 ## Canonical references
 
-Read these before implementation:
+Read before Phase 1 implementation:
 
-- `AGENTS.md` — multi-agent operating contract.
-- `docs/README.md` — documentation index and current decisions.
-- `docs/00-product-vision.md` — vision and product principles.
-- `docs/01-architecture.md` — technical/GIS architecture and cost controls.
-- `docs/02-data-model.md` — initial Firestore/domain model.
-- `docs/03-privacy-security.md` — privacy and security baseline.
-- `docs/04-mvp-scope.md` — MVP boundaries and acceptance criteria.
-- `docs/05-phase-0-plan.md` — Phase 0 implementation plan and definition of done.
-- `docs/06-ui-ux-reference.md` — UX rules and validation gates.
-- `docs/07-environment-setup.md` — secrets, platform keys, App Check, and budget setup.
-- `docs/assets/looradar-mobile-ux-reference.png` — **canonical visual reference** for user-facing implementation.
+1. `AGENTS.md`
+2. `docs/STATUS.md`
+3. `docs/08-phase-1-map-discovery.md`
+4. `docs/06-ui-ux-reference.md`
+5. `docs/01-architecture.md`
+6. `docs/02-data-model.md`
+7. `docs/03-privacy-security.md`
+8. `docs/07-environment-setup.md`
 
-## Completed
+## Phase 0 baseline — merged
 
-- Scaffolded Flutter iOS and Android application with package identifier `com.looradar.looradar`.
-- Designed clean layered architecture: Presentation -> State -> Domain -> Data Repositories -> Firebase/GIS Adapters.
-- Established design tokens (`AppColors`, `AppTypography`, `AppSpacing`, `AppRadii`, `AppTheme`) matching canonical visual reference.
-- Built reusable UI components: `LooPrimaryButton`, `LooSecondaryButton`, `AmenityChip`, `StatusChip`, `RestroomSummaryCard`, `MapSearchBar`, `MapRecenterButton`, `PermissionBanner`, `LooBottomNavBar`, `LooLoadingIndicator`, `EmptyStateView`, `ErrorStateView`.
-- Implemented UI Shell: `SplashScreen` (Mockup 1), `MainShellScreen` (5-tab shell), `MapDiscoveryScreen` (Mockup 2).
-- Built typed domain models: `Restroom`, `Rating`, `Verification`, `RestroomReport`, `Coordinates`, enums with full indoor metadata and zero contributor UIDs in public domain models.
-- Implemented clean Firestore serialization boundary with native `Timestamp` adapters (`FirestoreCodec`, `RestroomFirestoreCodec`, `RatingFirestoreCodec`, `RestroomReportFirestoreCodec`, `VerificationFirestoreCodec`) preserving domain layer independence from Firebase.
-- Implemented automated Firestore Security Rules test harness with 20 emulator tests (`rules_tests/test/firestore_rules.test.js`) testing public reads, private data protection, contribution auth, UID exclusion, aggregate protection, coordinate validation, and deterministic rating ownership.
-- Removed premature production Firestore spatial querying; explicitly deferred spatial methods (`getNearbyRestrooms`, `getViewportRestrooms`) in `FirestoreRestroomRepository` via `UnsupportedError` to prevent partial or un-debounced spatial reads before Phase 1.
-- Documented single-cell prefix calculation in `GeohashService.getCandidatePrefixes` and deferred full 9-neighbor multi-cell candidate expansion to Phase 1.
-- Built Firebase Anonymous Authentication boundary (`AuthRepository`, `FirebaseAuthRepositoryImpl`, `InMemoryAuthRepository`).
-- Configured Cloud Firestore repository boundary (`FirestoreRestroomRepository`, `InMemoryRestroomRepository`).
-- Created Cloud Firestore Security Rules (`firestore.rules`) and indexes (`firestore.indexes.json`) enforcing public/private separation, deterministic `ratingOwnership/{restroomId}_{auth.uid}`, aggregate protections, and coordinate validations.
-- Implemented Firebase App Check boundary (`FirebaseAppCheckService`) with debug provider in development and Play Integrity / App Attest in production.
-- Configured foreground location permissions (`LocationRepositoryImpl`, `LocationNotifier`, `PermissionBanner`) with graceful manual exploration fallback.
-- Added GitHub Actions CI (`.github/workflows/ci.yml`) for formatting, analysis, Flutter tests, and automated Firestore Security Rules emulator tests.
-- Documented environment, secrets, budget alerts, cost controls, and Android production signing safeguards in `docs/07-environment-setup.md`.
-- Expanded test suite: 46 Flutter tests passing and 20 Firestore rules tests passing.
+PR #2 was squash-merged into `main` at:
 
-## Active work
+`307baff1145287218a1056cee72295ec93de1624`
 
-PR #2 substantive exact-head re-audit passed at implementation head `cbdbae417505c3ffd8dece347f37975b67dc3b45` with 0 BLOCKER and 0 MAJOR findings. Final bookkeeping cleanup applied. Ready for merge decision.
+Baseline capabilities include:
 
-## Not started / later phases (Phase 1 Scope Intentionally Deferred)
+- Flutter iOS/Android scaffold and layered architecture;
+- design tokens and map-first UI shell;
+- pure Dart domain models;
+- Firestore Timestamp codec boundary;
+- Firebase Anonymous Auth and App Check boundaries;
+- restrictive Firestore rules plus emulator tests;
+- foreground location handling;
+- in-memory/demo repositories;
+- GIS primitives and Haversine utilities;
+- CI for formatting, analysis, Flutter tests, and Firestore Rules tests.
 
-**Phase 1 — Map Discovery:**
-- Production geohash multi-cell candidate expansion (9-cell neighbor algorithm)
-- Production Firestore spatial queries (`getNearbyRestrooms`, `getViewportRestrooms`)
-- Viewport query debounce (300-500ms idle window)
-- Live restroom map markers & marker clustering
-- Preview card carousel / bottom sheet expansion
-- Filter bottom sheet & query filters
+Last validated Phase 0 evidence before merge:
 
-**Phase 2 — Add Restroom:** adjustable map pin, location/building/floor/landmark metadata, amenities/access fields, duplicate warning, anonymous submission.
+- `flutter analyze` — PASS
+- `flutter test` — PASS (46/46)
+- Firestore Rules emulator tests — PASS (20/20)
+- Android debug build — PASS
+- iOS config/no-codesign build — PASS
 
-**Phase 3 — Ratings + Verification + Reporting:** community quality signals and freshness workflows.
+## Active Phase 1 scope
 
-**Phase 4 — Moderation / Trust / Production Hardening:** abuse controls, stronger aggregation/moderation workflows, production readiness.
+### P1.0 — Specification and task contract
 
-**Phase 5 — Growth features:** photos, broader/open-data integrations, and other validated enhancements.
+- Production discovery behavior and limits documented in `docs/08-phase-1-map-discovery.md`.
 
-## Current blockers / human actions
+### P1.1 — GIS + Firestore discovery engine (AUDITED & APPROVED)
 
-1. **Google Maps Platform API Keys:** Create platform-restricted keys for Android (`com.looradar.looradar` + SHA-1) and iOS (`com.looradar.looradar`) as documented in `docs/07-environment-setup.md`.
-2. **Firebase Project Configuration:** Enable Anonymous Authentication in Firebase Console; download `google-services.json` and `GoogleService-Info.plist` into local developer workspaces.
-3. **Google Cloud Billing:** Configure budget alerts in GCP Console (\$25/mo threshold alerts).
-4. **Android Production Signing:** Generate production keystore and configure `android/key.properties` prior to release readiness.
+Audited at `d6771fb12b84b53d49602d21c0218b9771035559` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
 
-## Validation status
+Capabilities:
+- Full geometric envelope and spherical-cap polar coverage without fixed 3x3 grid assumptions;
+- Explicit completeness contract via `DiscoveryResult<T>` and `DiscoveryCompletenessReason`;
+- Antimeridian viewport correctness via `GeoBoundingBox.contains` and wrapping;
+- Domain layer purity with `GeoBoundingBox` in `lib/domain/models/`;
+- Minimum safe query precision floor `AppConstants.minDiscoveryGeohashPrecision = 3` (~156 km floor);
+- Deterministic 16-range query limit safety cap under real production constraints;
+- Center-distance prioritization for candidate prefixes under range-cap degradation.
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (53 files checked, formatted)
-- `flutter analyze` — PASS (0 issues found, strict mode enabled)
-- `flutter test` — PASS (46/46 unit & widget tests passing)
-- `npm --prefix rules_tests run test:emulators` — PASS (20/20 Firestore security rules tests passing in Firestore Emulator)
-- Android debug build (`flutter build apk --debug`) — PASS (APK assembled successfully)
-- iOS build configuration (`flutter build ios --config-only --no-codesign`) — PASS (Xcode project and CocoaPods configured successfully)
-- Firebase live deployment / runtime — NOT RUN (Requires owner Firebase project credentials)
-- Google Maps live SDK rendering — NOT RUN (Requires owner platform-restricted API key)
+### P1.2 — Query orchestration + markers/clustering (AUDITED & APPROVED)
+
+Audited at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
+
+Key capabilities:
+- Single authoritative discovery flow: camera idle → debounce (400ms) → viewport query → render.
+- Permission-grant camera animation converges strictly into the viewport idle pipeline with zero nearby reads.
+- Ephemeral last-committed viewport state restoration on equivalent viewports.
+- Selection lifecycle preserves explicit user selections and never auto-resumes once user interacts.
+- In-flight request cancellation on camera move start and zoom suppression.
+- Google Maps native clustering (`ClusterManager`), cluster tap zooms into region.
+- 116/116 unit/widget tests passing.
+
+### P1.3 — Restroom preview, nearby list & local filters (AUDITED & APPROVED)
+
+Audited at `120c445437ad88ac8f1e0a8f6dcb49cb39c27c14` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
+
+Key capabilities:
+- Zero-read local execution: preview, list, search, and filters operate 100% in-memory against already-discovered restrooms.
+- Clear derived-empty and degraded status messages with targeted reset actions (`Clear search`, `Reset filters`, `Clear search & filters`).
+- Nearby restrooms list accessible without active selection via bottom bar.
+- Truthful status badges: no false "Open" claims; warning badge shown only when temporarily unavailable.
+- Strict 90-day verification freshness check and truthful preview freshness labels.
+- Deterministic 3-level sorting (distance, normalized name, restroom ID).
+
+### P1.4 — Hardening and human QA (FINAL AUDIT REMEDIATION COMPLETE, RE-AUDIT PENDING)
+
+Completed final Phase 1 hardening milestone:
+
+- **P1.4A — Firestore Read/Cost Upper Bounds (Aligned with Code Truth):**
+  - Viewport discovery bounded to zoom ≥ 12.0 (`AppConstants.minViewportZoom`), 400ms camera idle debounce (`AppConstants.cameraIdleDebounceDuration`).
+  - Geohash query ranges capped at max 16 (`AppConstants.maxGeohashQueryRanges`) for both nearby (`take(16)`) and viewport queries.
+  - Per-range Firestore document limit: 50 documents (`AppConstants.maxDocumentsPerRangeQuery`).
+  - Theoretical max raw documents read: `16 × 50 = 800` documents for both nearby and viewport discovery.
+  - Candidate document decoding safety ceiling: 200 candidates (`AppConstants.maxCandidateDocuments`) in local memory (clarified: local decoding ceiling, not billed Firestore reads).
+  - Maximum returned results cap: 100 facilities (`AppConstants.maxDiscoveryResults`).
+  - Zero rating/review fan-out reads (restroom aggregates used exclusively).
+  - Zero search/filter Firestore network fan-out (100% client-side memory evaluation).
+  - Full bounds documented in `docs/08-phase-1-map-discovery.md`.
+- **P1.4B — Privacy & Security Verification:**
+  - Zero background location permissions or service modes (`AndroidManifest.xml` and `Info.plist` clean).
+  - Zero telemetry or precise location coordinates persisted.
+  - 20/20 Firestore Security Rules emulator tests passing.
+  - Zero secrets or private keys in git tree.
+- **P1.4C — CI / Toolchain Hardening:**
+  - Node.js upgraded to LTS 22 in `.github/workflows/ci.yml`, resolving engine deprecation warnings.
+  - devDependencies npm audit classified (21 transitive dev-only dependencies in test runner; zero production impact).
+- **P1.4D — Failure Resilience & Non-Blocking Refresh Error Display:**
+  - Retained-results error handling: query failures retain previously discovered facilities and markers in memory rather than blanking the map.
+  - Error overlay precedence in `MapStatusOverlay`: error state takes presentation precedence over derived-empty and degraded messages. When refresh fails with existing results, displays `"Couldn't refresh this area — previous results retained"` with a `"Retry"` action; when an initial query fails with zero results, displays `"Couldn't find restrooms — check connection"` with `"Retry"`. After retry/query succeeds, error overlay clears and normal local search/filter messaging resumes.
+  - Notifier tracks `_lastAttemptedDescriptor` and provides `retryLastViewportQuery()`.
+  - Verified by unit test #35 in `test/presentation/map_discovery_notifier_test.dart` and 3 dedicated widget tests in `test/presentation/p1_3_preview_list_filter_test.dart`.
+- **P1.4E — Accessibility & Touch Target Polish:**
+  - Close button touch targets across `RestroomPreviewSheet` and `NearbyRestroomsSheet` meet standard 48×48 minWidth/minHeight with semantic tooltips.
+  - Broader dynamic type / contrast / screen reader audits marked as `NOT RUN / PLANNED` for dedicated manual QA pass.
+- **P1.4F — Platform Compilation Validation:**
+  - Android debug APK build verified: `flutter build apk --debug` PASS (exit code 0).
+  - iOS debug Runner build verified: `flutter build ios --debug --no-codesign` PASS (exit code 0).
+- **P1.4G — Live Device & Credential QA Protocol:**
+  - Live Firebase and Google Maps services documented as `NOT RUN` pending human owner credential configuration
+
+## Phase 1 intentionally excluded
+
+Do not implement in this phase:
+
+- add-restroom workflow;
+- rating/review submission;
+- verification/report submission;
+- photos;
+- built-in routing;
+- Google Places search/autocomplete;
+- Street View;
+- background location;
+- precise-location analytics;
+- PostGIS migration;
+- AI features;
+- donations/monetization.
+
+## Current owner actions / external dependencies
+
+These are not required for emulator/unit implementation but are required for full live QA:
+
+1. Create/reuse platform-restricted Google Maps Android and iOS keys.
+2. Configure the Firebase project and enable Anonymous Authentication.
+3. Place local `google-services.json` and `GoogleService-Info.plist` files outside version control.
+4. Configure GCP budget alerts.
+5. Production Android signing remains a later release-readiness action.
+
+## Current validation status
+
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 71 files formatted)
+- `flutter analyze` — PASS (0 issues found)
+- `flutter test` — PASS (171/171 passed)
+- Firestore Security Rules emulator tests — PASS (20/20 passed)
+- `flutter build apk --debug` — PASS (built `build/app/outputs/flutter-apk/app-debug.apk`)
+- `flutter build ios --debug --no-codesign` — PASS (built `build/ios/iphoneos/Runner.app`)
+- Firebase live discovery — NOT RUN; live device/owner config pending
+- Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Review final bookkeeping delta on PR #2 and execute merge decision. Once merged into `main`, proceed to **Phase 1 — Map Discovery**.
+Perform final independent Phase 1 / P1.4 exact-head audit on `phase-1/map-discovery`. Upon passing audit, squash-merge PR #3 into `main` and proceed to Phase 2 — Add Restroom.
 
 ## Handoff template
 
-Every implementation agent should update the current sections above and leave a compact handoff in this format:
+Every implementation agent should leave:
 
 ```text
 Task:
@@ -141,4 +225,4 @@ Next recommended action:
 - ...
 ```
 
-Do not preserve stale completed-task detail here merely for history. Keep this file useful to the **next agent**.
+Keep this file useful to the **next agent**, not as a chronological diary.

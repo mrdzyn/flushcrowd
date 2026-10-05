@@ -7,6 +7,7 @@ import 'package:looradar/data/repositories/location_repository_impl.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
 import 'package:looradar/domain/models/coordinates.dart';
 import 'package:looradar/domain/models/enums.dart';
+import 'package:looradar/domain/models/geo_bounding_box.dart';
 import 'package:looradar/domain/models/restroom.dart';
 
 void main() {
@@ -17,19 +18,20 @@ void main() {
         final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
         final repo = InMemoryRestroomRepository();
 
-        final nearby = await repo.getNearbyRestrooms(
+        final result = await repo.getNearbyRestrooms(
           center,
           radiusMeters: 2000.0,
         );
-        expect(nearby, isNotEmpty);
+        expect(result.isComplete, isTrue);
+        expect(result.items, isNotEmpty);
 
         // Verify that all results are within 2000m
-        for (final r in nearby) {
+        for (final r in result.items) {
           expect(r.status, RestroomStatus.active);
         }
 
         // Verify retrieval by id
-        final first = nearby.first;
+        final first = result.items.first;
         final retrieved = await repo.getRestroomById(first.id);
         expect(retrieved, equals(first));
       },
@@ -42,9 +44,10 @@ void main() {
         northEast: Coordinates(latitude: 14.5900, longitude: 121.0700),
       );
 
-      final inView = await repo.getViewportRestrooms(bounds);
-      expect(inView, isNotEmpty);
-      for (final r in inView) {
+      final result = await repo.getViewportRestrooms(bounds);
+      expect(result.isComplete, isTrue);
+      expect(result.items, isNotEmpty);
+      for (final r in result.items) {
         expect(bounds.contains(r.coordinates), isTrue);
       }
     });
@@ -114,22 +117,71 @@ void main() {
       );
     });
 
-    test('FirestoreRestroomRepository explicitly defers spatial discovery methods to Phase 1', () {
-      final firestoreRepo = FirestoreRestroomRepository();
+    test('validates radius limits in repository interface', () {
+      final repo = InMemoryRestroomRepository();
       final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
-      final bounds = GeoBoundingBox(
-        southWest: Coordinates(latitude: 14.5800, longitude: 121.0500),
-        northEast: Coordinates(latitude: 14.5900, longitude: 121.0700),
+
+      expect(
+        () => repo.getNearbyRestrooms(center, radiusMeters: -10),
+        throwsA(isA<InvalidRadiusException>()),
       );
 
       expect(
-        () => firestoreRepo.getNearbyRestrooms(center),
-        throwsUnsupportedError,
+        () => repo.getNearbyRestrooms(center, radiusMeters: 0),
+        throwsA(isA<InvalidRadiusException>()),
       );
 
       expect(
-        () => firestoreRepo.getViewportRestrooms(bounds),
-        throwsUnsupportedError,
+        () => repo.getNearbyRestrooms(
+          center,
+          radiusMeters: 15000,
+        ), // > 10,000m hard limit
+        throwsA(isA<InvalidRadiusException>()),
+      );
+    });
+
+    test('validates viewport bounds limits against unsafe huge queries', () {
+      final repo = InMemoryRestroomRepository();
+      // Enormous global viewport: lat span 40, lng span 60
+      final hugeBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 0.0, longitude: 100.0),
+        northEast: Coordinates(latitude: 40.0, longitude: 160.0),
+      );
+
+      expect(
+        () => repo.getViewportRestrooms(hugeBounds),
+        throwsA(isA<ViewportTooLargeException>()),
+      );
+    });
+
+    test(
+      'FirestoreRestroomRepository validates radius limits before network call',
+      () {
+        final firestoreRepo = FirestoreRestroomRepository();
+        final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+
+        expect(
+          () => firestoreRepo.getNearbyRestrooms(center, radiusMeters: -500),
+          throwsA(isA<InvalidRadiusException>()),
+        );
+
+        expect(
+          () => firestoreRepo.getNearbyRestrooms(center, radiusMeters: 25000),
+          throwsA(isA<InvalidRadiusException>()),
+        );
+      },
+    );
+
+    test('FirestoreRestroomRepository validates viewport scale before network call', () {
+      final firestoreRepo = FirestoreRestroomRepository();
+      final hugeBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: -10.0, longitude: -20.0),
+        northEast: Coordinates(latitude: 30.0, longitude: 40.0),
+      );
+
+      expect(
+        () => firestoreRepo.getViewportRestrooms(hugeBounds),
+        throwsA(isA<ViewportTooLargeException>()),
       );
     });
   });

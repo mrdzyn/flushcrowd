@@ -13,12 +13,30 @@ class AppConstants {
 
   // GIS & Search parameters
   static const double defaultSearchRadiusMeters = 1500.0;
-  static const double maxSearchRadiusMeters = 5000.0;
+  static const double maxSearchRadiusMeters =
+      10000.0; // Phase 1 hard safety limit: 10 km
   static const int defaultGeohashPrecision = 6; // ~1.2 km precision box
   static const int minRestroomNameLength = 1;
   static const int maxRestroomNameLength = 100;
   static const int maxCommentLength = 500;
   static const int maxReportNotesLength = 1000;
+
+  // Discovery safety caps (Phase 1)
+  static const Duration cameraIdleDebounceDuration = Duration(
+    milliseconds: 400,
+  );
+  static const double minViewportZoom =
+      12.0; // Zoom threshold below which facilities are not queried
+  static const double maxViewportLatitudeSpan = 0.5; // ~55 km max lat span
+  static const double maxViewportLongitudeSpan = 0.5; // ~55 km max lng span
+  static const int minDiscoveryGeohashPrecision =
+      3; // ~156 km x 156 km floor; prevents continental/global prefix scans
+  static const int maxGeohashQueryRanges =
+      16; // Maximum Firestore range queries per discovery operation
+  static const int maxDocumentsPerRangeQuery = 50; // Per-range query limit
+  static const int maxCandidateDocuments =
+      200; // Hard cap on decoded candidates per discovery operation
+  static const int maxDiscoveryResults = 100; // Cap on returned results
 
   // Firestore Collection Names
   static const String restroomsCollection = 'restrooms';

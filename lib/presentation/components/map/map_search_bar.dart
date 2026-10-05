@@ -5,11 +5,52 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 
 /// Floating search and filter header over the map.
-class MapSearchBar extends StatelessWidget {
+class MapSearchBar extends StatefulWidget {
+  final String? initialQuery;
   final ValueChanged<String>? onChanged;
   final VoidCallback? onFilterTap;
+  final int activeFilterCount;
 
-  const MapSearchBar({super.key, this.onChanged, this.onFilterTap});
+  const MapSearchBar({
+    super.key,
+    this.initialQuery,
+    this.onChanged,
+    this.onFilterTap,
+    this.activeFilterCount = 0,
+  });
+
+  @override
+  State<MapSearchBar> createState() => _MapSearchBarState();
+}
+
+class _MapSearchBarState extends State<MapSearchBar> {
+  late final TextEditingController _controller;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = TextEditingController(text: widget.initialQuery ?? '');
+  }
+
+  @override
+  void didUpdateWidget(covariant MapSearchBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    final targetText = widget.initialQuery ?? '';
+    // Only update controller text if externally changed from the current text
+    // to preserve active user typing and cursor location.
+    if (_controller.text != targetText) {
+      _controller.text = targetText;
+      _controller.selection = TextSelection.collapsed(
+        offset: targetText.length,
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -18,7 +59,12 @@ class MapSearchBar extends StatelessWidget {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: AppRadii.pillBorder,
-        border: Border.all(color: AppColors.border, width: 1),
+        border: Border.all(
+          color: widget.activeFilterCount > 0
+              ? AppColors.primary
+              : AppColors.border,
+          width: 1,
+        ),
         boxShadow: [
           BoxShadow(
             color: AppColors.textPrimary.withValues(alpha: 0.08),
@@ -38,7 +84,8 @@ class MapSearchBar extends StatelessWidget {
           const SizedBox(width: 10),
           Expanded(
             child: TextField(
-              onChanged: onChanged,
+              controller: _controller,
+              onChanged: widget.onChanged,
               style: AppTypography.bodyMedium.copyWith(
                 color: AppColors.textPrimary,
               ),
@@ -54,23 +101,53 @@ class MapSearchBar extends StatelessWidget {
               ),
             ),
           ),
-          if (onFilterTap != null) ...[
+          if (widget.onFilterTap != null) ...[
             Container(
               height: 24,
               width: 1,
               color: AppColors.border,
               margin: const EdgeInsets.symmetric(horizontal: 8),
             ),
-            IconButton(
-              icon: const Icon(
-                Icons.tune_rounded,
-                color: AppColors.textPrimary,
-                size: 20,
-              ),
-              onPressed: onFilterTap,
-              padding: EdgeInsets.zero,
-              constraints: const BoxConstraints(minWidth: 32, minHeight: 32),
-              splashRadius: 20,
+            Stack(
+              alignment: Alignment.center,
+              children: [
+                IconButton(
+                  icon: Icon(
+                    Icons.tune_rounded,
+                    color: widget.activeFilterCount > 0
+                        ? AppColors.primary
+                        : AppColors.textPrimary,
+                    size: 20,
+                  ),
+                  onPressed: widget.onFilterTap,
+                  padding: EdgeInsets.zero,
+                  constraints: const BoxConstraints(
+                    minWidth: 32,
+                    minHeight: 32,
+                  ),
+                  splashRadius: 20,
+                ),
+                if (widget.activeFilterCount > 0)
+                  Positioned(
+                    top: 6,
+                    right: 4,
+                    child: Container(
+                      padding: const EdgeInsets.all(3),
+                      decoration: const BoxDecoration(
+                        color: AppColors.primary,
+                        shape: BoxShape.circle,
+                      ),
+                      child: Text(
+                        '${widget.activeFilterCount}',
+                        style: const TextStyle(
+                          color: AppColors.textOnPrimary,
+                          fontSize: 9,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
             ),
           ],
         ],
