@@ -101,6 +101,69 @@ class MapStatusOverlay extends StatelessWidget {
           );
         }
 
+        if (notifier.hasError) {
+          final hasPriorResults = notifier.discoveredRestrooms.isNotEmpty;
+          final errorMessage = hasPriorResults
+              ? "Couldn't refresh this area — previous results retained"
+              : "Couldn't find restrooms — check connection";
+
+          return Center(
+            child: Container(
+              margin: const EdgeInsets.only(top: AppSpacing.xs),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+              decoration: BoxDecoration(
+                color: AppColors.surface.withValues(alpha: 0.95),
+                borderRadius: AppRadii.pillBorder,
+                boxShadow: const [
+                  BoxShadow(
+                    color: Color(0x1A000000),
+                    blurRadius: 8,
+                    offset: Offset(0, 2),
+                  ),
+                ],
+              ),
+              child: ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 400),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(
+                      Icons.cloud_off_rounded,
+                      size: 16,
+                      color: AppColors.error,
+                    ),
+                    const SizedBox(width: 6),
+                    Flexible(
+                      child: Text(
+                        errorMessage,
+                        style: AppTypography.bodySmall.copyWith(
+                          fontWeight: FontWeight.w500,
+                          color: AppColors.textSecondary,
+                        ),
+                        maxLines: 2,
+                        overflow: TextOverflow.ellipsis,
+                      ),
+                    ),
+                    if (notifier.canRetryViewportQuery) ...[
+                      const SizedBox(width: 8),
+                      GestureDetector(
+                        onTap: () => notifier.retryLastViewportQuery(),
+                        child: Text(
+                          'Retry',
+                          style: AppTypography.bodySmall.copyWith(
+                            fontWeight: FontWeight.w700,
+                            color: AppColors.primary,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
         if (notifier.hasDerivedEmptyResults) {
           String message;
           String actionText;
@@ -219,69 +282,6 @@ class MapStatusOverlay extends StatelessWidget {
                     ),
                   ),
                 ],
-              ),
-            ),
-          );
-        }
-
-        if (notifier.hasError) {
-          final hasPriorResults = notifier.discoveredRestrooms.isNotEmpty;
-          final errorMessage = hasPriorResults
-              ? "Couldn't refresh this area — showing previous results"
-              : "Couldn't find restrooms — check connection";
-
-          return Center(
-            child: Container(
-              margin: const EdgeInsets.only(top: AppSpacing.xs),
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-              decoration: BoxDecoration(
-                color: AppColors.surface.withValues(alpha: 0.95),
-                borderRadius: AppRadii.pillBorder,
-                boxShadow: const [
-                  BoxShadow(
-                    color: Color(0x1A000000),
-                    blurRadius: 8,
-                    offset: Offset(0, 2),
-                  ),
-                ],
-              ),
-              child: ConstrainedBox(
-                constraints: const BoxConstraints(maxWidth: 400),
-                child: Row(
-                  mainAxisSize: MainAxisSize.min,
-                  children: [
-                    const Icon(
-                      Icons.cloud_off_rounded,
-                      size: 16,
-                      color: AppColors.error,
-                    ),
-                    const SizedBox(width: 6),
-                    Flexible(
-                      child: Text(
-                        errorMessage,
-                        style: AppTypography.bodySmall.copyWith(
-                          fontWeight: FontWeight.w500,
-                          color: AppColors.textSecondary,
-                        ),
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    if (notifier.canRetryViewportQuery) ...[
-                      const SizedBox(width: 8),
-                      GestureDetector(
-                        onTap: () => notifier.retryLastViewportQuery(),
-                        child: Text(
-                          'Retry',
-                          style: AppTypography.bodySmall.copyWith(
-                            fontWeight: FontWeight.w700,
-                            color: AppColors.primary,
-                          ),
-                        ),
-                      ),
-                    ],
-                  ],
-                ),
               ),
             ),
           );

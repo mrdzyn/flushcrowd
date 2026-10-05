@@ -1829,7 +1829,7 @@ void main() {
         // No error overlay on success
         expect(find.byType(MapStatusOverlay), findsOneWidget);
         expect(
-          find.text("Couldn't refresh this area — showing previous results"),
+          find.text("Couldn't refresh this area — previous results retained"),
           findsNothing,
         );
 
@@ -1845,7 +1845,7 @@ void main() {
 
         // Error message appears with retained results message and Retry button
         expect(
-          find.text("Couldn't refresh this area — showing previous results"),
+          find.text("Couldn't refresh this area — previous results retained"),
           findsOneWidget,
         );
         expect(find.text('Retry'), findsOneWidget);
@@ -1861,7 +1861,7 @@ void main() {
 
         expect(notifier.status, DiscoveryStatus.loadedComplete);
         expect(
-          find.text("Couldn't refresh this area — showing previous results"),
+          find.text("Couldn't refresh this area — previous results retained"),
           findsNothing,
         );
 
@@ -1916,6 +1916,99 @@ void main() {
           find.text("Couldn't find restrooms — check connection"),
           findsNothing,
         );
+
+        notifier.dispose();
+      },
+    );
+
+    testWidgets(
+      '3. Error overlay takes precedence over derived-empty overlay and preserves filters after retry',
+      (tester) async {
+        fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: dataset,
+        );
+
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.5500, longitude: 121.0100),
+          northEast: Coordinates(latitude: 14.5600, longitude: 121.0200),
+        );
+
+        // 1. Successful discovery produces source results
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(notifier.status, DiscoveryStatus.loadedComplete);
+        expect(notifier.discoveredRestrooms.length, 2);
+        expect(notifier.visibleRestrooms.length, 2);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: MapStatusOverlay(notifier: notifier)),
+          ),
+        );
+
+        // 2. Activate search/filter producing zero visible matches
+        notifier.setSearchQuery('NonExistentRestroomName');
+        await tester.pump();
+
+        expect(notifier.visibleRestrooms.isEmpty, isTrue);
+        expect(notifier.hasDerivedEmptyResults, isTrue);
+        expect(find.text('No restrooms match your search'), findsOneWidget);
+        expect(find.text('Clear search'), findsOneWidget);
+
+        // 3. Subsequent viewport refresh fails
+        fakeRepo.viewportResultToReturn = null;
+        fakeRepo.exceptionToThrow = Exception('Network down during refresh');
+
+        await notifier.refreshCurrentViewport(bounds: bounds, zoom: 15.0);
+        await tester.pump();
+
+        // 4. Notifier is DiscoveryStatus.error
+        expect(notifier.status, DiscoveryStatus.error);
+        // 5. Source results remain retained
+        expect(notifier.discoveredRestrooms.length, 2);
+        expect(notifier.visibleRestrooms.isEmpty, isTrue);
+
+        // 6. Error overlay is visible
+        expect(
+          find.text("Couldn't refresh this area — previous results retained"),
+          findsOneWidget,
+        );
+        expect(find.text('Retry'), findsOneWidget);
+
+        // 7. Derived-empty message is NOT the active overlay during the error
+        expect(find.text('No restrooms match your search'), findsNothing);
+        expect(find.text('Clear search'), findsNothing);
+
+        // 8. Retry succeeds
+        fakeRepo.exceptionToThrow = null;
+        fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: dataset,
+        );
+
+        await tester.tap(find.text('Retry'));
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // 9. Error overlay clears
+        expect(notifier.status, DiscoveryStatus.loadedComplete);
+        expect(
+          find.text("Couldn't refresh this area — previous results retained"),
+          findsNothing,
+        );
+
+        // 10. Previous search/filter state remains intact
+        expect(notifier.searchQuery, 'NonExistentRestroomName');
+        expect(notifier.visibleRestrooms.isEmpty, isTrue);
+
+        // 11. Derived-empty message returns normally since criteria still match zero facilities
+        expect(notifier.hasDerivedEmptyResults, isTrue);
+        expect(find.text('No restrooms match your search'), findsOneWidget);
+        expect(find.text('Clear search'), findsOneWidget);
 
         notifier.dispose();
       },

@@ -7,11 +7,11 @@
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.4 — hardening complete; final Phase 1 independent audit pending  
+**Current milestone:** P1.4 — final remediation complete; final independent Phase 1 exact-head re-audit pending  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audited (PASS); P1.2 audited (PASS); P1.3 audited (PASS); P1.4 hardening, platform builds, accessibility polish, CI modernization, bounds documentation, and failure resilience complete; ready for final independent Phase 1 / P1.4 exact-head audit.
+**Implementation status:** P1.1 audited (PASS); P1.2 audited (PASS); P1.3 audited (PASS); P1.4 hardening, platform builds, accessibility polish, CI modernization, bounds documentation, error overlay precedence, and failure resilience complete; ready for final independent Phase 1 / P1.4 exact-head audit.
 
 ## Current objective
 
@@ -145,9 +145,9 @@ Completed final Phase 1 hardening milestone:
   - devDependencies npm audit classified (21 transitive dev-only dependencies in test runner; zero production impact).
 - **P1.4D — Failure Resilience & Non-Blocking Refresh Error Display:**
   - Retained-results error handling: query failures retain previously discovered facilities and markers in memory rather than blanking the map.
-  - Non-blocking error overlay in `MapStatusOverlay`: when refresh fails with existing results, displays `"Couldn't refresh this area — showing previous results"` with a `"Retry"` action; when an initial query fails with zero results, displays `"Couldn't find restrooms — check connection"` with `"Retry"`.
+  - Error overlay precedence in `MapStatusOverlay`: error state takes presentation precedence over derived-empty and degraded messages. When refresh fails with existing results, displays `"Couldn't refresh this area — previous results retained"` with a `"Retry"` action; when an initial query fails with zero results, displays `"Couldn't find restrooms — check connection"` with `"Retry"`. After retry/query succeeds, error overlay clears and normal local search/filter messaging resumes.
   - Notifier tracks `_lastAttemptedDescriptor` and provides `retryLastViewportQuery()`.
-  - Verified by unit test #35 in `test/presentation/map_discovery_notifier_test.dart` and 2 dedicated widget tests in `test/presentation/p1_3_preview_list_filter_test.dart`.
+  - Verified by unit test #35 in `test/presentation/map_discovery_notifier_test.dart` and 3 dedicated widget tests in `test/presentation/p1_3_preview_list_filter_test.dart`.
 - **P1.4E — Accessibility & Touch Target Polish:**
   - Close button touch targets across `RestroomPreviewSheet` and `NearbyRestroomsSheet` meet standard 48×48 minWidth/minHeight with semantic tooltips.
   - Broader dynamic type / contrast / screen reader audits marked as `NOT RUN / PLANNED` for dedicated manual QA pass.
@@ -188,7 +188,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 71 files formatted)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (168/168 passed)
+- `flutter test` — PASS (171/171 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - `flutter build apk --debug` — PASS (built `build/app/outputs/flutter-apk/app-debug.apk`)
 - `flutter build ios --debug --no-codesign` — PASS (built `build/ios/iphoneos/Runner.app`)
