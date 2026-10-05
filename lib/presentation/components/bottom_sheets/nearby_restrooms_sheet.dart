@@ -118,15 +118,15 @@ class NearbyRestroomsSheet extends StatelessWidget {
                     style: AppTypography.headlineMedium,
                   ),
                   IconButton(
+                    tooltip: 'Close',
                     icon: const Icon(
                       Icons.close_rounded,
                       color: AppColors.textSecondary,
                     ),
                     onPressed: () => Navigator.of(context).pop(),
-                    padding: EdgeInsets.zero,
                     constraints: const BoxConstraints(
-                      minWidth: 32,
-                      minHeight: 32,
+                      minWidth: 48,
+                      minHeight: 48,
                     ),
                   ),
                 ],

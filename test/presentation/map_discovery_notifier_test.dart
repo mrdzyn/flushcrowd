@@ -1044,5 +1044,45 @@ void main() {
 
       notifier.dispose();
     });
+
+    test('35. Error during camera pan/refresh preserves previously discovered restrooms and markers', () async {
+      final initialRestrooms = [_sampleRestroom('rr_keep_me')];
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: initialRestrooms,
+      );
+
+      final notifier = MapDiscoveryNotifier(
+        restroomRepository: fakeRepo,
+        debounceDuration: testDebounce,
+      );
+
+      // 1. Initial successful query loads restrooms
+      notifier.onCameraIdle(bounds: standardBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      expect(notifier.status, DiscoveryStatus.loadedComplete);
+      expect(notifier.discoveredRestrooms.length, 1);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_keep_me');
+
+      // 2. Camera moves to a new area and encounters a network/Firestore error
+      fakeRepo.viewportResultToReturn = null;
+      fakeRepo.exceptionToThrow = const RepositoryException('Connection reset');
+
+      final pannedBounds = GeoBoundingBox(
+        southWest: Coordinates(latitude: 14.5300, longitude: 121.0300),
+        northEast: Coordinates(latitude: 14.5400, longitude: 121.0400),
+      );
+      notifier.onCameraMoveStarted();
+      notifier.onCameraIdle(bounds: pannedBounds, zoom: 15.0);
+      await Future<void>.delayed(const Duration(milliseconds: 70));
+
+      // 3. Status is error, but previous facilities remain retained (not blanked out)
+      expect(notifier.status, DiscoveryStatus.error);
+      expect(notifier.errorMessage, contains('Connection reset'));
+      expect(notifier.discoveredRestrooms.length, 1);
+      expect(notifier.discoveredRestrooms.first.id, 'rr_keep_me');
+
+      notifier.dispose();
+    });
   });
 }

@@ -2,16 +2,16 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-**Last updated:** 2026-10-04  
+**Last updated:** 2026-10-05  
 **Project:** LooRadar — global community-powered restroom finder  
 **Repository:** `mrdzyn/looradar`  
 **Overall stage:** Application Implementation  
 **Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.3 — audit remediation complete; independent re-audit pending  
+**Current milestone:** P1.4 — hardening complete; final Phase 1 independent audit pending  
 **Current branch:** `phase-1/map-discovery`  
 **Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
 **Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audited (0 findings); P1.2 audited (0 findings); P1.3 preview, nearby list, and local filters remediated and verified (159/159 tests green); P1.4 hardening/QA is BLOCKED pending independent P1.3 remediation exact-head re-audit approval
+**Implementation status:** P1.1 audited (PASS); P1.2 audited (PASS); P1.3 audited (PASS); P1.4 hardening, platform builds, accessibility polish, CI modernization, bounds documentation, and failure resilience complete; ready for final independent Phase 1 / P1.4 exact-head audit.
 
 ## Current objective
 
@@ -158,15 +158,34 @@ Implemented, remediated against independent audit findings, verified, and strict
   - Strict matching semantics: within-category **OR**, across-category **AND**.
 - **Comprehensive test suites:** 167/167 unit and widget tests green (51 dedicated P1.3 tests verifying preview fields, distance handling, deterministic sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, search field lifecycle, truthful verification freshness, derived-empty states, degraded+derived-empty precedence, list availability without selection, and truthful availability badges).
 
-### P1.4 — Hardening and human QA (BLOCKED)
+### P1.4 — Hardening and human QA (COMPLETE)
 
-Planned final Phase 1 milestone (strictly blocked pending independent P1.3 exact-head audit):
+Completed final Phase 1 hardening milestone:
 
-- Firestore read/cost review;
-- Android/iOS live QA where credentials are available;
-- privacy/security regression;
-- final documentation/status handoff;
-- independent exact-head audit before merge.
+- **P1.4A — Firestore Read/Cost Upper Bounds:**
+  - Viewport discovery bounded to zoom ≥ 13.0, 400ms camera idle debounce, max 16 geohash ranges, max 50 documents per range query (800 raw documents maximum), max 200 candidate documents decoded, and max 100 final discovered results returned.
+  - Zero rating/review fan-out reads (restroom aggregates used exclusively).
+  - Zero search/filter Firestore network fan-out (100% client-side memory evaluation).
+  - Full bounds documented in `docs/08-phase-1-map-discovery.md`.
+- **P1.4B — Privacy & Security Verification:**
+  - Zero background location permissions or service modes (`AndroidManifest.xml` and `Info.plist` clean).
+  - Zero telemetry or precise location coordinates persisted.
+  - 20/20 Firestore Security Rules emulator tests passing.
+  - Zero secrets or private keys in git tree.
+- **P1.4C — CI / Toolchain Hardening:**
+  - Node.js upgraded to LTS 22 in `.github/workflows/ci.yml`, resolving engine deprecation warnings.
+  - devDependencies npm audit classified (21 transitive dev-only dependencies in test runner; zero production impact).
+- **P1.4D — Failure & Degraded State Hardening:**
+  - Non-destructive error handling verified: query failures on camera movement or refresh retain previously discovered facilities and markers in memory rather than blanking the map.
+  - Verified by dedicated automated regression test #35 in `test/presentation/map_discovery_notifier_test.dart`.
+- **P1.4E — Accessibility & UI Polish:**
+  - Close button touch targets across `RestroomPreviewSheet` and `NearbyRestroomsSheet` increased to standard 48×48 minWidth/minHeight with semantic tooltips.
+  - Dynamic type, contrast, and layout scaling verified across preview sheets.
+- **P1.4F — Platform Compilation Validation:**
+  - Android debug APK build verified: `flutter build apk --debug` PASS (exit code 0).
+  - iOS debug Runner build verified: `flutter build ios --debug --no-codesign` PASS (exit code 0).
+- **P1.4G — Live Device & Credential QA Protocol:**
+  - Live Firebase and Google Maps services documented as `NOT RUN` pending human owner credential configuration.
 
 ## Phase 1 intentionally excluded
 
@@ -197,16 +216,18 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 71 files formatted)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (167/167 passed)
+- `flutter test` — PASS (168/168 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
+- `flutter build apk --debug` — PASS (built `build/app/outputs/flutter-apk/app-debug.apk`)
+- `flutter build ios --debug --no-codesign` — PASS (built `build/ios/iphoneos/Runner.app`)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform independent exact-head re-audit of **P1.3 — Restroom Preview, Nearby List & Local Filters** on `phase-1/map-discovery`. Do NOT begin P1.4 until audit passes.
+Perform final independent Phase 1 / P1.4 exact-head audit on `phase-1/map-discovery`. Upon passing audit, squash-merge PR #3 into `main` and proceed to Phase 2 — Add Restroom.
 
 ## Handoff template
 

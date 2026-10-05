@@ -259,6 +259,25 @@ Required controls:
 
 Before Phase 1 completion, document the expected worst-case number of Firestore range queries and bounded candidate reads for a single nearby and viewport operation under the chosen algorithm.
 
+### Production discovery read and cost upper bounds
+
+| Parameter / Metric | Nearby Discovery (`getNearbyRestrooms`) | Viewport Discovery (`getViewportRestrooms`) | Enforcement Location |
+| :--- | :--- | :--- | :--- |
+| **Minimum Zoom Level** | N/A (radius-based) | Zoom ≥ `13.0` (`minDiscoveryZoom`) | `MapDiscoveryNotifier` |
+| **Debounce Window** | N/A | `400ms` idle debounce | `AppConstants.cameraIdleDebounceDuration` |
+| **Max Geohash Query Ranges** | Up to `9` (center + 8 neighbors) | Max `16` query ranges | `AppConstants.maxGeohashQueryRanges` |
+| **Per-Range Document Read Limit** | `50` documents | `50` documents | `AppConstants.maxDocumentsPerRangeQuery` |
+| **Theoretical Max Raw Documents Read** | `9 × 50 = 450` documents | `16 × 50 = 800` documents | Firestore range queries (`.limit(50)`) |
+| **Max Candidate Documents Decoded** | `200` candidates | `200` candidates | `AppConstants.maxCandidateDocuments` |
+| **Max Discovered Results Returned** | `100` facilities | `100` facilities | `AppConstants.maxDiscoveryResults` |
+| **Duplicate Query Suppression** | Caller-controlled | `isEffectivelyEquivalentTo` (0.0001° coords, 0.05 zoom) | `ViewportQueryDescriptor` |
+| **Degraded State Flagging** | Surfaced via `DiscoveryResult.degraded` | Surfaced via `DiscoveryResult.degraded` | Repository & Notifier |
+| **Network Error Resilience** | Caller-handled | Retains prior results in memory; non-destructive | `MapDiscoveryNotifier` |
+
+- **Zero rating/review fan-out reads**: All display cards, bottom sheets, and preview cards rely strictly on restroom-level aggregate fields (`ratingAverage`, `ratingCount`, `isVerified`).
+- **Zero search/filter network fan-out**: Filter chips and search queries evaluate entirely client-side against the currently discovered and memory-cached facilities.
+
+
 ## Accessibility and UX requirements
 
 - maintain usable touch targets;
