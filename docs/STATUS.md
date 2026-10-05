@@ -96,74 +96,42 @@ Capabilities:
 - Deterministic 16-range query limit safety cap under real production constraints;
 - Center-distance prioritization for candidate prefixes under range-cap degradation.
 
-### P1.2 — Query orchestration + markers/clustering (FINAL REMEDIATION COMPLETED, RE-AUDIT PENDING)
+### P1.2 — Query orchestration + markers/clustering (AUDITED & APPROVED)
 
-Implemented, remediated, and verified:
+Audited at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
 
-- **Location Permission Grant Flow Single-Path Convergence:** In `MapDiscoveryScreen`, `PermissionBanner.onRequestPermission` now animates the camera to the newly granted user location (`_mapController.animateCamera`) instead of invoking `loadNearbyRestrooms()`. Discovery converges purely through the canonical camera idle → debounce → viewport query flow with 0 nearby repository reads. If permission is denied or dismissed, manual map exploration continues uninterrupted with 0 nearby reads.
-- **MAJOR-1 Remediated (Single Startup Discovery Path):** Removed automatic startup `loadNearbyRestrooms()` bootstrap from `MapDiscoveryScreen`. The map now has a single authoritative discovery path: map creation → camera settles → `onCameraIdle` → debounced viewport discovery. Verified normal map startup issues 1 viewport discovery call and 0 nearby discovery calls.
-- **MAJOR-2 Remediated (Last Committed Viewport State Restoration):** Introduced ephemeral runtime snapshot `_LastCommittedViewportState` storing the descriptor, items, status (`loadedComplete`, `loadedDegraded`, `empty`), and completeness metadata of the last committed viewport query. When returning to an equivalent viewport, notifier restores the committed snapshot rather than staying stuck in `loading` or `suppressed`. Explicit refresh bypasses reuse and queries again. Materially different descriptors and uncommitted/error states never trigger restoration.
-- **MAJOR-3 Remediated (Sticky User-Selection History):** Introduced `SelectionOrigin` enum (`none`, `automatic`, `user`, `clearedAfterUserSelection`). Once a user explicitly taps/selects a facility, their selection history is preserved. If that chosen facility disappears from the visible area, selection clears to `null` and transitions to `clearedAfterUserSelection`. Future query results remain intentionally unselected until the user explicitly selects another facility; automatic fallback selection never resumes after user interaction.
-- **BLOCKER-1 Remediated:** In-flight request invalidation implemented via `_invalidateActiveRequest()`. Any in-flight asynchronous query generation is invalidated on `onCameraMoveStarted()` and on intentional suppression (`zoom < minViewportZoom` and `ViewportTooLargeException`). Stale responses and stale errors from prior camera positions cannot commit or overwrite map state.
-- **Recenter Duplicate Read Elimination:** Programmatic camera animation in `_recenterOnUser()` relies exclusively on `onCameraIdle` to trigger debounced discovery, eliminating duplicate nearby reads.
-- **Antimeridian-aware Viewport Equivalence:** Circular angular distance `min(|lngA - lngB|, 360 - |lngA - lngB|) <= coordinateToleranceDegrees` correctly detects equivalent viewports spanning ±180°.
-- **Camera lifecycle debounce:** central `AppConstants.cameraIdleDebounceDuration = 400ms`; zero repository queries during camera pan/zoom movement (`onCameraMove`).
-- **Zoom & oversized viewport suppression:** queries suppressed when zoom < `AppConstants.minViewportZoom` (12.0) or on `ViewportTooLargeException`; UI displays non-blocking "Zoom in to see restrooms" pill.
-- **DiscoveryResult completeness propagation:** `MapDiscoveryNotifier` exposes `isComplete`, `completenessReason`, `rangeCount`, and `candidateCount`; partial results render with `loadedDegraded` status.
-- **Center/local prefix prioritization:** candidate geohash prefixes in nearby and viewport queries are prioritized nearest to center coordinates.
-- **Restroom marker model & adapter:** presentation model `RestroomMarkerItem` and `MapMarkerAdapter` providing stable identity by restroom ID, visual selection distinction (`hueAzure` vs `hueBlue`), and strict 1:1 deduplication.
-- **Marker clustering:** integrated Google Maps native clustering (`ClusterManager`), cluster tap zooms into cluster region without arbitrarily selecting an individual restroom.
-- **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking.
-- **Comprehensive test suites:** 116 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, committed-state restoration, startup single-path, selection lifecycle, and permission-grant viewport convergence. Audited and approved at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 findings.
+Key capabilities:
+- Single authoritative discovery flow: camera idle → debounce (400ms) → viewport query → render.
+- Permission-grant camera animation converges strictly into the viewport idle pipeline with zero nearby reads.
+- Ephemeral last-committed viewport state restoration on equivalent viewports.
+- Selection lifecycle preserves explicit user selections and never auto-resumes once user interacts.
+- In-flight request cancellation on camera move start and zoom suppression.
+- Google Maps native clustering (`ClusterManager`), cluster tap zooms into region.
+- 116/116 unit/widget tests passing.
 
-### P1.3 — Restroom preview, nearby list & local filters (FINAL AUDIT REMEDIATION COMPLETE, INDEPENDENT RE-AUDIT PENDING)
+### P1.3 — Restroom preview, nearby list & local filters (AUDITED & APPROVED)
 
-Implemented, remediated against independent audit findings, verified, and strictly isolated to zero additional Firestore reads:
+Audited at `120c445437ad88ac8f1e0a8f6dcb49cb39c27c14` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
 
-- **Zero-read local execution invariant:** Restroom preview, nearby list, local search, and filter matching operate 100% in-memory against `_discoveredRestrooms` already retrieved by the P1.1/P1.2 viewport discovery pipeline. Zero additional Firestore or repository queries are issued when opening preview, scrolling list, typing query text, applying filters, or resetting filters.
-- **MAJOR-1 Remediated (Degraded + Derived-Empty Overlay Precedence):**
-  - In `MapStatusOverlay`, evaluated `hasDerivedEmptyResults` before pure `isDegraded`.
-  - When discovery is degraded and search/filters produce zero visible results, displays clear combined context (`No restrooms match your search (partial results)`, `No restrooms match your filters (partial results)`, `No restrooms match your search & filters (partial results)`) rather than generic `Showing partial results`.
-  - Action buttons cleanly target the causing factor: `Clear search` invokes `resetSearch()`, `Reset filters` invokes `resetFilters()`, `Clear search & filters` invokes `resetSearchAndFilters()`.
-- **MAJOR-2 Remediated (Nearby List / See All Accessible Without Selection):**
-  - In `MapDiscoveryScreen` / `MapDiscoveryBottomBar`, decoupled the bottom bar visibility from `selectedRestroom`. Bottom bar renders whenever `visibleRestrooms.isNotEmpty`.
-  - When `selectedRestroom == null`, shows header `'Nearby restrooms (N)'` and `'See all'` text button to open `NearbyRestroomsSheet`. Shows `'Nearest to you'` and `RestroomSummaryCard` only when a restroom is selected.
-- **MAJOR-3 Remediated (Truthful Status Badges without False "Open" Claims):**
-  - Removed misleading hardcoded `Open` badge from both `RestroomSummaryCard` and `RestroomPreviewSheet`.
-  - Displays `Unavailable` or `Temporarily Unavailable` warning chip only when `restroom.status == RestroomStatus.temporarilyUnavailable`.
-- **MINOR-1 Remediated (Documentation & Navigation Contract Truthfulness):**
-  - Documented truthfully that external navigation handoff is NOT implemented in V1 MVP; "Get Directions" in `RestroomPreviewSheet` is currently a non-functional UI placeholder pending Phase 1/Phase 2 navigation handoff wiring.
-- **Derived-Empty State & Semantic Reset:**
-  - Distinguishes search-only empty (`DerivedEmptyReason.search`), filter-only empty (`DerivedEmptyReason.filters`), and search+filter empty (`DerivedEmptyReason.searchAndFilters`).
-- **Truthful Verification Freshness:**
-  - Strict 90-day rule: `recentlyVerifiedOnly` requires `lastVerifiedAt != null` AND `now.difference(lastVerifiedAt!) <= 90 days`. Missing timestamps or timestamps older than 90 days fail strictly, regardless of `verificationCount`.
-  - Preview freshness banner labels verifications truthfully (`Verified today`, `Verified yesterday`, `Verified X days ago`, `Verified X months/years ago`, `Previously verified by community (N)`). Stale verifications (>30 days) are never labeled "Verified recently". Supports testable deterministic clock injection.
-- **Stable MapSearchBar Lifecycle:**
-  - Converted `MapSearchBar` to `StatefulWidget`. `TextEditingController` is instantiated once in `initState` and disposed in `dispose`.
-  - Preserves cursor position and composing state during active typing across notifier updates.
-- **Truly Deterministic List Ordering (`RestroomSorting`):**
-  - With location: primary Haversine distance ascending, tie-break normalized name ascending, final tie-break restroom ID ascending.
-  - Without location: primary normalized name ascending, tie-break restroom ID ascending.
-- **Restroom Preview Bottom Sheet (`RestroomPreviewSheet`):**
-  - Displays facility title, rating badge, review count, access type pill, status badge, indoor navigation hierarchy (`buildingName · buildingSection · floor · unitOrArea`), landmark callout, directions note, and truthful verification freshness badge.
-  - Safe Haversine distance display when foreground location is available; cleanly omitted with zero distance assumptions when location is unavailable.
-  - Amenity chip row for verified features (wheelchair accessibility, baby changing, bidet, free/paid, etc.).
-- **Nearby Restrooms List Sheet (`NearbyRestroomsSheet`):**
-  - Draggable, scrollable modal bottom sheet listing visible/filtered facilities using compact `RestroomSummaryCard`.
-  - Uses `RestroomSorting` for deterministic ordering.
-  - Fully synchronized with map markers: tapping a list item selects the facility, updates preview, and triggers camera centering.
-- **Domain Filter Model & Matching Semantics (`DiscoveryFilters`):**
-  - Pure domain value object in `lib/domain/models/discovery_filters.dart`.
-  - Filter categories: access types, gender designations, amenities, quality & freshness (minimum rating, recently verified within 90 days).
-  - Strict matching semantics: within-category **OR**, across-category **AND**.
-- **Comprehensive test suites:** 167/167 unit and widget tests green (51 dedicated P1.3 tests verifying preview fields, distance handling, deterministic sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, search field lifecycle, truthful verification freshness, derived-empty states, degraded+derived-empty precedence, list availability without selection, and truthful availability badges).
+Key capabilities:
+- Zero-read local execution: preview, list, search, and filters operate 100% in-memory against already-discovered restrooms.
+- Clear derived-empty and degraded status messages with targeted reset actions (`Clear search`, `Reset filters`, `Clear search & filters`).
+- Nearby restrooms list accessible without active selection via bottom bar.
+- Truthful status badges: no false "Open" claims; warning badge shown only when temporarily unavailable.
+- Strict 90-day verification freshness check and truthful preview freshness labels.
+- Deterministic 3-level sorting (distance, normalized name, restroom ID).
 
-### P1.4 — Hardening and human QA (COMPLETE)
+### P1.4 — Hardening and human QA (FINAL AUDIT REMEDIATION COMPLETE, RE-AUDIT PENDING)
 
 Completed final Phase 1 hardening milestone:
 
-- **P1.4A — Firestore Read/Cost Upper Bounds:**
-  - Viewport discovery bounded to zoom ≥ 13.0, 400ms camera idle debounce, max 16 geohash ranges, max 50 documents per range query (800 raw documents maximum), max 200 candidate documents decoded, and max 100 final discovered results returned.
+- **P1.4A — Firestore Read/Cost Upper Bounds (Aligned with Code Truth):**
+  - Viewport discovery bounded to zoom ≥ 12.0 (`AppConstants.minViewportZoom`), 400ms camera idle debounce (`AppConstants.cameraIdleDebounceDuration`).
+  - Geohash query ranges capped at max 16 (`AppConstants.maxGeohashQueryRanges`) for both nearby (`take(16)`) and viewport queries.
+  - Per-range Firestore document limit: 50 documents (`AppConstants.maxDocumentsPerRangeQuery`).
+  - Theoretical max raw documents read: `16 × 50 = 800` documents for both nearby and viewport discovery.
+  - Candidate document decoding safety ceiling: 200 candidates (`AppConstants.maxCandidateDocuments`) in local memory (clarified: local decoding ceiling, not billed Firestore reads).
+  - Maximum returned results cap: 100 facilities (`AppConstants.maxDiscoveryResults`).
   - Zero rating/review fan-out reads (restroom aggregates used exclusively).
   - Zero search/filter Firestore network fan-out (100% client-side memory evaluation).
   - Full bounds documented in `docs/08-phase-1-map-discovery.md`.
@@ -175,17 +143,19 @@ Completed final Phase 1 hardening milestone:
 - **P1.4C — CI / Toolchain Hardening:**
   - Node.js upgraded to LTS 22 in `.github/workflows/ci.yml`, resolving engine deprecation warnings.
   - devDependencies npm audit classified (21 transitive dev-only dependencies in test runner; zero production impact).
-- **P1.4D — Failure & Degraded State Hardening:**
-  - Non-destructive error handling verified: query failures on camera movement or refresh retain previously discovered facilities and markers in memory rather than blanking the map.
-  - Verified by dedicated automated regression test #35 in `test/presentation/map_discovery_notifier_test.dart`.
-- **P1.4E — Accessibility & UI Polish:**
-  - Close button touch targets across `RestroomPreviewSheet` and `NearbyRestroomsSheet` increased to standard 48×48 minWidth/minHeight with semantic tooltips.
-  - Dynamic type, contrast, and layout scaling verified across preview sheets.
+- **P1.4D — Failure Resilience & Non-Blocking Refresh Error Display:**
+  - Retained-results error handling: query failures retain previously discovered facilities and markers in memory rather than blanking the map.
+  - Non-blocking error overlay in `MapStatusOverlay`: when refresh fails with existing results, displays `"Couldn't refresh this area — showing previous results"` with a `"Retry"` action; when an initial query fails with zero results, displays `"Couldn't find restrooms — check connection"` with `"Retry"`.
+  - Notifier tracks `_lastAttemptedDescriptor` and provides `retryLastViewportQuery()`.
+  - Verified by unit test #35 in `test/presentation/map_discovery_notifier_test.dart` and 2 dedicated widget tests in `test/presentation/p1_3_preview_list_filter_test.dart`.
+- **P1.4E — Accessibility & Touch Target Polish:**
+  - Close button touch targets across `RestroomPreviewSheet` and `NearbyRestroomsSheet` meet standard 48×48 minWidth/minHeight with semantic tooltips.
+  - Broader dynamic type / contrast / screen reader audits marked as `NOT RUN / PLANNED` for dedicated manual QA pass.
 - **P1.4F — Platform Compilation Validation:**
   - Android debug APK build verified: `flutter build apk --debug` PASS (exit code 0).
   - iOS debug Runner build verified: `flutter build ios --debug --no-codesign` PASS (exit code 0).
 - **P1.4G — Live Device & Credential QA Protocol:**
-  - Live Firebase and Google Maps services documented as `NOT RUN` pending human owner credential configuration.
+  - Live Firebase and Google Maps services documented as `NOT RUN` pending human owner credential configuration
 
 ## Phase 1 intentionally excluded
 

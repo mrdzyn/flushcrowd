@@ -126,6 +126,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   Timer? _debounceTimer;
   int _activeRequestToken = 0;
   ViewportQueryDescriptor? _lastExecutedDescriptor;
+  ViewportQueryDescriptor? _lastAttemptedDescriptor;
   _LastCommittedViewportState? _lastCommittedViewportState;
   bool _isDisposed = false;
   SelectionOrigin _selectionOrigin = SelectionOrigin.none;
@@ -148,6 +149,9 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   int get candidateCount => _candidateCount;
   ViewportQueryDescriptor? get lastExecutedDescriptor =>
       _lastExecutedDescriptor;
+  ViewportQueryDescriptor? get lastAttemptedDescriptor =>
+      _lastAttemptedDescriptor;
+  bool get canRetryViewportQuery => _lastAttemptedDescriptor != null;
   SelectionOrigin get selectionOrigin => _selectionOrigin;
   bool get selectionIsUserInitiated => _selectionOrigin == SelectionOrigin.user;
 
@@ -363,6 +367,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     }
 
     final descriptor = ViewportQueryDescriptor(bounds: bounds, zoom: zoom);
+    _lastAttemptedDescriptor = descriptor;
 
     // 2. Query equivalence check: avoid redundant query if bounds/zoom are effectively identical
     if (!forceRefresh &&
@@ -440,7 +445,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
     }
   }
 
-  /// Explicit refresh / retry hook.
+  /// Explicit refresh hook for a specified viewport.
   Future<void> refreshCurrentViewport({
     required GeoBoundingBox bounds,
     required double zoom,
@@ -450,6 +455,16 @@ class MapDiscoveryNotifier extends ChangeNotifier {
       bounds: bounds,
       zoom: zoom,
       forceRefresh: true,
+    );
+  }
+
+  /// Retries the most recently attempted viewport query if available.
+  Future<void> retryLastViewportQuery() async {
+    final descriptor = _lastAttemptedDescriptor;
+    if (descriptor == null) return;
+    await refreshCurrentViewport(
+      bounds: descriptor.bounds,
+      zoom: descriptor.zoom,
     );
   }
 

@@ -263,17 +263,18 @@ Before Phase 1 completion, document the expected worst-case number of Firestore 
 
 | Parameter / Metric | Nearby Discovery (`getNearbyRestrooms`) | Viewport Discovery (`getViewportRestrooms`) | Enforcement Location |
 | :--- | :--- | :--- | :--- |
-| **Minimum Zoom Level** | N/A (radius-based) | Zoom ≥ `13.0` (`minDiscoveryZoom`) | `MapDiscoveryNotifier` |
+| **Minimum Zoom Level** | N/A (radius-based) | Zoom ≥ `12.0` (`AppConstants.minViewportZoom`) | `MapDiscoveryNotifier` |
 | **Debounce Window** | N/A | `400ms` idle debounce | `AppConstants.cameraIdleDebounceDuration` |
-| **Max Geohash Query Ranges** | Up to `9` (center + 8 neighbors) | Max `16` query ranges | `AppConstants.maxGeohashQueryRanges` |
+| **Max Geohash Query Ranges** | Up to `16` (`take(AppConstants.maxGeohashQueryRanges)`) | Max `16` query ranges | `AppConstants.maxGeohashQueryRanges` |
 | **Per-Range Document Read Limit** | `50` documents | `50` documents | `AppConstants.maxDocumentsPerRangeQuery` |
-| **Theoretical Max Raw Documents Read** | `9 × 50 = 450` documents | `16 × 50 = 800` documents | Firestore range queries (`.limit(50)`) |
+| **Theoretical Max Raw Documents Read** | `16 × 50 = 800` documents | `16 × 50 = 800` documents | Firestore range queries (`.limit(50)`) |
 | **Max Candidate Documents Decoded** | `200` candidates | `200` candidates | `AppConstants.maxCandidateDocuments` |
 | **Max Discovered Results Returned** | `100` facilities | `100` facilities | `AppConstants.maxDiscoveryResults` |
 | **Duplicate Query Suppression** | Caller-controlled | `isEffectivelyEquivalentTo` (0.0001° coords, 0.05 zoom) | `ViewportQueryDescriptor` |
 | **Degraded State Flagging** | Surfaced via `DiscoveryResult.degraded` | Surfaced via `DiscoveryResult.degraded` | Repository & Notifier |
-| **Network Error Resilience** | Caller-handled | Retains prior results in memory; non-destructive | `MapDiscoveryNotifier` |
+| **Network Error Resilience** | Caller-handled | Retains prior results in memory; non-blocking error overlay with Retry | `MapDiscoveryNotifier` & `MapStatusOverlay` |
 
+- **Billed Reads vs. Decoded Candidates Distinction:** Theoretical max raw documents read is `16 × 50 = 800` documents from Firestore. The `maxCandidateDocuments = 200` limit is a memory/CPU safety ceiling on deserializing/decoding candidates locally; it is NOT a lower ceiling on billed Firestore reads if individual ranges return docs before hitting the decoding cap across ranges.
 - **Zero rating/review fan-out reads**: All display cards, bottom sheets, and preview cards rely strictly on restroom-level aggregate fields (`ratingAverage`, `ratingCount`, `isVerified`).
 - **Zero search/filter network fan-out**: Filter chips and search queries evaluate entirely client-side against the currently discovered and memory-cached facilities.
 

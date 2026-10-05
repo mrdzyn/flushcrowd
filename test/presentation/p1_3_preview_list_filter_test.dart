@@ -1783,4 +1783,142 @@ void main() {
       },
     );
   });
+
+  group('P1.4 Remediation — Goal 2: Non-Blocking Refresh/Query Error Display & Recovery', () {
+    late FakeRestroomRepository fakeRepo;
+    late List<Restroom> dataset;
+
+    setUp(() {
+      fakeRepo = FakeRestroomRepository();
+      dataset = [
+        _testRestroom(id: 'rr_err_1', name: 'Ayala Triangle Loo'),
+        _testRestroom(id: 'rr_err_2', name: 'Greenbelt 5 Loo'),
+      ];
+    });
+
+    testWidgets(
+      '1. MapStatusOverlay displays non-blocking previous-results message when refresh fails with existing results',
+      (tester) async {
+        fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: dataset,
+        );
+
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.5500, longitude: 121.0100),
+          northEast: Coordinates(latitude: 14.5600, longitude: 121.0200),
+        );
+
+        // 1. Initial success
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(notifier.status, DiscoveryStatus.loadedComplete);
+        expect(notifier.discoveredRestrooms.length, 2);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: MapStatusOverlay(notifier: notifier)),
+          ),
+        );
+
+        // No error overlay on success
+        expect(find.byType(MapStatusOverlay), findsOneWidget);
+        expect(
+          find.text("Couldn't refresh this area — showing previous results"),
+          findsNothing,
+        );
+
+        // 2. Refresh fails
+        fakeRepo.viewportResultToReturn = null;
+        fakeRepo.exceptionToThrow = Exception('Network down');
+
+        await notifier.refreshCurrentViewport(bounds: bounds, zoom: 15.0);
+        await tester.pump();
+
+        expect(notifier.status, DiscoveryStatus.error);
+        expect(notifier.discoveredRestrooms.length, 2); // Retained!
+
+        // Error message appears with retained results message and Retry button
+        expect(
+          find.text("Couldn't refresh this area — showing previous results"),
+          findsOneWidget,
+        );
+        expect(find.text('Retry'), findsOneWidget);
+
+        // 3. Retry succeeds and clears error
+        fakeRepo.exceptionToThrow = null;
+        fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: dataset,
+        );
+
+        await tester.tap(find.text('Retry'));
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(notifier.status, DiscoveryStatus.loadedComplete);
+        expect(
+          find.text("Couldn't refresh this area — showing previous results"),
+          findsNothing,
+        );
+
+        notifier.dispose();
+      },
+    );
+
+    testWidgets(
+      '2. MapStatusOverlay displays initial connection failure message when query fails with zero prior results',
+      (tester) async {
+        fakeRepo.exceptionToThrow = Exception('No route to host');
+
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.5500, longitude: 121.0100),
+          northEast: Coordinates(latitude: 14.5600, longitude: 121.0200),
+        );
+
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(notifier.status, DiscoveryStatus.error);
+        expect(notifier.discoveredRestrooms.isEmpty, isTrue);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: MapStatusOverlay(notifier: notifier)),
+          ),
+        );
+
+        expect(
+          find.text("Couldn't find restrooms — check connection"),
+          findsOneWidget,
+        );
+        expect(find.text('Retry'), findsOneWidget);
+
+        // Retry succeeds
+        fakeRepo.exceptionToThrow = null;
+        fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: dataset,
+        );
+
+        await tester.tap(find.text('Retry'));
+        await tester.pump(const Duration(milliseconds: 50));
+
+        expect(notifier.status, DiscoveryStatus.loadedComplete);
+        expect(
+          find.text("Couldn't find restrooms — check connection"),
+          findsNothing,
+        );
+
+        notifier.dispose();
+      },
+    );
+  });
 }
