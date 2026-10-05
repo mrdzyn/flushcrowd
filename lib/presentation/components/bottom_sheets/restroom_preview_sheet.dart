@@ -228,9 +228,12 @@ class RestroomPreviewSheet extends StatelessWidget {
                       : StatusChipType.neutral,
                 ),
 
-                // Status chip (Open / Active)
-                if (restroom.status == RestroomStatus.active)
-                  const StatusChip(label: 'Open', type: StatusChipType.success),
+                // Status chip (only when explicitly unavailable)
+                if (restroom.status == RestroomStatus.temporarilyUnavailable)
+                  const StatusChip(
+                    label: 'Temporarily Unavailable',
+                    type: StatusChipType.warning,
+                  ),
               ],
             ),
 

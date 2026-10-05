@@ -9,7 +9,10 @@ import 'package:looradar/domain/models/restroom.dart';
 import 'package:looradar/presentation/components/bottom_sheets/filter_bottom_sheet.dart';
 import 'package:looradar/presentation/components/bottom_sheets/nearby_restrooms_sheet.dart';
 import 'package:looradar/presentation/components/bottom_sheets/restroom_preview_sheet.dart';
+import 'package:looradar/presentation/components/cards/restroom_summary_card.dart';
+import 'package:looradar/presentation/components/map/map_discovery_bottom_bar.dart';
 import 'package:looradar/presentation/components/map/map_search_bar.dart';
+import 'package:looradar/presentation/components/map/map_status_overlay.dart';
 import 'package:looradar/presentation/state/map_discovery_notifier.dart';
 import 'package:looradar/presentation/utils/restroom_sorting.dart';
 
@@ -1427,5 +1430,357 @@ void main() {
 
       notifier.dispose();
     });
+  });
+
+  group('P1.3 Final Remediation — Goal 1: Degraded + Derived-Empty Overlay Precedence', () {
+    late FakeRestroomRepository fakeRepo;
+    late List<Restroom> dataset;
+
+    setUp(() {
+      fakeRepo = FakeRestroomRepository();
+      dataset = [
+        _testRestroom(
+          id: 'rr_1',
+          name: 'Ayala Mall Restroom',
+          buildingName: 'Ayala Mall',
+          hasBidet: true,
+        ),
+        _testRestroom(
+          id: 'rr_2',
+          name: 'Market Market Restroom',
+          buildingName: 'Market Market',
+          hasBidet: false,
+        ),
+      ];
+      // Simulated degraded discovery
+      fakeRepo.viewportResultToReturn = DiscoveryResult.partial(
+        items: dataset,
+        reason: DiscoveryCompletenessReason.rangeCapExceeded,
+        rangeCount: 16,
+        candidateCount: 45,
+      );
+    });
+
+    Widget createOverlay(MapDiscoveryNotifier notifier) {
+      return MaterialApp(
+        home: Scaffold(
+          body: ListenableBuilder(
+            listenable: notifier,
+            builder: (ctx, _) => MapStatusOverlay(notifier: notifier),
+          ),
+        ),
+      );
+    }
+
+    testWidgets(
+      '1. Degraded + search-empty displays combined message and Clear search CTA',
+      (tester) async {
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+          northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+        );
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        notifier.setSearchQuery('nonexistent');
+        expect(notifier.isDegraded, isTrue);
+        expect(notifier.hasDerivedEmptyResults, isTrue);
+        expect(notifier.derivedEmptyReason, DerivedEmptyReason.search);
+
+        await tester.pumpWidget(createOverlay(notifier));
+        await tester.pump();
+
+        // Combined message must be visible, NOT generic "Showing partial results"
+        expect(
+          find.text('No restrooms match your search (partial results)'),
+          findsOneWidget,
+        );
+        expect(
+          find.text('Showing partial results (safety cap reached)'),
+          findsNothing,
+        );
+        expect(find.text('Clear search'), findsOneWidget);
+
+        // Tapping Clear search recovers visible results
+        await tester.tap(find.text('Clear search'));
+        await tester.pump();
+
+        expect(notifier.visibleRestrooms.length, 2);
+        expect(
+          find.text('Showing partial results (safety cap reached)'),
+          findsOneWidget,
+        );
+
+        notifier.dispose();
+      },
+    );
+
+    testWidgets(
+      '2. Degraded + filter-empty displays combined message and Reset filters CTA',
+      (tester) async {
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+          northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+        );
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        notifier.setFilters(const DiscoveryFilters(babyChangingOnly: true));
+        expect(notifier.isDegraded, isTrue);
+        expect(notifier.hasDerivedEmptyResults, isTrue);
+        expect(notifier.derivedEmptyReason, DerivedEmptyReason.filters);
+
+        await tester.pumpWidget(createOverlay(notifier));
+        await tester.pump();
+
+        expect(
+          find.text('No restrooms match your filters (partial results)'),
+          findsOneWidget,
+        );
+        expect(find.text('Reset filters'), findsOneWidget);
+
+        await tester.tap(find.text('Reset filters'));
+        await tester.pump();
+
+        expect(notifier.visibleRestrooms.length, 2);
+        expect(
+          find.text('Showing partial results (safety cap reached)'),
+          findsOneWidget,
+        );
+
+        notifier.dispose();
+      },
+    );
+
+    testWidgets(
+      '3. Degraded + search&filter-empty displays combined message and Clear search & filters CTA',
+      (tester) async {
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+          northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+        );
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        notifier.setSearchQuery('Ayala');
+        notifier.setFilters(const DiscoveryFilters(babyChangingOnly: true));
+        expect(notifier.isDegraded, isTrue);
+        expect(notifier.hasDerivedEmptyResults, isTrue);
+        expect(
+          notifier.derivedEmptyReason,
+          DerivedEmptyReason.searchAndFilters,
+        );
+
+        await tester.pumpWidget(createOverlay(notifier));
+        await tester.pump();
+
+        expect(
+          find.text(
+            'No restrooms match your search & filters (partial results)',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Clear search & filters'), findsOneWidget);
+
+        await tester.tap(find.text('Clear search & filters'));
+        await tester.pump();
+
+        expect(notifier.visibleRestrooms.length, 2);
+        expect(
+          find.text('Showing partial results (safety cap reached)'),
+          findsOneWidget,
+        );
+
+        notifier.dispose();
+      },
+    );
+  });
+
+  group('P1.3 Final Remediation — Goal 2: Nearby / See All Accessible Without Selection', () {
+    late FakeRestroomRepository fakeRepo;
+    late List<Restroom> dataset;
+
+    setUp(() {
+      fakeRepo = FakeRestroomRepository();
+      dataset = [
+        _testRestroom(id: 'rr_a', name: 'Restroom A', hasBidet: true),
+        _testRestroom(id: 'rr_b', name: 'Restroom B', hasBidet: false),
+        _testRestroom(id: 'rr_c', name: 'Restroom C', hasBidet: false),
+      ];
+      fakeRepo.viewportResultToReturn = DiscoveryResult.complete(
+        items: dataset,
+      );
+    });
+
+    testWidgets(
+      '4. See all remains accessible when selected restroom is filtered out',
+      (tester) async {
+        final notifier = MapDiscoveryNotifier(
+          restroomRepository: fakeRepo,
+          debounceDuration: const Duration(milliseconds: 10),
+        );
+        final bounds = GeoBoundingBox(
+          southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+          northEast: Coordinates(latitude: 14.60, longitude: 121.10),
+        );
+        notifier.onCameraIdle(bounds: bounds, zoom: 15.0);
+        await tester.pump(const Duration(milliseconds: 50));
+
+        // User selects Restroom A
+        notifier.selectRestroom(dataset[0]);
+        expect(notifier.selectedRestroom?.id, 'rr_a');
+
+        bool seeAllTapped = false;
+
+        Widget buildBottomBar(MapDiscoveryNotifier n) {
+          return MaterialApp(
+            home: Scaffold(
+              body: MapDiscoveryBottomBar(
+                visibleRestrooms: n.visibleRestrooms,
+                selectedRestroom: n.selectedRestroom,
+                onSeeAll: () => seeAllTapped = true,
+              ),
+            ),
+          );
+        }
+
+        await tester.pumpWidget(buildBottomBar(notifier));
+        await tester.pump();
+
+        expect(find.text('Nearest to you'), findsOneWidget);
+        expect(find.text('See all'), findsOneWidget);
+        expect(find.text('Restroom A'), findsOneWidget);
+
+        // Filter: only restrooms matching 'B' (hides Restroom A, leaves B)
+        notifier.setSearchQuery('B');
+        await tester.pumpWidget(buildBottomBar(notifier));
+        await tester.pump();
+
+        expect(notifier.selectedRestroom, isNull);
+        expect(notifier.visibleRestrooms.length, 1);
+        expect(notifier.visibleRestrooms.first.id, 'rr_b');
+
+        // 'See all' must still be present and clickable!
+        expect(find.text('See all'), findsOneWidget);
+        expect(find.text('Nearby restrooms (1)'), findsOneWidget);
+        expect(find.text('Nearest to you'), findsNothing);
+
+        final initialReads = fakeRepo.getViewportCalls;
+
+        // Tap 'See all'
+        await tester.tap(find.text('See all'));
+        expect(seeAllTapped, isTrue);
+
+        // Zero additional network reads
+        expect(fakeRepo.getViewportCalls, initialReads);
+        expect(fakeRepo.getNearbyCalls, 0);
+
+        notifier.dispose();
+      },
+    );
+  });
+
+  group('P1.3 Final Remediation — Goal 3: Truthful Availability without Open Claims', () {
+    testWidgets(
+      '5. Active restroom in RestroomSummaryCard does NOT render Open chip',
+      (tester) async {
+        final activeRestroom = _testRestroom(
+          id: 'rr_active',
+          name: 'Active Facility',
+        );
+        expect(activeRestroom.status, RestroomStatus.active);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(body: RestroomSummaryCard(restroom: activeRestroom)),
+          ),
+        );
+
+        expect(find.text('Active Facility'), findsOneWidget);
+        expect(find.text('Open'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '6. Temporarily unavailable restroom in RestroomSummaryCard renders Unavailable chip',
+      (tester) async {
+        final unavailableRestroom = Restroom(
+          id: 'rr_unavail',
+          name: 'Unavailable Facility',
+          coordinates: Coordinates(latitude: 14.5800, longitude: 121.0500),
+          geohash: 'wdw4fq',
+          status: RestroomStatus.temporarilyUnavailable,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomSummaryCard(restroom: unavailableRestroom),
+            ),
+          ),
+        );
+
+        expect(find.text('Unavailable'), findsOneWidget);
+        expect(find.text('Open'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '7. Active restroom in RestroomPreviewSheet does NOT render Open chip',
+      (tester) async {
+        final activeRestroom = _testRestroom(
+          id: 'rr_active_preview',
+          name: 'Active Facility Preview',
+        );
+        expect(activeRestroom.status, RestroomStatus.active);
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(restroom: activeRestroom),
+            ),
+          ),
+        );
+
+        expect(find.text('Active Facility Preview'), findsOneWidget);
+        expect(find.text('Open'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '8. Temporarily unavailable restroom in RestroomPreviewSheet renders Temporarily Unavailable chip',
+      (tester) async {
+        final unavailableRestroom = Restroom(
+          id: 'rr_unavail_preview',
+          name: 'Unavailable Facility Preview',
+          coordinates: Coordinates(latitude: 14.5800, longitude: 121.0500),
+          geohash: 'wdw4fq',
+          status: RestroomStatus.temporarilyUnavailable,
+        );
+
+        await tester.pumpWidget(
+          MaterialApp(
+            home: Scaffold(
+              body: RestroomPreviewSheet(restroom: unavailableRestroom),
+            ),
+          ),
+        );
+
+        expect(find.text('Temporarily Unavailable'), findsOneWidget);
+        expect(find.text('Open'), findsNothing);
+      },
+    );
   });
 }

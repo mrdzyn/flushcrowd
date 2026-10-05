@@ -5,20 +5,18 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/constants/app_constants.dart';
-import '../../core/theme/app_colors.dart';
-import '../../core/theme/app_radii.dart';
 import '../../core/theme/app_spacing.dart';
-import '../../core/theme/app_typography.dart';
 import '../../domain/models/coordinates.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
 import '../components/bottom_sheets/filter_bottom_sheet.dart';
 import '../components/bottom_sheets/nearby_restrooms_sheet.dart';
 import '../components/bottom_sheets/restroom_preview_sheet.dart';
-import '../components/cards/restroom_summary_card.dart';
+import '../components/map/map_discovery_bottom_bar.dart';
 import '../components/map/map_marker_adapter.dart';
 import '../components/map/map_recenter_button.dart';
 import '../components/map/map_search_bar.dart';
+import '../components/map/map_status_overlay.dart';
 import '../components/map/permission_banner.dart';
 import '../models/restroom_marker_item.dart';
 import '../state/location_notifier.dart';
@@ -172,59 +170,19 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                   ),
                 ),
 
-                // Nearest to you card bottom container
-                if (selectedRestroom != null)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: AppSpacing.screenHorizontal,
-                      vertical: AppSpacing.sm,
-                    ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              'Nearest to you',
-                              style: AppTypography.titleMedium.copyWith(
-                                fontWeight: FontWeight.w700,
-                              ),
-                            ),
-                            TextButton(
-                              onPressed: () => _showNearbyListSheet(
-                                context,
-                                discoveryNotifier,
-                                userCoords,
-                              ),
-                              style: TextButton.styleFrom(
-                                foregroundColor: AppColors.primary,
-                                padding: EdgeInsets.zero,
-                                minimumSize: Size.zero,
-                                tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                              ),
-                              child: Text(
-                                'See all',
-                                style: AppTypography.labelMedium.copyWith(
-                                  color: AppColors.primary,
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                        const SizedBox(height: AppSpacing.sm),
-                        RestroomSummaryCard(
-                          restroom: selectedRestroom,
-                          userLocation: userCoords,
-                          onTap: () => _showRestroomPreviewSheet(
-                            context,
-                            selectedRestroom,
-                            userCoords,
-                          ),
-                        ),
-                      ],
-                    ),
+                // Bottom results section: accessible whenever visible restrooms exist
+                MapDiscoveryBottomBar(
+                  visibleRestrooms: discoveryNotifier.visibleRestrooms,
+                  selectedRestroom: selectedRestroom,
+                  userCoordinates: userCoords,
+                  onSeeAll: () => _showNearbyListSheet(
+                    context,
+                    discoveryNotifier,
+                    userCoords,
                   ),
+                  onCardTap: (restroom) =>
+                      _showRestroomPreviewSheet(context, restroom, userCoords),
+                ),
                 const SizedBox(height: AppSpacing.sm),
               ],
             ),
@@ -235,202 +193,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   }
 
   Widget _buildStatusOverlay(MapDiscoveryNotifier notifier) {
-    if (notifier.isLoading) {
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.only(top: AppSpacing.xs),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.92),
-            borderRadius: AppRadii.pillBorder,
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1A000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const SizedBox(
-                width: 12,
-                height: 12,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: AppColors.primary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              Text(
-                'Searching visible area...',
-                style: AppTypography.bodySmall.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (notifier.isSuppressed) {
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.only(top: AppSpacing.xs),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.92),
-            borderRadius: AppRadii.pillBorder,
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1A000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.zoom_in,
-                size: 16,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Zoom in to see restrooms',
-                style: AppTypography.bodySmall.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (notifier.isDegraded) {
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.only(top: AppSpacing.xs),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.92),
-            borderRadius: AppRadii.pillBorder,
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1A000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.info_outline,
-                size: 16,
-                color: AppColors.warning,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                'Showing partial results (safety cap reached)',
-                style: AppTypography.bodySmall.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    if (notifier.hasDerivedEmptyResults) {
-      String message;
-      String actionText;
-      VoidCallback onAction;
-
-      switch (notifier.derivedEmptyReason) {
-        case DerivedEmptyReason.search:
-          message = notifier.isDegraded
-              ? 'No search matches (partial results)'
-              : 'No restrooms match your search';
-          actionText = 'Clear search';
-          onAction = () => notifier.resetSearch();
-          break;
-        case DerivedEmptyReason.filters:
-          message = notifier.isDegraded
-              ? 'No filter matches (partial results)'
-              : 'No restrooms match your filters';
-          actionText = 'Reset filters';
-          onAction = () => notifier.resetFilters();
-          break;
-        case DerivedEmptyReason.searchAndFilters:
-        case null:
-          message = notifier.isDegraded
-              ? 'No search & filter matches (partial results)'
-              : 'No restrooms match your search & filters';
-          actionText = 'Clear all';
-          onAction = () => notifier.resetSearchAndFilters();
-          break;
-      }
-
-      return Center(
-        child: Container(
-          margin: const EdgeInsets.only(top: AppSpacing.xs),
-          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
-          decoration: BoxDecoration(
-            color: AppColors.surface.withValues(alpha: 0.95),
-            borderRadius: AppRadii.pillBorder,
-            boxShadow: const [
-              BoxShadow(
-                color: Color(0x1A000000),
-                blurRadius: 8,
-                offset: Offset(0, 2),
-              ),
-            ],
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              const Icon(
-                Icons.filter_alt_off_rounded,
-                size: 16,
-                color: AppColors.textSecondary,
-              ),
-              const SizedBox(width: 6),
-              Text(
-                message,
-                style: AppTypography.bodySmall.copyWith(
-                  fontWeight: FontWeight.w500,
-                  color: AppColors.textSecondary,
-                ),
-              ),
-              const SizedBox(width: 8),
-              GestureDetector(
-                onTap: onAction,
-                child: Text(
-                  actionText,
-                  style: AppTypography.bodySmall.copyWith(
-                    fontWeight: FontWeight.w700,
-                    color: AppColors.primary,
-                  ),
-                ),
-              ),
-            ],
-          ),
-        ),
-      );
-    }
-
-    return const SizedBox.shrink();
+    return MapStatusOverlay(notifier: notifier);
   }
 
   Widget _buildMapLayer(

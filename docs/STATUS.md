@@ -116,45 +116,47 @@ Implemented, remediated, and verified:
 - **Foreground location separation:** user position remains platform-controlled (`myLocationEnabled`) and visually separate from restroom markers without historical tracking.
 - **Comprehensive test suites:** 116 unit/widget tests green across query orchestration, debounce, query equivalence, concurrency/stale-token protection, suppression, marker adaptation, clustering, request invalidation, committed-state restoration, startup single-path, selection lifecycle, and permission-grant viewport convergence. Audited and approved at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 findings.
 
-### P1.3 — Restroom preview, nearby list & local filters (AUDIT REMEDIATION COMPLETE, RE-AUDIT PENDING)
+### P1.3 — Restroom preview, nearby list & local filters (FINAL AUDIT REMEDIATION COMPLETE, INDEPENDENT RE-AUDIT PENDING)
 
 Implemented, remediated against independent audit findings, verified, and strictly isolated to zero additional Firestore reads:
 
 - **Zero-read local execution invariant:** Restroom preview, nearby list, local search, and filter matching operate 100% in-memory against `_discoveredRestrooms` already retrieved by the P1.1/P1.2 viewport discovery pipeline. Zero additional Firestore or repository queries are issued when opening preview, scrolling list, typing query text, applying filters, or resetting filters.
-- **MAJOR-1 Remediated (Derived-Empty State & Semantic Reset):**
-  - Distinguishes search-only empty (`DerivedEmptyReason.search`), filter-only empty (`DerivedEmptyReason.filters`), and search+filter empty (`DerivedEmptyReason.searchAndFilters`).
-  - Overlay and list empty states show tailored messages (`No restrooms match your search`, `No restrooms match your filters`, `No restrooms match your search & filters`).
+- **MAJOR-1 Remediated (Degraded + Derived-Empty Overlay Precedence):**
+  - In `MapStatusOverlay`, evaluated `hasDerivedEmptyResults` before pure `isDegraded`.
+  - When discovery is degraded and search/filters produce zero visible results, displays clear combined context (`No restrooms match your search (partial results)`, `No restrooms match your filters (partial results)`, `No restrooms match your search & filters (partial results)`) rather than generic `Showing partial results`.
   - Action buttons cleanly target the causing factor: `Clear search` invokes `resetSearch()`, `Reset filters` invokes `resetFilters()`, `Clear search & filters` invokes `resetSearchAndFilters()`.
-  - When discovery is degraded, messages preserve the partial status context (e.g. `No search matches (partial results)`) without claiming complete geographic emptiness.
-- **MAJOR-2 Remediated (Truthful Verification Freshness):**
+- **MAJOR-2 Remediated (Nearby List / See All Accessible Without Selection):**
+  - In `MapDiscoveryScreen` / `MapDiscoveryBottomBar`, decoupled the bottom bar visibility from `selectedRestroom`. Bottom bar renders whenever `visibleRestrooms.isNotEmpty`.
+  - When `selectedRestroom == null`, shows header `'Nearby restrooms (N)'` and `'See all'` text button to open `NearbyRestroomsSheet`. Shows `'Nearest to you'` and `RestroomSummaryCard` only when a restroom is selected.
+- **MAJOR-3 Remediated (Truthful Status Badges without False "Open" Claims):**
+  - Removed misleading hardcoded `Open` badge from both `RestroomSummaryCard` and `RestroomPreviewSheet`.
+  - Displays `Unavailable` or `Temporarily Unavailable` warning chip only when `restroom.status == RestroomStatus.temporarilyUnavailable`.
+- **MINOR-1 Remediated (Documentation & Navigation Contract Truthfulness):**
+  - Documented truthfully that external navigation handoff is NOT implemented in V1 MVP; "Get Directions" in `RestroomPreviewSheet` is currently a non-functional UI placeholder pending Phase 1/Phase 2 navigation handoff wiring.
+- **Derived-Empty State & Semantic Reset:**
+  - Distinguishes search-only empty (`DerivedEmptyReason.search`), filter-only empty (`DerivedEmptyReason.filters`), and search+filter empty (`DerivedEmptyReason.searchAndFilters`).
+- **Truthful Verification Freshness:**
   - Strict 90-day rule: `recentlyVerifiedOnly` requires `lastVerifiedAt != null` AND `now.difference(lastVerifiedAt!) <= 90 days`. Missing timestamps or timestamps older than 90 days fail strictly, regardless of `verificationCount`.
   - Preview freshness banner labels verifications truthfully (`Verified today`, `Verified yesterday`, `Verified X days ago`, `Verified X months/years ago`, `Previously verified by community (N)`). Stale verifications (>30 days) are never labeled "Verified recently". Supports testable deterministic clock injection.
-- **MAJOR-3 Remediated (Stable MapSearchBar Lifecycle):**
+- **Stable MapSearchBar Lifecycle:**
   - Converted `MapSearchBar` to `StatefulWidget`. `TextEditingController` is instantiated once in `initState` and disposed in `dispose`.
   - Preserves cursor position and composing state during active typing across notifier updates.
-  - Implements `didUpdateWidget` to synchronize external resets (e.g. clearing text) without overwriting active user typing. Zero controller allocations in `build()`.
-- **MINOR-1 Remediated (Truly Deterministic List Ordering):**
-  - Extracted pure helper `RestroomSorting`:
-    - With location: primary Haversine distance ascending, tie-break normalized name ascending, final tie-break restroom ID ascending.
-    - Without location: primary normalized name ascending, tie-break restroom ID ascending.
-- **MINOR-2 Remediated (Accurate Documentation Claims):**
-  - Dismissing or closing preview uses the standard close icon / modal dismiss.
-  - When filters or search hide an explicitly selected restroom, selection clears to `null` with `SelectionOrigin.clearedAfterUserSelection`. Resetting filters/search does NOT arbitrarily reselect the old facility; the user selects again explicitly.
+- **Truly Deterministic List Ordering (`RestroomSorting`):**
+  - With location: primary Haversine distance ascending, tie-break normalized name ascending, final tie-break restroom ID ascending.
+  - Without location: primary normalized name ascending, tie-break restroom ID ascending.
 - **Restroom Preview Bottom Sheet (`RestroomPreviewSheet`):**
   - Displays facility title, rating badge, review count, access type pill, status badge, indoor navigation hierarchy (`buildingName · buildingSection · floor · unitOrArea`), landmark callout, directions note, and truthful verification freshness badge.
   - Safe Haversine distance display when foreground location is available; cleanly omitted with zero distance assumptions when location is unavailable.
   - Amenity chip row for verified features (wheelchair accessibility, baby changing, bidet, free/paid, etc.).
-  - Primary "Get Directions" action (external navigation handoff) and close button. Gracefully omits empty or absent optional fields.
 - **Nearby Restrooms List Sheet (`NearbyRestroomsSheet`):**
   - Draggable, scrollable modal bottom sheet listing visible/filtered facilities using compact `RestroomSummaryCard`.
   - Uses `RestroomSorting` for deterministic ordering.
   - Fully synchronized with map markers: tapping a list item selects the facility, updates preview, and triggers camera centering.
-  - Differentiates geographic emptiness from search/filter empty states with specific recovery buttons.
 - **Domain Filter Model & Matching Semantics (`DiscoveryFilters`):**
   - Pure domain value object in `lib/domain/models/discovery_filters.dart`.
   - Filter categories: access types, gender designations, amenities, quality & freshness (minimum rating, recently verified within 90 days).
   - Strict matching semantics: within-category **OR**, across-category **AND**.
-- **Comprehensive test suites:** 159/159 unit and widget tests green (43 dedicated P1.3 tests verifying all preview fields, distance handling, deterministic sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, search field lifecycle, truthful verification freshness, derived-empty states, and filter bottom sheet interactions).
+- **Comprehensive test suites:** 167/167 unit and widget tests green (51 dedicated P1.3 tests verifying preview fields, distance handling, deterministic sorting, selection synchronization, within-group OR and across-group AND filter semantics, search matching, search field lifecycle, truthful verification freshness, derived-empty states, degraded+derived-empty precedence, list availability without selection, and truthful availability badges).
 
 ### P1.4 — Hardening and human QA (BLOCKED)
 
@@ -197,7 +199,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (159/159 passed)
+- `flutter test` — PASS (167/167 passed)
 - Firestore Security Rules emulator tests — PASS (20/20 passed)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
