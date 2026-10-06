@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 — Add Restroom
 - **Current milestone:** P2.0 — Phase 2 specification authoring and setup complete; independent exact-head specification audit pending
 - **Current branch:** `phase-2/add-restroom`
-- **Current PR:** Draft PR to be opened (`feat: implement LooRadar Phase 2 add restroom`)
+- **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification authored (`docs/09-phase-2-add-restroom.md`); P2.1 implementation BLOCKED pending independent P2.0 specification exact-head audit.
 
@@ -84,7 +84,7 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Authored canonical implementation specification in `docs/09-phase-2-add-restroom.md`.
 - Documented data-truth model, atomic public/private write architecture, Firestore security rules invariants, canonical document ID generation, bounded duplicate detection heuristics, and phased test plan.
 - Updated project documentation index and tracking status.
-- Opened draft PR `Phase 2 — Add Restroom` on `phase-2/add-restroom`.
+- Opened draft PR [#4](https://github.com/mrdzyn/looradar/pull/4) on `phase-2/add-restroom`.
 - Independent exact-head specification audit pending.
 
 ### P2.1 — Contribution Domain Model (`RestroomDraft`), Repository Batch Write Contract, Firestore Rules & Emulator Tests (BLOCKED)
