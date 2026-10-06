@@ -23,25 +23,26 @@ service cloud.firestore {
     //   - unitOrArea: string (optional, 1..100 chars)
     //   - landmark: string (optional, 1..100 chars)
     //   - directionsNote: string (optional, 1..500 chars)
+    //   - accessInstructions: string (optional, 1..300 chars)
     //   - accessType: string (required, enum: 'free', 'paid', 'customer_only', 'key_required')
-    //   - feeAmount: number (optional, >= 0 && <= 1000000)
-    //   - feeCurrency: string (optional, 3 chars)
-    //   - male: bool (optional)
-    //   - female: bool (optional)
-    //   - allGender: bool (optional)
-    //   - pwdAccessible: bool (optional)
-    //   - babyChanging: bool (optional)
-    //   - hasBidet: bool (optional)
-    //   - hasToiletPaper: bool (optional)
-    //   - hasSoap: bool (optional)
-    //   - hasHandDryer: bool (optional)
-    //   - averageRating: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
-    //   - ratingCount: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
-    //   - verificationCount: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
-    //   - negativeVerificationCount: number (optional, trusted aggregate, client cannot forge on create, immutable on update)
-    //   - lastVerifiedAt: timestamp (optional, trusted aggregate, immutable on update)
+    //   - feeAmount: number (required if paid [0..1000000], prohibited if non-paid)
+    //   - feeCurrency: string (required if paid [3 chars], prohibited if non-paid)
+    //   - male: bool (optional, nullable)
+    //   - female: bool (optional, nullable)
+    //   - allGender: bool (optional, nullable)
+    //   - pwdAccessible: bool (optional, nullable)
+    //   - babyChanging: bool (optional, nullable)
+    //   - hasBidet: bool (optional, nullable)
+    //   - hasToiletPaper: bool (optional, nullable)
+    //   - hasSoap: bool (optional, nullable)
+    //   - hasHandDryer: bool (optional, nullable)
+    //   - averageRating: number (optional, trusted aggregate, client cannot forge on create)
+    //   - ratingCount: number (optional, trusted aggregate, client cannot forge on create)
+    //   - verificationCount: number (optional, trusted aggregate, client cannot forge on create)
+    //   - negativeVerificationCount: number (optional, trusted aggregate, client cannot forge on create)
+    //   - lastVerifiedAt: timestamp (optional, trusted aggregate)
     //   - status: string (required, enum: 'active', 'unverified', 'flagged', 'temporarily_unavailable', 'removed')
-    //   - createdAt: timestamp (required, immutable)
+    //   - createdAt: timestamp (required)
     //   - updatedAt: timestamp (required)
     //
     // Collection: ratings
@@ -88,9 +89,9 @@ service cloud.firestore {
     //   - createdAt: timestamp (required)
     //
     // Collection: contributions
-    // Document ID: auto-generated string
+    // Document ID: auto-generated or deterministic 'restroom_' + resourceId
     // Fields:
-    //   - id: string (optional, 1..100 chars)
+    //   - id: string (optional, 1..150 chars)
     //   - contributionType: string (required, enum: 'restroom', 'rating', 'verification', 'report', 'photo')
     //   - resourceId: string (required, 1..100 chars)
     //   - restroomId: string (optional, 1..100 chars)
@@ -144,6 +145,12 @@ service cloud.firestore {
              data[field] is bool;
     }
 
+    function isValidOptionalNullableBool(data, field) {
+      return !(field in data) ||
+             data[field] == null ||
+             data[field] is bool;
+    }
+
     function isValidOptionalNumber(data, field, minVal, maxVal) {
       return !(field in data) ||
              (data[field] is number &&
@@ -168,7 +175,7 @@ service cloud.firestore {
       let allowedFields = [
         'id', 'name', 'latitude', 'longitude', 'geohash',
         'countryCode', 'region', 'city', 'buildingName', 'buildingSection',
-        'floor', 'unitOrArea', 'landmark', 'directionsNote',
+        'floor', 'unitOrArea', 'landmark', 'directionsNote', 'accessInstructions',
         'accessType', 'feeAmount', 'feeCurrency',
         'male', 'female', 'allGender', 'pwdAccessible', 'babyChanging',
         'hasBidet', 'hasToiletPaper', 'hasSoap', 'hasHandDryer',
@@ -195,17 +202,21 @@ service cloud.firestore {
              isValidOptionalString(data, 'unitOrArea', 1, 100) &&
              isValidOptionalString(data, 'landmark', 1, 100) &&
              isValidOptionalString(data, 'directionsNote', 1, 500) &&
-             isValidOptionalString(data, 'feeCurrency', 3, 3) &&
-             isValidOptionalNumber(data, 'feeAmount', 0, 1000000) &&
-             isValidOptionalBool(data, 'male') &&
-             isValidOptionalBool(data, 'female') &&
-             isValidOptionalBool(data, 'allGender') &&
-             isValidOptionalBool(data, 'pwdAccessible') &&
-             isValidOptionalBool(data, 'babyChanging') &&
-             isValidOptionalBool(data, 'hasBidet') &&
-             isValidOptionalBool(data, 'hasToiletPaper') &&
-             isValidOptionalBool(data, 'hasSoap') &&
-             isValidOptionalBool(data, 'hasHandDryer') &&
+             isValidOptionalString(data, 'accessInstructions', 1, 300) &&
+             (data.accessType == 'paid' ?
+               (isValidStringLength(data, 'feeCurrency', 3, 3) &&
+                'feeAmount' in data && data.feeAmount is number &&
+                data.feeAmount >= 0 && data.feeAmount <= 1000000) :
+               (!('feeAmount' in data) && !('feeCurrency' in data))) &&
+             isValidOptionalNullableBool(data, 'male') &&
+             isValidOptionalNullableBool(data, 'female') &&
+             isValidOptionalNullableBool(data, 'allGender') &&
+             isValidOptionalNullableBool(data, 'pwdAccessible') &&
+             isValidOptionalNullableBool(data, 'babyChanging') &&
+             isValidOptionalNullableBool(data, 'hasBidet') &&
+             isValidOptionalNullableBool(data, 'hasToiletPaper') &&
+             isValidOptionalNullableBool(data, 'hasSoap') &&
+             isValidOptionalNullableBool(data, 'hasHandDryer') &&
              isValidOptionalNumber(data, 'averageRating', 0.0, 5.0) &&
              isValidOptionalNumber(data, 'ratingCount', 0, 1000000000) &&
              isValidOptionalNumber(data, 'verificationCount', 0, 1000000000) &&
@@ -224,15 +235,20 @@ service cloud.firestore {
              (!('lastVerifiedAt' in data) || data.lastVerifiedAt == null);
     }
 
-    function isValidRestroomCreate() {
-      return isValidRestroomSchema(request.resource.data) &&
-             isValidInitialAggregates(request.resource.data);
-    }
+    function isValidRestroomCreate(restroomId) {
+      let contributionPath = /databases/$(database)/documents/contributions/$('restroom_' + restroomId);
+      let contrib = getAfter(contributionPath);
 
-    function isValidRestroomUpdate() {
       return isValidRestroomSchema(request.resource.data) &&
-             areImmutableFieldsUnchanged(['createdAt', 'averageRating', 'ratingCount', 'verificationCount', 'negativeVerificationCount', 'lastVerifiedAt']) &&
-             areImmutableFieldsUnchanged(['id']);
+             request.resource.data.id == restroomId &&
+             request.resource.data.status == 'unverified' &&
+             isValidInitialAggregates(request.resource.data) &&
+             contrib != null &&
+             contrib.data.contributionType == 'restroom' &&
+             contrib.data.resourceId == restroomId &&
+             contrib.data.restroomId == restroomId &&
+             contrib.data.userUid == request.auth.uid &&
+             contrib.data.moderationState == 'pending';
     }
 
     // ===============================================================
@@ -332,28 +348,48 @@ service cloud.firestore {
              data.contributionType in ['restroom', 'rating', 'verification', 'report', 'photo'] &&
              isValidStringLength(data, 'resourceId', 1, 100) &&
              isValidOptionalString(data, 'restroomId', 1, 100) &&
-             isValidOptionalString(data, 'id', 1, 100) &&
+             isValidOptionalString(data, 'id', 1, 150) &&
              isValidOptionalString(data, 'moderationState', 1, 50) &&
              data.createdAt is timestamp &&
              data.updatedAt is timestamp;
+    }
+
+    function isValidContributionCreate(contributionId) {
+      let data = request.resource.data;
+
+      // For restroom contributions, enforce strict bidirectional batch pairing
+      return isValidContribution(data) &&
+             data.userUid == request.auth.uid &&
+             (data.contributionType != 'restroom' || (
+               contributionId == ('restroom_' + data.resourceId) &&
+               data.id == contributionId &&
+               data.restroomId == data.resourceId &&
+               data.moderationState == 'pending' &&
+               !exists(/databases/$(database)/documents/restrooms/$(data.resourceId)) &&
+               existsAfter(/databases/$(database)/documents/restrooms/$(data.resourceId)) &&
+               getAfter(/databases/$(database)/documents/restrooms/$(data.resourceId)).data.id == data.resourceId &&
+               getAfter(/databases/$(database)/documents/restrooms/$(data.resourceId)).data.status == 'unverified'
+             ));
     }
 
     // ===============================================================
     // Rules
     // ===============================================================
 
-    // 1. Restrooms: Public facilities
+    // 1. Restrooms: Public facilities (CREATE-ONLY in Phase 2)
     match /restrooms/{restroomId} {
       // Publicly readable by all users (unauthenticated and authenticated)
       allow read: if true;
 
-      // Only authenticated users can contribute new restrooms
-      allow create: if isAuthenticated() && isValidRestroomCreate();
+      // Only authenticated users can contribute new restrooms; requires bidirectional atomic pairing
+      allow create: if isAuthenticated() &&
+                       !exists(/databases/$(database)/documents/restrooms/$(restroomId)) &&
+                       !exists(/databases/$(database)/documents/contributions/$('restroom_' + restroomId)) &&
+                       existsAfter(/databases/$(database)/documents/contributions/$('restroom_' + restroomId)) &&
+                       isValidRestroomCreate(restroomId);
 
-      // Only authenticated users can update facility information; trusted aggregates and createdAt are immutable
-      allow update: if isAuthenticated() && isValidRestroomUpdate();
-
-      // Restrooms cannot be directly deleted by clients (moderation/server-side only)
+      // Facility updates and deletions are strictly disabled in Phase 2
+      allow update: if false;
       allow delete: if false;
     }
 
@@ -426,8 +462,10 @@ service cloud.firestore {
       // Strictly private: users may only read their own contribution logs
       allow read: if isAuthenticated() && resource.data.userUid == request.auth.uid;
 
-      // Authenticated users can log their contribution metadata
-      allow create: if isAuthenticated() && isValidContribution(request.resource.data);
+      // Authenticated users can log contribution metadata with bidirectional pairing
+      allow create: if isAuthenticated() &&
+                       !exists(/databases/$(database)/documents/contributions/$(contributionId)) &&
+                       isValidContributionCreate(contributionId);
 
       // Contributions are immutable audit logs
       allow update, delete: if false;

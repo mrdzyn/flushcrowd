@@ -1,10 +1,12 @@
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
+import '../../domain/commands/create_restroom_command.dart';
 import '../../domain/models/coordinates.dart';
 import '../../domain/models/discovery_result.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
+import '../../domain/repositories/auth_repository.dart';
 import '../../domain/repositories/restroom_repository.dart';
 import '../services/gis/geohash_service.dart';
 import '../services/gis/haversine.dart';
@@ -13,14 +15,27 @@ import '../services/gis/haversine.dart';
 /// Useful for unit testing, widget tests, and offline development.
 class InMemoryRestroomRepository implements RestroomRepository {
   final List<Restroom> _storage = [];
+  final Map<String, Map<String, dynamic>> _contributions = {};
+  final AuthRepository? authRepository;
 
-  InMemoryRestroomRepository({List<Restroom>? initialData}) {
+  InMemoryRestroomRepository({
+    List<Restroom>? initialData,
+    Map<String, Map<String, dynamic>>? initialContributions,
+    this.authRepository,
+  }) {
     if (initialData != null) {
       _storage.addAll(initialData);
     } else {
       _seedSampleData();
     }
+    if (initialContributions != null) {
+      _contributions.addAll(initialContributions);
+    }
   }
+
+  List<Restroom> get storage => List.unmodifiable(_storage);
+  Map<String, Map<String, dynamic>> get contributions =>
+      Map.unmodifiable(_contributions);
 
   void _seedSampleData() {
     // Seed representative sample restrooms from canonical UX reference
@@ -224,8 +239,88 @@ class InMemoryRestroomRepository implements RestroomRepository {
   }
 
   @override
-  Future<void> submitRestroom(Restroom restroom) async {
-    _storage.removeWhere((r) => r.id == restroom.id);
+  Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
+    if (authRepository != null && authRepository!.currentUserId == null) {
+      throw const UnauthenticatedException();
+    }
+    final uid = authRepository?.currentUserId ?? 'mock_uid_123';
+
+    final normalized = command.draft.normalized();
+    final errors = normalized.validate();
+    if (errors.isNotEmpty) {
+      throw RepositoryException(
+        'Cannot submit invalid restroom draft: ${errors.join(', ')}',
+        'invalid-draft',
+      );
+    }
+
+    final existingRestroomIndex = _storage.indexWhere(
+      (r) => r.id == command.restroomId,
+    );
+    final existingContribution =
+        _contributions['restroom_${command.restroomId}'];
+
+    // Ambiguous commit reconciliation logic
+    if (existingRestroomIndex != -1 && existingContribution != null) {
+      return _storage[existingRestroomIndex];
+    } else if (existingRestroomIndex != -1 || existingContribution != null) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: only one document of the atomic restroom pair exists.',
+      );
+    }
+
+    final geohash = GeohashService.encode(normalized.coordinates);
+    final now = DateTime.now();
+
+    final restroom = Restroom(
+      id: command.restroomId,
+      name: normalized.name,
+      coordinates: normalized.coordinates,
+      geohash: geohash,
+      countryCode: normalized.countryCode,
+      region: normalized.region,
+      city: normalized.city,
+      buildingName: normalized.buildingName,
+      buildingSection: normalized.buildingSection,
+      floor: normalized.floor,
+      unitOrArea: normalized.unitOrArea,
+      landmark: normalized.landmark,
+      directionsNote: normalized.directionsNote,
+      accessInstructions: normalized.accessInstructions,
+      accessType: normalized.accessType,
+      feeAmount: normalized.feeAmount,
+      feeCurrency: normalized.feeCurrency,
+      male: normalized.male,
+      female: normalized.female,
+      allGender: normalized.allGender,
+      pwdAccessible: normalized.pwdAccessible.toNullableBool(),
+      babyChanging: normalized.babyChanging.toNullableBool(),
+      hasBidet: normalized.hasBidet.toNullableBool(),
+      hasToiletPaper: normalized.hasToiletPaper.toNullableBool(),
+      hasSoap: normalized.hasSoap.toNullableBool(),
+      hasHandDryer: normalized.hasHandDryer.toNullableBool(),
+      averageRating: 0.0,
+      ratingCount: 0,
+      verificationCount: 0,
+      negativeVerificationCount: 0,
+      lastVerifiedAt: null,
+      status: RestroomStatus.unverified,
+      createdAt: now,
+      updatedAt: now,
+    );
+
     _storage.add(restroom);
+    _contributions['restroom_${command.restroomId}'] = {
+      'id': 'restroom_${command.restroomId}',
+      'contributionType': 'restroom',
+      'resourceId': command.restroomId,
+      'restroomId': command.restroomId,
+      'userUid': uid,
+      'moderationState': 'pending',
+      'createdAt': now,
+      'updatedAt': now,
+    };
+
+    return restroom;
   }
 }

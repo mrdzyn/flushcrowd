@@ -140,6 +140,95 @@ void main() {
       expect(restored.ratingCount, testRestroom.ratingCount);
     });
 
+    test('toFirestore and fromFirestore preserve nullable booleans and accessInstructions', () {
+      final nullableRestroom = Restroom(
+        id: 'rr_nullables',
+        name: 'Nullable Facility',
+        coordinates: testCoords,
+        geohash: '9q8yyk',
+        accessType: AccessType.paid,
+        feeAmount: 25.5,
+        feeCurrency: 'EUR',
+        accessInstructions: 'Key with manager at front desk',
+        male: true,
+        female: false,
+        allGender: null,
+        pwdAccessible: null,
+        babyChanging: true,
+        hasBidet: null,
+        hasToiletPaper: false,
+        hasSoap: true,
+        hasHandDryer: null,
+        createdAt: now,
+      );
+
+      final map = RestroomFirestoreCodec.toFirestore(nullableRestroom);
+      expect(map['male'], isTrue);
+      expect(map['female'], isFalse);
+      expect(map['allGender'], isNull);
+      expect(map['hasBidet'], isNull);
+      expect(map['hasToiletPaper'], isFalse);
+      expect(map['hasSoap'], isTrue);
+      expect(map['hasHandDryer'], isNull);
+      expect(map['accessInstructions'], 'Key with manager at front desk');
+      expect(map['feeAmount'], 25.5);
+      expect(map['feeCurrency'], 'EUR');
+
+      final restored = RestroomFirestoreCodec.fromFirestore(
+        map,
+        documentId: nullableRestroom.id,
+      );
+      expect(restored.male, isTrue);
+      expect(restored.female, isFalse);
+      expect(restored.allGender, isNull);
+      expect(restored.pwdAccessible, isNull);
+      expect(restored.babyChanging, isTrue);
+      expect(restored.hasBidet, isNull);
+      expect(restored.hasToiletPaper, isFalse);
+      expect(restored.hasSoap, isTrue);
+      expect(restored.hasHandDryer, isNull);
+      expect(restored.accessInstructions, 'Key with manager at front desk');
+      expect(restored.feeAmount, 25.5);
+      expect(restored.feeCurrency, 'EUR');
+    });
+
+    test(
+      'fromFirestore decodes legacy documents with missing fields as null',
+      () {
+        final legacyMap = <String, dynamic>{
+          'name': 'Legacy Facility',
+          'latitude': testCoords.latitude,
+          'longitude': testCoords.longitude,
+          'geohash': '9q8yyk',
+          'accessType': 'free',
+          'status': 'active',
+          'averageRating': 0.0,
+          'ratingCount': 0,
+          'createdAt': Timestamp.fromDate(now),
+          'updatedAt': Timestamp.fromDate(now),
+        };
+
+        final restored = RestroomFirestoreCodec.fromFirestore(
+          legacyMap,
+          documentId: 'rr_legacy',
+        );
+
+        // Data truth invariant: missing fields must NEVER default to true
+        expect(restored.male, isNull);
+        expect(restored.female, isNull);
+        expect(restored.allGender, isNull);
+        expect(restored.pwdAccessible, isNull);
+        expect(restored.babyChanging, isNull);
+        expect(restored.hasBidet, isNull);
+        expect(restored.hasToiletPaper, isNull);
+        expect(restored.hasSoap, isNull);
+        expect(restored.hasHandDryer, isNull);
+        expect(restored.accessInstructions, isNull);
+        expect(restored.feeAmount, isNull);
+        expect(restored.feeCurrency, isNull);
+      },
+    );
+
     test(
       'fromFirestore throws FormatException when timestamp is raw ISO String',
       () {

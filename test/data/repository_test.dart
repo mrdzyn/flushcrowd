@@ -4,11 +4,11 @@ import 'package:looradar/data/repositories/auth_repository_impl.dart';
 import 'package:looradar/data/repositories/firestore_restroom_repository.dart';
 import 'package:looradar/data/repositories/in_memory_restroom_repository.dart';
 import 'package:looradar/data/repositories/location_repository_impl.dart';
-import 'package:looradar/data/services/gis/geohash_service.dart';
+import 'package:looradar/domain/commands/create_restroom_command.dart';
 import 'package:looradar/domain/models/coordinates.dart';
 import 'package:looradar/domain/models/enums.dart';
 import 'package:looradar/domain/models/geo_bounding_box.dart';
-import 'package:looradar/domain/models/restroom.dart';
+import 'package:looradar/domain/models/restroom_draft.dart';
 
 void main() {
   group('Repository Contracts and In-Memory Test Doubles', () {
@@ -52,21 +52,121 @@ void main() {
       }
     });
 
-    test('InMemoryRestroomRepository stores and updates submissions', () async {
-      final repo = InMemoryRestroomRepository(initialData: []);
+    test('InMemoryRestroomRepository stores submissions as atomic pair with unverified status and initial aggregates', () async {
+      final authRepo = InMemoryAuthRepository(
+        initialUid: 'user_contributor_123',
+      );
+      final repo = InMemoryRestroomRepository(
+        initialData: [],
+        authRepository: authRepo,
+      );
       final coords = Coordinates(latitude: 14.5843, longitude: 121.0568);
-      final newRestroom = Restroom(
-        id: 'new_custom_rr',
-        name: 'New Custom Restroom',
-        coordinates: coords,
-        geohash: GeohashService.encode(coords),
-        accessType: AccessType.free,
+      final command = CreateRestroomCommand(
+        restroomId: 'new_custom_rr',
+        draft: RestroomDraft(
+          name: 'New Custom Restroom',
+          coordinates: coords,
+          accessType: AccessType.free,
+          pwdAccessible: TriStateAmenity.yes,
+          hasBidet: TriStateAmenity.no,
+        ),
       );
 
-      await repo.submitRestroom(newRestroom);
+      final submitted = await repo.submitRestroom(command);
+      expect(submitted.id, 'new_custom_rr');
+      expect(submitted.status, RestroomStatus.unverified);
+      expect(submitted.averageRating, 0.0);
+      expect(submitted.ratingCount, 0);
+      expect(submitted.verificationCount, 0);
+      expect(submitted.pwdAccessible, isTrue);
+      expect(submitted.hasBidet, isFalse);
+      expect(submitted.hasToiletPaper, isNull);
+
+      // Verify paired private contribution
+      expect(repo.contributions.containsKey('restroom_new_custom_rr'), isTrue);
+      final contrib = repo.contributions['restroom_new_custom_rr']!;
+      expect(contrib['id'], 'restroom_new_custom_rr');
+      expect(contrib['resourceId'], 'new_custom_rr');
+      expect(contrib['restroomId'], 'new_custom_rr');
+      expect(contrib['userUid'], 'user_contributor_123');
+      expect(contrib['moderationState'], 'pending');
+
       final fetched = await repo.getRestroomById('new_custom_rr');
       expect(fetched, isNotNull);
       expect(fetched?.name, 'New Custom Restroom');
+      expect(fetched?.status, RestroomStatus.unverified);
+    });
+
+    test('submitRestroom throws UnauthenticatedException when user is not authenticated', () async {
+      final authRepo = InMemoryAuthRepository(initialUid: null);
+      final repo = InMemoryRestroomRepository(
+        initialData: [],
+        authRepository: authRepo,
+      );
+      final command = CreateRestroomCommand(
+        restroomId: 'unauth_rr',
+        draft: RestroomDraft(
+          name: 'Unauth Restroom',
+          coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+          accessType: AccessType.free,
+        ),
+      );
+
+      expect(
+        () => repo.submitRestroom(command),
+        throwsA(isA<UnauthenticatedException>()),
+      );
+    });
+
+    test('submitRestroom reconciles ambiguous commit when both documents exist (idempotent retry)', () async {
+      final authRepo = InMemoryAuthRepository(initialUid: 'user_123');
+      final repo = InMemoryRestroomRepository(
+        initialData: [],
+        authRepository: authRepo,
+      );
+      final command = CreateRestroomCommand(
+        restroomId: 'reconcile_rr',
+        draft: RestroomDraft(
+          name: 'Reconciled Restroom',
+          coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+          accessType: AccessType.free,
+        ),
+      );
+
+      final firstResult = await repo.submitRestroom(command);
+
+      // Simulate network drop and subsequent retry with identical command:
+      final secondResult = await repo.submitRestroom(command);
+      expect(secondResult.id, firstResult.id);
+      expect(secondResult.name, firstResult.name);
+      expect(repo.contributions.length, 1);
+    });
+
+    test('submitRestroom surfaces SubmissionInvariantException when only one document of the pair exists', () async {
+      final authRepo = InMemoryAuthRepository(initialUid: 'user_123');
+      final repo = InMemoryRestroomRepository(
+        initialData: [],
+        initialContributions: {
+          'restroom_orphan_rr': {
+            'id': 'restroom_orphan_rr',
+            'resourceId': 'orphan_rr',
+          },
+        },
+        authRepository: authRepo,
+      );
+      final command = CreateRestroomCommand(
+        restroomId: 'orphan_rr',
+        draft: RestroomDraft(
+          name: 'Orphan Restroom',
+          coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+          accessType: AccessType.free,
+        ),
+      );
+
+      expect(
+        () => repo.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
     });
 
     test('InMemoryAuthRepository establishes anonymous session', () async {

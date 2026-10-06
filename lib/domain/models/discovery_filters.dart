@@ -86,23 +86,23 @@ class DiscoveryFilters extends Equatable {
       final matchesGender = genderTypes.any((g) {
         switch (g) {
           case GenderTypeFilter.male:
-            return restroom.male;
+            return restroom.male == true;
           case GenderTypeFilter.female:
-            return restroom.female;
+            return restroom.female == true;
           case GenderTypeFilter.allGender:
-            return restroom.allGender;
+            return restroom.allGender == true;
         }
       });
       if (!matchesGender) return false;
     }
 
     // 3. Boolean Amenities (AND across categories)
-    if (pwdAccessibleOnly && !restroom.pwdAccessible) return false;
-    if (babyChangingOnly && !restroom.babyChanging) return false;
-    if (bidetOnly && !restroom.hasBidet) return false;
-    if (toiletPaperOnly && !restroom.hasToiletPaper) return false;
-    if (soapOnly && !restroom.hasSoap) return false;
-    if (handDryerOnly && !restroom.hasHandDryer) return false;
+    if (pwdAccessibleOnly && restroom.pwdAccessible != true) return false;
+    if (babyChangingOnly && restroom.babyChanging != true) return false;
+    if (bidetOnly && restroom.hasBidet != true) return false;
+    if (toiletPaperOnly && restroom.hasToiletPaper != true) return false;
+    if (soapOnly && restroom.hasSoap != true) return false;
+    if (handDryerOnly && restroom.hasHandDryer != true) return false;
 
     // 4. Minimum Rating
     if (minRating > 0.0 && restroom.averageRating < minRating) {
