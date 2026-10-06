@@ -44,6 +44,7 @@ unitOrArea
 landmark
 directionsNote
 accessType
+accessInstructions
 feeAmount
 feeCurrency
 male
@@ -64,6 +65,15 @@ status
 createdAt
 updatedAt
 ```
+
+### Nullable Amenity & Stall Semantics
+
+In Phase 2 and beyond, contribution-derived amenity and stall properties use **nullable booleans** (`bool?`):
+- `true` = explicitly confirmed Yes;
+- `false` = explicitly confirmed No;
+- `null` (or omitted) = unknown / unspecified.
+
+`false` must never mean both "No" and "Unknown". Missing or omitted fields in historical/existing documents decode as `null`. Historical documents are not silently rewritten in Phase 2. Discovery filters (e.g., `toiletPaperOnly`) match only explicit `true`.
 
 Ownership for a restroom submission belongs in private contribution metadata keyed to the public restroom ID.
 
@@ -126,25 +136,24 @@ Suggested report reasons:
 - inappropriate_content
 - other
 
-### Private contribution ownership
-
-Use a private collection or equivalent server-owned structure for identity/ownership and abuse controls. Exact collection naming can be finalized during Phase 0 security-rule design.
+### `contributions` — private contribution tracking & audit log
 
 Conceptual fields:
 
 ```text
+id                 // string, deterministic 'restroom_' + resourceId for restroom contributions
 contributionType   // restroom | rating | verification | report | photo
-resourceId
-restroomId         // where applicable
-userUid
-createdAt
-updatedAt
-moderationState
+resourceId         // matches target document ID (e.g. restroomId)
+restroomId         // where applicable, matches resourceId
+userUid            // matches request.auth.uid
+createdAt          // server timestamp
+updatedAt          // server timestamp
+moderationState    // 'pending' on client creation
 ```
 
-This collection must not be publicly readable.
+This collection is strictly private (`resource.data.userUid == request.auth.uid`). Public reads and listings are denied.
 
-For rules that must be enforced directly by Firestore, prefer document structures that make ownership deterministic and rules-verifiable rather than trusting a client-supplied UID field.
+For restroom contributions, the document ID is deterministic: `contributions/restroom_{restroomId}`. Security rules enforce that `restrooms/{restroomId}` and `contributions/restroom_{restroomId}` must be created simultaneously in the same atomic batch (`WriteBatch`), verifying that neither document existed prior to the write and both exist after the write with cross-referenced resource IDs.
 
 ## One rating per user per restroom
 

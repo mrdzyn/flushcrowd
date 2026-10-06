@@ -99,6 +99,17 @@ Required/recommended controls:
 - constrain enum fields to known values
 - moderation state for potentially abusive content
 - prevent clients from directly mutating trusted aggregate/reputation fields
+- create-only public facilities in Phase 2 (`allow update, delete: if false;`); client facility updates and deletions strictly prohibited
+
+### Production Abuse-Control Release Gate
+
+A disabled submit button or client-side debounce is UX protection, not abuse protection.
+
+**Phase 2 community contribution writes must not be enabled in production until enforceable per-UID rate limiting exists.**
+
+- **Enforcement Architecture:** A private per-user write-control record `contributionRateLimits/{uid}` updated atomically via a trusted server boundary (Cloud Function or rule-backed counter).
+- **Evaluated Policy:** Maximum 10 restroom submissions per UID per 24 hours; maximum burst 3 submissions per UID per 10 minutes.
+- **Milestone Separation:** P2.1–P2.5 implements core models, atomic batch writes, and strict security rules. P2.6 verifies this production rate-limiting release gate before opening production contribution writes.
 
 High-risk operations should move to trusted server-side code if Firestore Rules cannot enforce the business rule safely.
 

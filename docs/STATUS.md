@@ -7,23 +7,27 @@
 - **Repository:** `mrdzyn/looradar`
 - **Overall stage:** Application Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.0 — Phase 2 specification authoring and setup complete; independent exact-head specification audit pending
+- **Current milestone:** P2.0 — Phase 2 specification remediation complete; independent exact-head re-audit pending
 - **Current branch:** `phase-2/add-restroom`
 - **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification authored (`docs/09-phase-2-add-restroom.md`); P2.1 implementation BLOCKED pending independent P2.0 specification exact-head audit.
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification remediation complete (`docs/09-phase-2-add-restroom.md`, `docs/02-data-model.md`, `docs/03-privacy-security.md`); P2.1 implementation BLOCKED pending independent P2.0 specification re-audit.
 
 ## Current objective
 
-Establish the canonical technical contract and implementation specification for **Phase 2 — Add Restroom** (`docs/09-phase-2-add-restroom.md`).
+Establish and remediate the canonical technical contract and implementation specification for **Phase 2 — Add Restroom** (`docs/09-phase-2-add-restroom.md`).
 
-Address all architectural findings before coding begins:
-- Data-truth preservation via dedicated `RestroomDraft` domain model (never defaulting unconfirmed amenities to positive claims);
-- Atomic public/private batch write contract (`restrooms/{id}` and `contributions/restroom_{id}`);
-- Firestore Security Rules cross-validation (strict `unverified` status, zero aggregates, atomic contribution pairing);
-- Canonical document ID generation and resolution of repository debt;
-- Bounded, zero-paid-API duplicate detection heuristic engine and advisory UX;
-- Comprehensive unit, emulator rules, widget, and integration test requirements.
+All audit findings resolved in contract before coding begins:
+- **BLOCKER-1 (Atomic Public/Private Pairing):** Watertight bidirectional validation using pre-state checks (`!exists`) and post-state checks (`existsAfter` / `getAfter`) on both `restrooms/{id}` and `contributions/restroom_{id}` to strictly prove simultaneous batch creation and prevent orphan/out-of-order creation.
+- **BLOCKER-2 (Create-Only Public Facilities):** Public restroom updates and deletions strictly disabled in Phase 2 (`allow update, delete: if false;`); client facility editing deferred.
+- **MAJOR-1 (Nullable Booleans Truth Model):** Public amenities and stall fields migrated to `bool?` (`true` = Yes, `false` = No, `null` = unknown); `false` never conflated with unknown; missing fields decode as `null`; filters match only explicit `true`.
+- **MAJOR-2 (Canonical Storage Contracts):** Introduced `accessInstructions` (max 300 chars); removed operating hours from Phase 2; restricted `hasHandDryer` to hand dryers only.
+- **MAJOR-3 (Phase 1 GIS Duplicate Detection & Cost Bounds):** Reuses `GeohashService.getCandidatePrefixes(...)` with 500m radius, adaptive global geometry, max 16 ranges, `.limit(20)` per range; corrected theoretical read ceiling to `16 × 20 = 320` raw documents; range cap degradation marked as partial.
+- **MAJOR-4 (Deterministic Duplicate Scoring):** Exact weighted formula defined (`score = clamp(0.40*dist + 0.30*name + 0.15*building + 0.10*section + 0.05*landmark - floorConflictPenalty, 0.0, 1.0)`); thresholds (HIGH >= 0.75, MODERATE >= 0.50); floor conflict penalty (-0.40); deterministic tie-breaking.
+- **MAJOR-5 (Idempotent Submission & Stable ID):** Stable `submissionId` / `restroomId` allocated once on submit; retained across retries; ambiguous commit reconciliation reads both documents before retrying.
+- **MAJOR-6 (Authoritative Map State):** Permanent optimistic cache injection removed; canonical camera move and debounced viewport refresh used as single source of truth.
+- **MAJOR-7 (Production Abuse-Control Release Gate):** Enforceable per-UID rate limiting (`contributionRateLimits/{uid}`, max 10/day, max burst 3/10m) established as mandatory production release gate before enabling public writes.
+- **MINOR-1 & MINOR-2 (Validation & App Check):** Complete field normalization and validation specified (using `Coordinates` value object); App Check (service boundary) and Security Rules (identity/schema) roles cleanly separated.
 
 The active specification is:
 
@@ -37,6 +41,8 @@ The active specification is:
 - Google Maps SDK for visualization.
 - Firebase Anonymous Authentication; no mandatory traditional login in V1.
 - Public/private data boundary strictly enforced: public documents NEVER contain contributor UIDs.
+- Public restroom facilities in Phase 2 are strictly CREATE-ONLY (`allow update, delete: if false;`).
+- Public contribution-derived amenity and stall fields use nullable booleans (`bool?`), preserving data truth.
 - Community-contributed facilities are strictly initialized as `status: 'unverified'` with zero initial aggregates.
 - Cloud Firestore + geohash candidate retrieval for MVP discovery and duplicate detection.
 - Exact Haversine filtering after geohash candidate retrieval.
@@ -44,6 +50,8 @@ The active specification is:
 - External navigation handoff; no built-in routing.
 - Avoid Places, Routes, Directions, Street View, and other unnecessary paid APIs.
 - Low Firestore/Maps cost is an architectural constraint.
+- Discovery repository and viewport query pipeline remain the single authoritative source of truth for the map.
+- Production community contribution writes require enforceable server-side rate limiting.
 - Canonical UI reference remains `docs/assets/looradar-mobile-ux-reference.png`.
 
 ## Canonical references
@@ -80,47 +88,53 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 
 ## Active Phase 2 Scope — Add Restroom
 
-### P2.0 — Specification & Task Contract (ACTIVE / COMPLETE)
+### P2.0 — Specification & Task Contract (REMEDIATION COMPLETE, RE-AUDIT PENDING)
 - Authored canonical implementation specification in `docs/09-phase-2-add-restroom.md`.
-- Documented data-truth model, atomic public/private write architecture, Firestore security rules invariants, canonical document ID generation, bounded duplicate detection heuristics, and phased test plan.
+- Remediated all audit findings (BLOCKER-1, BLOCKER-2, MAJOR-1 through MAJOR-7, MINOR-1, MINOR-2).
+- Updated `docs/02-data-model.md` (nullable boolean schema and `accessInstructions`).
+- Updated `docs/03-privacy-security.md` (create-only rule and production rate-limiting release gate).
 - Updated project documentation index and tracking status.
-- Opened draft PR [#4](https://github.com/mrdzyn/looradar/pull/4) on `phase-2/add-restroom`.
-- Independent exact-head specification audit pending.
+- Updated draft PR [#4](https://github.com/mrdzyn/looradar/pull/4) on `phase-2/add-restroom`.
+- Independent exact-head specification re-audit pending.
 
-### P2.1 — Contribution Domain Model (`RestroomDraft`), Repository Batch Write Contract, Firestore Rules & Emulator Tests (BLOCKED)
+### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests (BLOCKED)
 - *Blocked pending P2.0 specification audit approval.*
-- Implement `RestroomDraft` and `TriStateAmenity` in `lib/domain/models/restroom_draft.dart`.
+- Implement `RestroomDraft`, `TriStateAmenity`, and full domain validation.
+- Migrate `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls).
+- Update `RestroomFirestoreCodec` for nullable booleans and new `accessInstructions` field.
 - Update `RestroomRepository` interface with `Future<Restroom> submitRestroom(RestroomDraft draft)`.
-- Implement atomic batch write in `FirestoreRestroomRepository` writing `/restrooms/{id}` and `/contributions/restroom_{id}`.
-- Update `InMemoryRestroomRepository` with mock batch support.
-- Update `firestore.rules` to enforce `status: 'unverified'`, `id == restroomId`, zero aggregates, and atomic `/contributions/restroom_{id}` pairing via `getAfter()`.
-- Author comprehensive security rules tests in `rules_tests/p2_add_restroom_rules_test.js`.
+- Implement atomic batch write in `FirestoreRestroomRepository` writing `/restrooms/{id}` and `/contributions/restroom_{id}` with stable ID allocation and reconciliation.
+- Update `InMemoryRestroomRepository` with draft and batch support.
+- Update `firestore.rules`: create-only (`allow update, delete: if false;`), status `'unverified'`, zero aggregates, bidirectional pairing (`!exists` + `existsAfter` / `getAfter`).
+- Author comprehensive Firestore emulator tests in `rules_tests/p2_add_restroom_rules_test.js` (29 test cases).
+- *Explicitly excludes form UI.*
 
 ### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX (PLANNED)
 - Implement `AddRestroomLocationScreen` with interactive center crosshair / draggable pin on Google Maps.
 - Enforce zoom floor (`zoom >= 15.0`) with visual hint.
-- Display live formatted coordinate readouts (5 decimal places).
+- Display live formatted coordinate readouts (5 decimal places) via `Coordinates`.
 - Unit and widget tests for location selection interactions.
 
 ### P2.3 — Contribution Form UI, Data-Truth Validation & State Management (PLANNED)
-- Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Fee/Key notes).
+- Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
 - Implement tri-state amenity selector widgets.
 - Implement `AddRestroomNotifier` form state management and input validation.
 - Unit tests for form validation and widget tests for form rendering and error states.
 
 ### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
-- Implement `DuplicateDetectionService` with 500m geohash candidate retrieval and heuristic scoring.
-- Implement `DuplicateWarningSheet` advisory UI.
+- Implement `DuplicateDetectionService` with 500m geohash candidate retrieval (max 16 ranges, `.limit(20)`) and deterministic scoring model.
+- Implement `DuplicateWarningSheet` advisory UI showing top 3 candidates.
 - Unit tests for similarity heuristics and edge cases; widget tests for modal display and button actions.
 
 ### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback (PLANNED)
 - Connect anonymous authentication lifecycle.
-- Wire submit action through repository batch write.
-- Sync successful submissions with `MapDiscoveryNotifier` (camera move, optimistic cache injection, preview selection).
+- Wire submit action through repository batch write with stable submission ID and ambiguous commit reconciliation.
+- Sync successful submissions with canonical viewport refresh and preview selection.
 - End-to-end integration and widget tests.
 
-### P2.6 — Hardening, Accessibility, Regression Suite & Validation (PLANNED)
+### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation (PLANNED)
 - Audit touch targets (>= 48×48), semantic labels, and contrast.
+- Verify production abuse rate-limiting release gate.
 - Run complete test suite (`flutter test`, Firestore emulator rules tests).
 - Validate platform compilation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
 - Update `docs/STATUS.md` and prepare Phase 2 for audit.
@@ -134,6 +148,8 @@ Do not implement in this phase:
 - photo uploads (Phase 5);
 - ratings and reviews submission (Phase 3);
 - verification and report submission (Phase 3);
+- public restroom editing / updates (deferred to dedicated workflow);
+- operating hours (deferred to dedicated availability feature);
 - Google Places autocomplete or Geocoding APIs;
 - turn-by-turn routing (external handoff only);
 - social logins or traditional user accounts;
@@ -162,7 +178,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Next recommended action
 
-Perform independent exact-head audit on P2.0 specification (`docs/09-phase-2-add-restroom.md`) on `phase-2/add-restroom`. Upon passing audit, proceed to P2.1 implementation.
+Perform independent exact-head re-audit on P2.0 specification remediation (`docs/09-phase-2-add-restroom.md`) on `phase-2/add-restroom`. Upon passing re-audit, proceed to P2.1 implementation.
 
 ## Handoff template
 
