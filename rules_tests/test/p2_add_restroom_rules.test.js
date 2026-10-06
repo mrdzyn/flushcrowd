@@ -313,9 +313,9 @@ describe('Firestore Security Rules — LooRadar Phase 2 Milestone P2.1', () => {
   });
 
   // ===============================================================
-  // Group 4: Nullable Truth & Field Validation at Rule Layer (Tests 21–22)
+  // Group 4: Nullable Truth & Field Validation at Rule Layer (Tests 21–28)
   // ===============================================================
-  describe('Group 4: Nullable Truth & Field Validation at Rule Layer (2 Tests)', () => {
+  describe('Group 4: Nullable Truth & Field Validation at Rule Layer (8 Tests)', () => {
     test('21. Valid nullable amenity fields (explicit bool or missing/null) -> ALLOW', async () => {
       const authDb = testEnv.authenticatedContext('test_user_1').firestore();
       const batch = authDb.batch();
@@ -346,6 +346,138 @@ describe('Firestore Security Rules — LooRadar Phase 2 Milestone P2.1', () => {
       batch.set(authDb.collection('restrooms').doc(rrId), invalidTypeRestroom);
       batch.set(authDb.collection('contributions').doc(`restroom_${rrId}`), getValidContributionData(rrId, 'test_user_1'));
       await assertFails(batch.commit());
+    });
+
+    test('23. Invalid gender configuration (all false) -> REJECT', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      const batch = authDb.batch();
+      const rrId = 'rr_gender_all_false';
+      const invalidGenderRestroom = {
+        ...getValidRestroomData(rrId),
+        male: false,
+        female: false,
+        allGender: false,
+      };
+      batch.set(authDb.collection('restrooms').doc(rrId), invalidGenderRestroom);
+      batch.set(authDb.collection('contributions').doc(`restroom_${rrId}`), getValidContributionData(rrId, 'test_user_1'));
+      await assertFails(batch.commit());
+    });
+
+    test('24. Invalid gender configuration (false/null/false) -> REJECT', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      const batch = authDb.batch();
+      const rrId = 'rr_gender_false_null_false';
+      const invalidGenderRestroom = {
+        ...getValidRestroomData(rrId),
+        male: false,
+        female: null,
+        allGender: false,
+      };
+      batch.set(authDb.collection('restrooms').doc(rrId), invalidGenderRestroom);
+      batch.set(authDb.collection('contributions').doc(`restroom_${rrId}`), getValidContributionData(rrId, 'test_user_1'));
+      await assertFails(batch.commit());
+    });
+
+    test('25. Valid gender configuration (at least one positive) -> ALLOW', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      const rrId1 = 'rr_gender_one_true_all';
+      const batch1 = authDb.batch();
+      batch1.set(authDb.collection('restrooms').doc(rrId1), {
+        ...getValidRestroomData(rrId1),
+        male: false,
+        female: false,
+        allGender: true,
+      });
+      batch1.set(authDb.collection('contributions').doc(`restroom_${rrId1}`), getValidContributionData(rrId1, 'test_user_1'));
+      await assertSucceeds(batch1.commit());
+
+      const rrId2 = 'rr_gender_one_true_male';
+      const batch2 = authDb.batch();
+      batch2.set(authDb.collection('restrooms').doc(rrId2), {
+        ...getValidRestroomData(rrId2),
+        male: true,
+        female: null,
+        allGender: null,
+      });
+      batch2.set(authDb.collection('contributions').doc(`restroom_${rrId2}`), getValidContributionData(rrId2, 'test_user_1'));
+      await assertSucceeds(batch2.commit());
+
+      const rrId3 = 'rr_gender_one_true_female';
+      const batch3 = authDb.batch();
+      batch3.set(authDb.collection('restrooms').doc(rrId3), {
+        ...getValidRestroomData(rrId3),
+        male: null,
+        female: true,
+        allGender: false,
+      });
+      batch3.set(authDb.collection('contributions').doc(`restroom_${rrId3}`), getValidContributionData(rrId3, 'test_user_1'));
+      await assertSucceeds(batch3.commit());
+    });
+
+    test('26. Invalid geohash format (uppercase or non-base32 chars like "a") -> REJECT', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      const batch1 = authDb.batch();
+      const rrId1 = 'rr_bad_geohash_upper';
+      batch1.set(authDb.collection('restrooms').doc(rrId1), {
+        ...getValidRestroomData(rrId1),
+        geohash: 'WDW4FQ', // Uppercase invalid
+      });
+      batch1.set(authDb.collection('contributions').doc(`restroom_${rrId1}`), getValidContributionData(rrId1, 'test_user_1'));
+      await assertFails(batch1.commit());
+
+      const batch2 = authDb.batch();
+      const rrId2 = 'rr_bad_geohash_char_a';
+      batch2.set(authDb.collection('restrooms').doc(rrId2), {
+        ...getValidRestroomData(rrId2),
+        geohash: 'wdw4a', // 'a' is not in standard geohash base32
+      });
+      batch2.set(authDb.collection('contributions').doc(`restroom_${rrId2}`), getValidContributionData(rrId2, 'test_user_1'));
+      await assertFails(batch2.commit());
+    });
+
+    test('27. Valid geohash charset matching ^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$ -> ALLOW', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      const batch = authDb.batch();
+      const rrId = 'rr_valid_geohash';
+      const validGeohashRestroom = {
+        ...getValidRestroomData(rrId),
+        geohash: 'wdw4fq9',
+      };
+      batch.set(authDb.collection('restrooms').doc(rrId), validGeohashRestroom);
+      batch.set(authDb.collection('contributions').doc(`restroom_${rrId}`), getValidContributionData(rrId, 'test_user_1'));
+      await assertSucceeds(batch.commit());
+    });
+
+    test('28. Paid access type with valid 3-letter ISO uppercase currencies (USD, EUR, PHP) -> ALLOW', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      for (const currency of ['USD', 'EUR', 'PHP']) {
+        const batch = authDb.batch();
+        const rrId = `rr_paid_${currency.toLowerCase()}`;
+        batch.set(authDb.collection('restrooms').doc(rrId), {
+          ...getValidRestroomData(rrId),
+          accessType: 'paid',
+          feeAmount: 20.0,
+          feeCurrency: currency,
+        });
+        batch.set(authDb.collection('contributions').doc(`restroom_${rrId}`), getValidContributionData(rrId, 'test_user_1'));
+        await assertSucceeds(batch.commit());
+      }
+    });
+
+    test('29. Paid access type with invalid currencies (123, P1P, PH, PHPP, lowercase) -> REJECT', async () => {
+      const authDb = testEnv.authenticatedContext('test_user_1').firestore();
+      for (const badCurrency of ['123', 'P1P', 'PH', 'PHPP', 'php']) {
+        const batch = authDb.batch();
+        const rrId = `rr_bad_curr_${badCurrency}`;
+        batch.set(authDb.collection('restrooms').doc(rrId), {
+          ...getValidRestroomData(rrId),
+          accessType: 'paid',
+          feeAmount: 20.0,
+          feeCurrency: badCurrency,
+        });
+        batch.set(authDb.collection('contributions').doc(`restroom_${rrId}`), getValidContributionData(rrId, 'test_user_1'));
+        await assertFails(batch.commit());
+      }
     });
   });
 });

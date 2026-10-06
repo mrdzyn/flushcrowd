@@ -4,10 +4,12 @@ import 'package:looradar/data/repositories/auth_repository_impl.dart';
 import 'package:looradar/data/repositories/firestore_restroom_repository.dart';
 import 'package:looradar/data/repositories/in_memory_restroom_repository.dart';
 import 'package:looradar/data/repositories/location_repository_impl.dart';
+import 'package:looradar/data/services/gis/geohash_service.dart';
 import 'package:looradar/domain/commands/create_restroom_command.dart';
 import 'package:looradar/domain/models/coordinates.dart';
 import 'package:looradar/domain/models/enums.dart';
 import 'package:looradar/domain/models/geo_bounding_box.dart';
+import 'package:looradar/domain/models/restroom.dart';
 import 'package:looradar/domain/models/restroom_draft.dart';
 
 void main() {
@@ -81,6 +83,8 @@ void main() {
       expect(submitted.pwdAccessible, isTrue);
       expect(submitted.hasBidet, isFalse);
       expect(submitted.hasToiletPaper, isNull);
+      expect(submitted.createdAt, isNull);
+      expect(submitted.updatedAt, isNull);
 
       // Verify paired private contribution
       expect(repo.contributions.containsKey('restroom_new_custom_rr'), isTrue);
@@ -118,6 +122,80 @@ void main() {
       );
     });
 
+    test(
+      'submitRestroom validates stable restroom ID in InMemory repository',
+      () async {
+        final authRepo = InMemoryAuthRepository(initialUid: 'user_123');
+        final repo = InMemoryRestroomRepository(
+          initialData: [],
+          authRepository: authRepo,
+        );
+        final draft = RestroomDraft(
+          name: 'Valid Name',
+          coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+          accessType: AccessType.free,
+        );
+
+        // Empty ID
+        expect(
+          () => repo.submitRestroom(
+            CreateRestroomCommand(restroomId: '', draft: draft),
+          ),
+          throwsA(
+            isA<RepositoryException>().having(
+              (e) => e.code,
+              'code',
+              'invalid-restroom-id',
+            ),
+          ),
+        );
+
+        // Whitespace-only ID
+        expect(
+          () => repo.submitRestroom(
+            CreateRestroomCommand(restroomId: '   ', draft: draft),
+          ),
+          throwsA(
+            isA<RepositoryException>().having(
+              (e) => e.code,
+              'code',
+              'invalid-restroom-id',
+            ),
+          ),
+        );
+
+        // > 100 characters
+        expect(
+          () => repo.submitRestroom(
+            CreateRestroomCommand(restroomId: 'a' * 101, draft: draft),
+          ),
+          throwsA(
+            isA<RepositoryException>().having(
+              (e) => e.code,
+              'code',
+              'invalid-restroom-id',
+            ),
+          ),
+        );
+
+        // Path separators and relative dots
+        for (final bad in ['a/b', '.', '..', 'foo/bar']) {
+          expect(
+            () => repo.submitRestroom(
+              CreateRestroomCommand(restroomId: bad, draft: draft),
+            ),
+            throwsA(
+              isA<RepositoryException>().having(
+                (e) => e.code,
+                'code',
+                'invalid-restroom-id',
+              ),
+            ),
+          );
+        }
+      },
+    );
+
     test('submitRestroom reconciles ambiguous commit when both documents exist (idempotent retry)', () async {
       final authRepo = InMemoryAuthRepository(initialUid: 'user_123');
       final repo = InMemoryRestroomRepository(
@@ -144,7 +222,9 @@ void main() {
 
     test('submitRestroom surfaces SubmissionInvariantException when only one document of the pair exists', () async {
       final authRepo = InMemoryAuthRepository(initialUid: 'user_123');
-      final repo = InMemoryRestroomRepository(
+
+      // Case A: Only contribution exists
+      final repoOnlyContrib = InMemoryRestroomRepository(
         initialData: [],
         initialContributions: {
           'restroom_orphan_rr': {
@@ -164,7 +244,202 @@ void main() {
       );
 
       expect(
-        () => repo.submitRestroom(command),
+        () => repoOnlyContrib.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+
+      // Case B: Only public restroom exists
+      final repoOnlyPublic = InMemoryRestroomRepository(
+        initialData: [
+          Restroom(
+            id: 'orphan_public_rr',
+            name: 'Orphan Restroom',
+            coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+            geohash: GeohashService.encode(
+              Coordinates(latitude: 14.58, longitude: 121.05),
+            ),
+            accessType: AccessType.free,
+            averageRating: 0.0,
+            ratingCount: 0,
+            verificationCount: 0,
+            negativeVerificationCount: 0,
+            status: RestroomStatus.unverified,
+          ),
+        ],
+        authRepository: authRepo,
+      );
+      final commandB = CreateRestroomCommand(
+        restroomId: 'orphan_public_rr',
+        draft: RestroomDraft(
+          name: 'Orphan Restroom',
+          coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+          accessType: AccessType.free,
+        ),
+      );
+
+      expect(
+        () => repoOnlyPublic.submitRestroom(commandB),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+    });
+
+    test('submitRestroom InMemory parity: rejects mismatched contribution pair on reconciliation', () async {
+      final authRepo = InMemoryAuthRepository(initialUid: 'user_123');
+      final coords = Coordinates(latitude: 14.58, longitude: 121.05);
+      final geohash = GeohashService.encode(coords);
+
+      final validPublic = Restroom(
+        id: 'parity_rr',
+        name: 'Parity Facility',
+        coordinates: coords,
+        geohash: geohash,
+        accessType: AccessType.free,
+        averageRating: 0.0,
+        ratingCount: 0,
+        verificationCount: 0,
+        negativeVerificationCount: 0,
+        status: RestroomStatus.unverified,
+      );
+
+      final command = CreateRestroomCommand(
+        restroomId: 'parity_rr',
+        draft: RestroomDraft(
+          name: 'Parity Facility',
+          coordinates: coords,
+          accessType: AccessType.free,
+        ),
+      );
+
+      // 1. Wrong userUid
+      final repoWrongUid = InMemoryRestroomRepository(
+        initialData: [validPublic],
+        initialContributions: {
+          'restroom_parity_rr': {
+            'id': 'restroom_parity_rr',
+            'contributionType': 'restroom',
+            'resourceId': 'parity_rr',
+            'restroomId': 'parity_rr',
+            'userUid': 'other_user_456',
+            'moderationState': 'pending',
+          },
+        },
+        authRepository: authRepo,
+      );
+      expect(
+        () => repoWrongUid.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+
+      // 2. Wrong contributionType
+      final repoWrongType = InMemoryRestroomRepository(
+        initialData: [validPublic],
+        initialContributions: {
+          'restroom_parity_rr': {
+            'id': 'restroom_parity_rr',
+            'contributionType': 'rating',
+            'resourceId': 'parity_rr',
+            'restroomId': 'parity_rr',
+            'userUid': 'user_123',
+            'moderationState': 'pending',
+          },
+        },
+        authRepository: authRepo,
+      );
+      expect(
+        () => repoWrongType.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+
+      // 3. Wrong resourceId
+      final repoWrongResource = InMemoryRestroomRepository(
+        initialData: [validPublic],
+        initialContributions: {
+          'restroom_parity_rr': {
+            'id': 'restroom_parity_rr',
+            'contributionType': 'restroom',
+            'resourceId': 'wrong_resource',
+            'restroomId': 'parity_rr',
+            'userUid': 'user_123',
+            'moderationState': 'pending',
+          },
+        },
+        authRepository: authRepo,
+      );
+      expect(
+        () => repoWrongResource.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+
+      // 4. Wrong restroomId
+      final repoWrongRestroomId = InMemoryRestroomRepository(
+        initialData: [validPublic],
+        initialContributions: {
+          'restroom_parity_rr': {
+            'id': 'restroom_parity_rr',
+            'contributionType': 'restroom',
+            'resourceId': 'parity_rr',
+            'restroomId': 'different_rr',
+            'userUid': 'user_123',
+            'moderationState': 'pending',
+          },
+        },
+        authRepository: authRepo,
+      );
+      expect(
+        () => repoWrongRestroomId.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+
+      // 5. Wrong moderationState
+      final repoWrongState = InMemoryRestroomRepository(
+        initialData: [validPublic],
+        initialContributions: {
+          'restroom_parity_rr': {
+            'id': 'restroom_parity_rr',
+            'contributionType': 'restroom',
+            'resourceId': 'parity_rr',
+            'restroomId': 'parity_rr',
+            'userUid': 'user_123',
+            'moderationState': 'approved',
+          },
+        },
+        authRepository: authRepo,
+      );
+      expect(
+        () => repoWrongState.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+
+      // 6. Public restroom incompatible with command (different name)
+      final repoIncompatiblePublic = InMemoryRestroomRepository(
+        initialData: [
+          Restroom(
+            id: 'parity_rr',
+            name: 'Completely Different Facility',
+            coordinates: coords,
+            geohash: geohash,
+            accessType: AccessType.free,
+            averageRating: 0.0,
+            ratingCount: 0,
+            verificationCount: 0,
+            negativeVerificationCount: 0,
+            status: RestroomStatus.unverified,
+          ),
+        ],
+        initialContributions: {
+          'restroom_parity_rr': {
+            'id': 'restroom_parity_rr',
+            'contributionType': 'restroom',
+            'resourceId': 'parity_rr',
+            'restroomId': 'parity_rr',
+            'userUid': 'user_123',
+            'moderationState': 'pending',
+          },
+        },
+        authRepository: authRepo,
+      );
+      expect(
+        () => repoIncompatiblePublic.submitRestroom(command),
         throwsA(isA<SubmissionInvariantException>()),
       );
     });

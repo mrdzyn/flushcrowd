@@ -2,29 +2,29 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-06
+- **Last updated:** 2026-10-07
 - **Project:** LooRadar — global community-powered restroom finder
 - **Repository:** `mrdzyn/looradar`
 - **Overall stage:** Application Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests complete; independent audit pending
+- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests: audit remediation complete; independent exact-head re-audit pending
 - **Current branch:** `phase-2/add-restroom`
 - **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED]; P2.1 [IMPLEMENTED & VALIDATED]; P2.2 [PLANNED].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 audit remediation [COMPLETE — INDEPENDENT RE-AUDIT PENDING]; P2.2 [BLOCKED pending P2.1 remediation audit].
 
 ## Current objective
 
-Complete and audit **Phase 2 Milestone P2.1** (`docs/09-phase-2-add-restroom.md`):
-- Implemented `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and domain validation.
-- Implemented `CreateRestroomCommand(restroomId, draft)` with stable submission ID.
-- Migrated `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls), added `accessInstructions`, removed affirmative defaults, and implemented sentinel-based `copyWith`.
-- Updated `RestroomFirestoreCodec` for nullable booleans, `accessInstructions`, fee fields, and legacy missing field decoding to `null`.
-- Updated `RestroomRepository` interface with `Future<Restroom> submitRestroom(CreateRestroomCommand command)`.
-- Implemented atomic batch write and ambiguous commit reconciliation in `FirestoreRestroomRepository` and `InMemoryRestroomRepository`.
-- Updated `firestore.rules` via `firestore-rules-author` subagent with create-only public restrooms, bidirectional atomic pairing with `/contributions/restroom_{id}`, `isValidOptionalNullableBool`, and fee validation.
-- Validated all 22 Phase 2 Firestore Security Rules tests (42 total rules tests) under Firestore emulator.
-- Validated all 196 Dart unit, domain, codec, and repository tests with zero failures.
+Complete independent re-audit of **Phase 2 Milestone P2.1** (`docs/09-phase-2-add-restroom.md`):
+- BLOCKER-1: Removed pre-submission reads on first-submit path; first action executes atomic `WriteBatch` (`restrooms/{id}` and `contributions/restroom_{id}`) directly.
+- MAJOR-1: Implemented full ambiguous commit reconciliation contract: absent public doc does not read private contribution; when public exists, reads private contribution and validates complete pair (identity, status `unverified`, all normalized command fields, `userUid == current uid`, `moderationState == 'pending'`).
+- MAJOR-1 (Parity): Implemented identical full-pair reconciliation validation in `InMemoryRestroomRepository` with comprehensive negative and positive test coverage.
+- MAJOR-2 / 2B / 2C: Updated `firestore.rules` with `isValidGenderConfiguration(data)` (rejects all-false `false/false/false` and `false/null/false`, allows all-unknown or positive), ISO 4217 uppercase 3-letter currency regex (`^[A-Z]{3}$`), and base32 geohash regex (`^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$`).
+- MAJOR-3: Introduced narrow `FirestoreMutationAdapter` (`ProductionFirestoreMutationAdapter`) and 27 comprehensive tests in `test/data/firestore_restroom_repository_test.dart` verifying all 22 required production mutation path criteria.
+- MINOR-2: Validated stable `restroomId` in both repositories (rejects empty, whitespace, >100 chars, path separators, relative dots with deterministic code `invalid-restroom-id`).
+- MINOR-3: Persists `FieldValue.serverTimestamp()`, but returns `createdAt: null`, `updatedAt: null` on first submit without fabricating timestamps or running extra post-write reads.
+- Validated all 49 Firestore Security Rules tests (29 Phase 2 tests + 20 Phase 0 legacy tests) under Firestore emulator.
+- Validated all 225 Flutter tests with zero failures.
 
 The active specification is:
 
@@ -85,28 +85,31 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 
 ## Active Phase 2 Scope — Add Restroom
 
-### P2.0 — Specification & Task Contract (FINAL REMEDIATION COMPLETE, RE-AUDIT PENDING)
+### P2.0 — Specification & Task Contract [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]
 - Authored canonical implementation specification in `docs/09-phase-2-add-restroom.md`.
 - Remediated all audit findings (MAJOR-1 through MAJOR-3, MINOR-1 through MINOR-3).
 - Updated `docs/02-data-model.md` (nullable boolean schema and `accessInstructions`).
 - Updated `docs/03-privacy-security.md` (create-only rule and production rate-limiting release gate).
 - Updated project documentation index and tracking status.
-- Updated draft PR [#4](https://github.com/mrdzyn/looradar/pull/4) on `phase-2/add-restroom`.
-- Final independent exact-head specification re-audit pending.
+- Independent specification audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests (COMPLETE)
+### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [AUDIT REMEDIATION COMPLETE — RE-AUDIT PENDING]
 - Implemented `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and domain validation.
 - Implemented `CreateRestroomCommand` in `lib/domain/commands/create_restroom_command.dart`.
 - Migrated `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls) and added `accessInstructions`.
 - Updated `RestroomFirestoreCodec` for nullable booleans, `accessInstructions`, fee fields, and legacy missing field decoding to `null`.
 - Updated `RestroomRepository` interface with `Future<Restroom> submitRestroom(CreateRestroomCommand command)`.
-- Implemented atomic batch write in `FirestoreRestroomRepository` writing `/restrooms/{id}` and `/contributions/restroom_{id}` using `command.restroomId` with ambiguous commit reconciliation.
-- Updated `InMemoryRestroomRepository` with command and batch support, seeded initialContributions support, and reconciliation.
-- Updated `firestore.rules`: create-only (`allow update, delete: if false;`), status `'unverified'`, zero aggregates, bidirectional pairing (`!exists` + `existsAfter` / `getAfter`), and nullable booleans validation.
-- Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` and entrypoint `rules_tests/p2_add_restroom_rules_test.js` (22 rules tests, all PASS).
-- Authored domain, codec, and repository reconciliation tests in `test/domain/models/restroom_draft_test.dart`, `test/domain/models/restroom_test.dart`, `test/data/firestore_codec_test.dart`, and `test/data/repository_test.dart` (196 total Flutter tests, all PASS).
+- Remediated BLOCKER-1: removed pre-submission reads on first-submit path; first action executes atomic `WriteBatch` (`restrooms/{id}` and `contributions/restroom_{id}`) directly.
+- Remediated MAJOR-1: full ambiguous commit reconciliation on batch commit failure with full identity and field validation.
+- Remediated MAJOR-1 (Parity): identical full-pair reconciliation validation in `InMemoryRestroomRepository`.
+- Remediated MAJOR-2 / 2B / 2C: updated `firestore.rules` with `isValidGenderConfiguration`, regex currency validation (`^[A-Z]{3}$`), and regex geohash validation (`^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$`).
+- Remediated MAJOR-3: narrow `FirestoreMutationAdapter` (`ProductionFirestoreMutationAdapter`) with 27 targeted tests in `test/data/firestore_restroom_repository_test.dart` verifying all 22 required production criteria.
+- Remediated MINOR-2: stable `restroomId` validation in both repositories throwing `RepositoryException` with code `invalid-restroom-id`.
+- Remediated MINOR-3: first-submit returns `createdAt: null`, `updatedAt: null` without fabricating timestamps or running extra post-write reads.
+- Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` (49 total rules tests, all PASS).
+- Validated full Flutter test suite (225 total Flutter tests, all PASS).
 
-### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX (PLANNED)
+### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [BLOCKED pending P2.1 remediation audit]
 - Implement `AddRestroomLocationScreen` with interactive center crosshair / draggable pin on Google Maps.
 - Enforce zoom floor (`zoom >= 15.0`) with visual hint.
 - Display live formatted coordinate readouts (5 decimal places) via `Coordinates`.
@@ -164,10 +167,10 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 75 files formatted)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 76 files formatted)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (196/196 passed across all unit, domain, codec, and repository suites)
-- Firestore Security Rules emulator tests — PASS (42/42 passed: 22 Phase 2 tests + 20 Phase 0 legacy tests)
+- `flutter test` — PASS (225/225 passed across all unit, domain, codec, and repository suites)
+- Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `git diff --check` — PASS (clean, no trailing whitespace or formatting defects)
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 - Firebase live discovery — NOT RUN; live device/owner config pending
@@ -175,7 +178,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Next recommended action
 
-Perform independent exact-head audit of Milestone P2.1 on `phase-2/add-restroom`. Upon passing audit, proceed to milestone P2.2 (Interactive Location Pinpoint & Map Pin Adjustment UX).
+Perform independent exact-head re-audit of Milestone P2.1 remediation on `phase-2/add-restroom`. P2.2 remains BLOCKED until P2.1 audit passes.
 
 ## Handoff template
 

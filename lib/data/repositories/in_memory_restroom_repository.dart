@@ -6,6 +6,7 @@ import '../../domain/models/discovery_result.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
+import '../../domain/models/restroom_draft.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/repositories/restroom_repository.dart';
 import '../services/gis/geohash_service.dart';
@@ -245,6 +246,20 @@ class InMemoryRestroomRepository implements RestroomRepository {
     }
     final uid = authRepository?.currentUserId ?? 'mock_uid_123';
 
+    // 1. Validate stable restroom ID (MINOR-2)
+    final restroomId = command.restroomId.trim();
+    if (restroomId.isEmpty ||
+        restroomId.length > 100 ||
+        restroomId.contains('/') ||
+        restroomId == '.' ||
+        restroomId == '..') {
+      throw const RepositoryException(
+        'Invalid stable restroom ID: must be non-empty, <= 100 characters, and contain no path separators.',
+        'invalid-restroom-id',
+      );
+    }
+
+    // 2. Normalize and validate draft
     final normalized = command.draft.normalized();
     final errors = normalized.validate();
     if (errors.isNotEmpty) {
@@ -255,25 +270,32 @@ class InMemoryRestroomRepository implements RestroomRepository {
     }
 
     final existingRestroomIndex = _storage.indexWhere(
-      (r) => r.id == command.restroomId,
+      (r) => r.id == restroomId,
     );
-    final existingContribution =
-        _contributions['restroom_${command.restroomId}'];
+    final existingContribution = _contributions['restroom_$restroomId'];
 
-    // Ambiguous commit reconciliation logic
+    final geohash = GeohashService.encode(normalized.coordinates);
+
+    // 3. Ambiguous commit reconciliation logic with full parity
     if (existingRestroomIndex != -1 && existingContribution != null) {
-      return _storage[existingRestroomIndex];
+      final existingRestroom = _storage[existingRestroomIndex];
+      _validateInMemoryReconciliationPair(
+        restroomId: restroomId,
+        existingRestroom: existingRestroom,
+        existingContribution: existingContribution,
+        normalized: normalized,
+        geohash: geohash,
+        uid: uid,
+      );
+      return existingRestroom;
     } else if (existingRestroomIndex != -1 || existingContribution != null) {
       throw const SubmissionInvariantException(
         'Invariant violation: only one document of the atomic restroom pair exists.',
       );
     }
 
-    final geohash = GeohashService.encode(normalized.coordinates);
-    final now = DateTime.now();
-
     final restroom = Restroom(
-      id: command.restroomId,
+      id: restroomId,
       name: normalized.name,
       coordinates: normalized.coordinates,
       geohash: geohash,
@@ -305,22 +327,114 @@ class InMemoryRestroomRepository implements RestroomRepository {
       negativeVerificationCount: 0,
       lastVerifiedAt: null,
       status: RestroomStatus.unverified,
-      createdAt: now,
-      updatedAt: now,
+      createdAt: null,
+      updatedAt: null,
     );
 
     _storage.add(restroom);
-    _contributions['restroom_${command.restroomId}'] = {
-      'id': 'restroom_${command.restroomId}',
+    _contributions['restroom_$restroomId'] = {
+      'id': 'restroom_$restroomId',
       'contributionType': 'restroom',
-      'resourceId': command.restroomId,
-      'restroomId': command.restroomId,
+      'resourceId': restroomId,
+      'restroomId': restroomId,
       'userUid': uid,
       'moderationState': 'pending',
-      'createdAt': now,
-      'updatedAt': now,
+      'createdAt': DateTime.now(),
+      'updatedAt': DateTime.now(),
     };
 
     return restroom;
+  }
+
+  static void _validateInMemoryReconciliationPair({
+    required String restroomId,
+    required Restroom existingRestroom,
+    required Map<String, dynamic> existingContribution,
+    required RestroomDraft normalized,
+    required String geohash,
+    required String uid,
+  }) {
+    // 1. Public identity & status checks
+    if (existingRestroom.id != restroomId ||
+        existingRestroom.status != RestroomStatus.unverified) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom identity or status mismatch.',
+      );
+    }
+
+    // 2. Public immutable command fields check
+    if (existingRestroom.name != normalized.name ||
+        existingRestroom.coordinates.latitude !=
+            normalized.coordinates.latitude ||
+        existingRestroom.coordinates.longitude !=
+            normalized.coordinates.longitude ||
+        existingRestroom.geohash != geohash ||
+        existingRestroom.accessType != normalized.accessType) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom data does not match submission command.',
+      );
+    }
+
+    // Context & instructions
+    if (existingRestroom.countryCode != normalized.countryCode ||
+        existingRestroom.region != normalized.region ||
+        existingRestroom.city != normalized.city ||
+        existingRestroom.buildingName != normalized.buildingName ||
+        existingRestroom.buildingSection != normalized.buildingSection ||
+        existingRestroom.floor != normalized.floor ||
+        existingRestroom.unitOrArea != normalized.unitOrArea ||
+        existingRestroom.landmark != normalized.landmark ||
+        existingRestroom.directionsNote != normalized.directionsNote ||
+        existingRestroom.accessInstructions != normalized.accessInstructions) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom context does not match submission command.',
+      );
+    }
+
+    // Fees
+    if (existingRestroom.feeAmount != normalized.feeAmount ||
+        existingRestroom.feeCurrency != normalized.feeCurrency) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom fee configuration does not match submission command.',
+      );
+    }
+
+    // Stalls & Amenities
+    if (existingRestroom.male != normalized.male ||
+        existingRestroom.female != normalized.female ||
+        existingRestroom.allGender != normalized.allGender ||
+        existingRestroom.pwdAccessible !=
+            normalized.pwdAccessible.toNullableBool() ||
+        existingRestroom.babyChanging !=
+            normalized.babyChanging.toNullableBool() ||
+        existingRestroom.hasBidet != normalized.hasBidet.toNullableBool() ||
+        existingRestroom.hasToiletPaper !=
+            normalized.hasToiletPaper.toNullableBool() ||
+        existingRestroom.hasSoap != normalized.hasSoap.toNullableBool() ||
+        existingRestroom.hasHandDryer !=
+            normalized.hasHandDryer.toNullableBool()) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom stalls or amenities do not match submission command.',
+      );
+    }
+
+    // 3. Private contribution checks
+    final contribId = existingContribution['id'] as String?;
+    final contribType = existingContribution['contributionType'] as String?;
+    final resourceId = existingContribution['resourceId'] as String?;
+    final contribRestroomId = existingContribution['restroomId'] as String?;
+    final userUid = existingContribution['userUid'] as String?;
+    final moderationState = existingContribution['moderationState'] as String?;
+
+    if (contribId != 'restroom_$restroomId' ||
+        contribType != 'restroom' ||
+        resourceId != restroomId ||
+        contribRestroomId != restroomId ||
+        userUid != uid ||
+        moderationState != 'pending') {
+      throw const SubmissionInvariantException(
+        'Invariant violation: private contribution metadata mismatch.',
+      );
+    }
   }
 }

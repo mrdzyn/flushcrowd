@@ -171,6 +171,24 @@ service cloud.firestore {
     // Domain Validators: Restrooms
     // ===============================================================
 
+    function isValidGenderConfiguration(data) {
+      let male = ('male' in data) ? data.male : null;
+      let female = ('female' in data) ? data.female : null;
+      let allGender = ('allGender' in data) ? data.allGender : null;
+
+      let allUnknown =
+          male == null &&
+          female == null &&
+          allGender == null;
+
+      let hasPositive =
+          male == true ||
+          female == true ||
+          allGender == true;
+
+      return allUnknown || hasPositive;
+    }
+
     function isValidRestroomSchema(data) {
       let allowedFields = [
         'id', 'name', 'latitude', 'longitude', 'geohash',
@@ -189,7 +207,7 @@ service cloud.firestore {
              isValidStringLength(data, 'name', 1, 100) &&
              data.latitude is number && data.latitude >= -90.0 && data.latitude <= 90.0 &&
              data.longitude is number && data.longitude >= -180.0 && data.longitude <= 180.0 &&
-             isValidStringLength(data, 'geohash', 4, 12) &&
+             data.geohash is string && data.geohash.matches('^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$') &&
              data.accessType in ['free', 'paid', 'customer_only', 'key_required'] &&
              data.status in ['active', 'unverified', 'flagged', 'temporarily_unavailable', 'removed'] &&
              isValidOptionalString(data, 'id', 1, 100) &&
@@ -204,10 +222,11 @@ service cloud.firestore {
              isValidOptionalString(data, 'directionsNote', 1, 500) &&
              isValidOptionalString(data, 'accessInstructions', 1, 300) &&
              (data.accessType == 'paid' ?
-               (isValidStringLength(data, 'feeCurrency', 3, 3) &&
+               (data.feeCurrency is string && data.feeCurrency.matches('^[A-Z]{3}$') &&
                 'feeAmount' in data && data.feeAmount is number &&
                 data.feeAmount >= 0 && data.feeAmount <= 1000000) :
                (!('feeAmount' in data) && !('feeCurrency' in data))) &&
+             isValidGenderConfiguration(data) &&
              isValidOptionalNullableBool(data, 'male') &&
              isValidOptionalNullableBool(data, 'female') &&
              isValidOptionalNullableBool(data, 'allGender') &&

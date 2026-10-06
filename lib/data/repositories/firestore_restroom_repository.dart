@@ -9,9 +9,11 @@ import '../../domain/models/discovery_result.dart';
 import '../../domain/models/enums.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
+import '../../domain/models/restroom_draft.dart';
 import '../../domain/repositories/auth_repository.dart';
 import '../../domain/repositories/restroom_repository.dart';
 import '../services/firebase/firestore_codec.dart';
+import '../services/firebase/firestore_mutation_adapter.dart';
 import '../services/firebase/firestore_query_executor.dart';
 import '../services/gis/geohash_service.dart';
 import '../services/gis/haversine.dart';
@@ -29,17 +31,21 @@ import '../services/gis/haversine.dart';
 class FirestoreRestroomRepository implements RestroomRepository {
   final FirebaseFirestore? _firestore;
   final FirestoreQueryExecutor _queryExecutor;
+  final FirestoreMutationAdapter _mutationAdapter;
   final FirebaseAuth? firebaseAuth;
   final AuthRepository? authRepository;
 
   FirestoreRestroomRepository({
     FirebaseFirestore? firestore,
     FirestoreQueryExecutor? queryExecutor,
+    FirestoreMutationAdapter? mutationAdapter,
     this.firebaseAuth,
     this.authRepository,
   }) : _firestore = firestore,
        _queryExecutor =
-           queryExecutor ?? ProductionFirestoreQueryExecutor(firestore);
+           queryExecutor ?? ProductionFirestoreQueryExecutor(firestore),
+       _mutationAdapter =
+           mutationAdapter ?? ProductionFirestoreMutationAdapter(firestore);
 
   FirebaseFirestore get _firestoreInstance =>
       _firestore ?? FirebaseFirestore.instance;
@@ -361,11 +367,26 @@ class FirestoreRestroomRepository implements RestroomRepository {
 
   @override
   Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
+    // 1. Authenticate
     final uid = _currentUserId;
     if (uid == null || uid.isEmpty) {
       throw const UnauthenticatedException();
     }
 
+    // 2. Validate stable restroom ID (MINOR-2)
+    final restroomId = command.restroomId.trim();
+    if (restroomId.isEmpty ||
+        restroomId.length > 100 ||
+        restroomId.contains('/') ||
+        restroomId == '.' ||
+        restroomId == '..') {
+      throw const RepositoryException(
+        'Invalid stable restroom ID: must be non-empty, <= 100 characters, and contain no path separators.',
+        'invalid-restroom-id',
+      );
+    }
+
+    // 3. Normalize & validate draft
     final normalized = command.draft.normalized();
     final validationErrors = normalized.validate();
     if (validationErrors.isNotEmpty) {
@@ -375,57 +396,12 @@ class FirestoreRestroomRepository implements RestroomRepository {
       );
     }
 
-    final restroomRef = _firestoreInstance
-        .collection(AppConstants.restroomsCollection)
-        .doc(command.restroomId);
-    final contributionRef = _firestoreInstance
-        .collection('contributions')
-        .doc('restroom_${command.restroomId}');
-
-    // Ambiguous commit reconciliation: check whether either or both documents already exist
-    try {
-      final restroomSnap = await restroomRef.get();
-      final contributionSnap = await contributionRef.get();
-
-      if (restroomSnap.exists && contributionSnap.exists) {
-        final rData = restroomSnap.data();
-        final cData = contributionSnap.data();
-        if (rData != null &&
-            cData != null &&
-            cData['resourceId'] == command.restroomId &&
-            cData['userUid'] == uid) {
-          return RestroomFirestoreCodec.fromFirestore(
-            rData,
-            documentId: command.restroomId,
-          );
-        } else {
-          throw const SubmissionInvariantException(
-            'Mismatched existing restroom and contribution pair.',
-          );
-        }
-      } else if (restroomSnap.exists || contributionSnap.exists) {
-        throw const SubmissionInvariantException(
-          'Invariant violation: only one document of the atomic restroom pair exists.',
-        );
-      }
-    } on AppException {
-      rethrow;
-    } on FirebaseException catch (e) {
-      throw RepositoryException(
-        e.message ??
-            'Firestore error during pre-submission reconciliation read.',
-        e.code,
-      );
-    } catch (e) {
-      throw RepositoryException(
-        'Unexpected error during pre-submission reconciliation read: $e',
-      );
-    }
-
+    // 4. Derive geohash
     final geohash = GeohashService.encode(normalized.coordinates);
 
+    // 5. Build public payload
     final publicData = <String, dynamic>{
-      'id': command.restroomId,
+      'id': restroomId,
       'name': normalized.name,
       'latitude': normalized.coordinates.latitude,
       'longitude': normalized.coordinates.longitude,
@@ -471,59 +447,81 @@ class FirestoreRestroomRepository implements RestroomRepository {
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
+    // 6. Build private contribution payload
     final privateContributionData = <String, dynamic>{
-      'id': 'restroom_${command.restroomId}',
+      'id': 'restroom_$restroomId',
       'contributionType': 'restroom',
-      'resourceId': command.restroomId,
-      'restroomId': command.restroomId,
+      'resourceId': restroomId,
+      'restroomId': restroomId,
       'userUid': uid,
       'moderationState': 'pending',
       'createdAt': FieldValue.serverTimestamp(),
       'updatedAt': FieldValue.serverTimestamp(),
     };
 
-    final batch = _firestoreInstance.batch();
-    batch.set(restroomRef, publicData);
-    batch.set(contributionRef, privateContributionData);
-
+    // 7. Execute ONE atomic batch directly without pre-reads (BLOCKER-1)
     try {
-      await batch.commit();
-    } on FirebaseException catch (e) {
-      // Reconcile in case the write committed before network failure
+      await _mutationAdapter.commitRestroomSubmissionBatch(
+        restroomId: restroomId,
+        publicData: publicData,
+        contributionId: 'restroom_$restroomId',
+        contributionData: privateContributionData,
+      );
+    } catch (batchError) {
+      // Ambiguous commit reconciliation (MAJOR-1)
       try {
-        final retryRestroom = await restroomRef.get();
-        final retryContribution = await contributionRef.get();
-        if (retryRestroom.exists && retryContribution.exists) {
-          final rData = retryRestroom.data();
-          final cData = retryContribution.data();
-          if (rData != null &&
-              cData != null &&
-              cData['resourceId'] == command.restroomId &&
-              cData['userUid'] == uid) {
-            return RestroomFirestoreCodec.fromFirestore(
-              rData,
-              documentId: command.restroomId,
+        final publicDoc = await _mutationAdapter.getPublicRestroom(restroomId);
+        if (publicDoc == null) {
+          // Public document does not exist: do NOT read private contribution
+          if (batchError is AppException) rethrow;
+          if (batchError is FirebaseException) {
+            throw RepositoryException(
+              batchError.message ?? 'Firestore error submitting restroom.',
+              batchError.code,
             );
           }
-        } else if (retryRestroom.exists || retryContribution.exists) {
-          throw const SubmissionInvariantException(
-            'Invariant violation: only one document of the atomic restroom pair exists.',
+          throw RepositoryException(
+            'Unexpected error submitting restroom: $batchError',
           );
         }
+
+        // Public document exists: read private contribution
+        final privateDoc = await _mutationAdapter.getPrivateContribution(
+          'restroom_$restroomId',
+        );
+        if (privateDoc == null) {
+          throw const SubmissionInvariantException(
+            'Invariant violation: public restroom exists but private contribution is missing or unreadable.',
+          );
+        }
+
+        // Both exist: validate complete pair
+        _validateReconciliationPair(
+          restroomId: restroomId,
+          publicDoc: publicDoc,
+          privateDoc: privateDoc,
+          normalized: normalized,
+          geohash: geohash,
+          uid: uid,
+        );
+
+        // Valid committed pair reconciles as success
+        return RestroomFirestoreCodec.fromFirestore(
+          publicDoc,
+          documentId: restroomId,
+        );
       } catch (recErr) {
         if (recErr is SubmissionInvariantException) rethrow;
+        if (recErr is RepositoryException) rethrow;
+        throw RepositoryException(
+          'Reconciliation failed following ambiguous submission error: $recErr',
+        );
       }
-      throw RepositoryException(
-        e.message ?? 'Firestore error submitting restroom.',
-        e.code,
-      );
-    } catch (e) {
-      if (e is AppException) rethrow;
-      throw RepositoryException('Unexpected error submitting restroom: $e');
     }
 
+    // 8. Return successfully submitted Restroom with null timestamps (MINOR-3)
     return Restroom(
-      id: command.restroomId,
+      id: restroomId,
       name: normalized.name,
       coordinates: normalized.coordinates,
       geohash: geohash,
@@ -555,8 +553,105 @@ class FirestoreRestroomRepository implements RestroomRepository {
       negativeVerificationCount: 0,
       lastVerifiedAt: null,
       status: RestroomStatus.unverified,
-      createdAt: DateTime.now(),
-      updatedAt: DateTime.now(),
+      createdAt: null,
+      updatedAt: null,
     );
+  }
+
+  static void _validateReconciliationPair({
+    required String restroomId,
+    required Map<String, dynamic> publicDoc,
+    required Map<String, dynamic> privateDoc,
+    required RestroomDraft normalized,
+    required String geohash,
+    required String uid,
+  }) {
+    // 1. Public identity & status checks
+    final publicId = publicDoc['id'] as String?;
+    final publicStatus = publicDoc['status'] as String?;
+    if (publicId != restroomId ||
+        publicStatus != RestroomStatus.unverified.value) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom identity or status mismatch.',
+      );
+    }
+
+    // 2. Public immutable command fields check
+    final name = publicDoc['name'] as String?;
+    final lat = (publicDoc['latitude'] as num?)?.toDouble();
+    final lng = (publicDoc['longitude'] as num?)?.toDouble();
+    final docGeohash = publicDoc['geohash'] as String?;
+    final accessType = publicDoc['accessType'] as String?;
+
+    if (name != normalized.name ||
+        lat != normalized.coordinates.latitude ||
+        lng != normalized.coordinates.longitude ||
+        docGeohash != geohash ||
+        accessType != normalized.accessType.value) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom data does not match submission command.',
+      );
+    }
+
+    // Location context & instructions
+    if (publicDoc['countryCode'] != normalized.countryCode ||
+        publicDoc['region'] != normalized.region ||
+        publicDoc['city'] != normalized.city ||
+        publicDoc['buildingName'] != normalized.buildingName ||
+        publicDoc['buildingSection'] != normalized.buildingSection ||
+        publicDoc['floor'] != normalized.floor ||
+        publicDoc['unitOrArea'] != normalized.unitOrArea ||
+        publicDoc['landmark'] != normalized.landmark ||
+        publicDoc['directionsNote'] != normalized.directionsNote ||
+        publicDoc['accessInstructions'] != normalized.accessInstructions) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom context does not match submission command.',
+      );
+    }
+
+    // Fees
+    final feeAmount = (publicDoc['feeAmount'] as num?)?.toDouble();
+    if (feeAmount != normalized.feeAmount ||
+        publicDoc['feeCurrency'] != normalized.feeCurrency) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom fee configuration does not match submission command.',
+      );
+    }
+
+    // Stalls & Amenities
+    if (publicDoc['male'] != normalized.male ||
+        publicDoc['female'] != normalized.female ||
+        publicDoc['allGender'] != normalized.allGender ||
+        publicDoc['pwdAccessible'] !=
+            normalized.pwdAccessible.toNullableBool() ||
+        publicDoc['babyChanging'] != normalized.babyChanging.toNullableBool() ||
+        publicDoc['hasBidet'] != normalized.hasBidet.toNullableBool() ||
+        publicDoc['hasToiletPaper'] !=
+            normalized.hasToiletPaper.toNullableBool() ||
+        publicDoc['hasSoap'] != normalized.hasSoap.toNullableBool() ||
+        publicDoc['hasHandDryer'] != normalized.hasHandDryer.toNullableBool()) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom stalls or amenities do not match submission command.',
+      );
+    }
+
+    // 3. Private contribution checks
+    final contribId = privateDoc['id'] as String?;
+    final contribType = privateDoc['contributionType'] as String?;
+    final resourceId = privateDoc['resourceId'] as String?;
+    final contribRestroomId = privateDoc['restroomId'] as String?;
+    final userUid = privateDoc['userUid'] as String?;
+    final moderationState = privateDoc['moderationState'] as String?;
+
+    if (contribId != 'restroom_$restroomId' ||
+        contribType != 'restroom' ||
+        resourceId != restroomId ||
+        contribRestroomId != restroomId ||
+        userUid != uid ||
+        moderationState != 'pending') {
+      throw const SubmissionInvariantException(
+        'Invariant violation: private contribution metadata mismatch.',
+      );
+    }
   }
 }
