@@ -16,9 +16,9 @@ By the end of Phase 2, a user should be able to:
 2. **Refine Location:** Interactively position a map pin with high visual clarity, utilizing a crosshair/draggable marker with live coordinate feedback and zoom-level guidance.
 3. **Input Facility Details:** Complete a structured, task-focused form covering basic facility identity, detailed indoor directions (building, floor, wing, landmark), accessibility features, gender/stall configurations, hygiene amenities, payment terms, and access instructions.
 4. **Preserve Data Truth:** Ensure unconfirmed or unknown amenities are recorded as `null` (unknown) rather than defaulted to affirmative positive claims or conflated with explicit negative claims.
-5. **Receive Duplicate Guidance:** Benefit from a lightweight, bounded duplicate-detection engine reusing Phase 1 GIS spatial primitives that alerts the user if an existing facility matches nearby coordinates and building context, without blocking legitimate separate facilities.
+5. **Receive Duplicate Guidance:** Benefit from a lightweight, bounded duplicate-detection engine reusing Phase 1 GIS spatial primitives with Unicode-preserving global text normalization, alerting the user if an existing facility matches nearby coordinates and building context without blocking legitimate separate facilities.
 6. **Submit Atomically & Anonymously:** Submit the facility via a single atomic Firestore batch write paired with a private contribution record, authenticated seamlessly via Firebase Anonymous Authentication without requiring personal data or traditional credentials.
-7. **Idempotent Retry Resilience:** Experience robust in-flight retry behavior where a stable submission ID prevents accidental duplicate facility creation on network drop or ambiguous commit.
+7. **Idempotent Retry Resilience:** Experience robust in-flight retry behavior where a stable `CreateRestroomCommand` with explicit `restroomId` prevents accidental duplicate facility creation on network drop or ambiguous commit.
 8. **Authoritative Map Synchronization:** Receive clear confirmation feedback, automatically transition back to the map centered on the newly added facility, trigger canonical viewport discovery, and observe the new restroom rendered with an `unverified` status badge.
 9. **Experience Resilience:** Benefit from clear error handling, in-flight submission debouncing, offline/network failure preservation (inputs are never discarded on failure), and accessible touch targets.
 
@@ -42,6 +42,7 @@ By the end of Phase 2, a user should be able to:
 - **Bounded Infrastructure & Zero Paid APIs:** Zero reliance on Google Places API, Geocoding API, Street View, or external paid lookup services. Duplicate detection runs strictly on bounded Firestore geohash queries using Phase 1 GIS primitives.
 - **Advisory, Non-Blocking Duplicate Warning:** Duplicate detection is an advisory warning to guide the user, never a hard submission block.
 - **Authoritative Map State:** The discovery repository and viewport query remain the single source of truth for the map. No permanent optimistic cache injection into discovery source results.
+- **Explicit Stable Submission ID Contract:** The application/state layer allocates the canonical `restroomId` once upon validation; passed explicitly via `CreateRestroomCommand` across all retry attempts.
 - **Production Abuse-Control Gate:** A client-side disabled button is UX protection, not abuse protection. Phase 2 contribution writes must not be enabled in production until enforceable per-UID rate limiting exists.
 - **Canonical UI/UX Reference:** Preserves visual and interaction alignment with `docs/assets/looradar-mobile-ux-reference.png` and `docs/06-ui-ux-reference.md`.
 
@@ -58,18 +59,18 @@ Step 1: Location Pinpoint (AddRestroomLocationScreen)
   └─ Live coordinate readouts via Coordinates value object
   ↓ [Confirm Location]
 Step 2: Restroom Details & Amenities (AddRestroomFormScreen)
-  ├─ Basic Info (Name, Access Type)
-  ├─ Indoor Directions (Building, Floor, Wing, Landmark, Directions Note)
-  ├─ Accommodations & Amenities (PWD, Baby Change, Stalls, Bidet, Paper, Soap, Dryer)
-  └─ Access Instructions & Payment (Fee amount/currency, Access instructions)
-  ↓ [Submit Restroom — Allocates Stable submissionId / restroomId]
+  ├─ Raw UI State Inputs
+  ├─ Normalization Boundary: draft.normalized()
+  ├─ Validation Boundary: normalizedDraft.validate()
+  └─ Allocate Stable restroomId (via RestroomIdGenerator / state)
+  ↓ [Submit Restroom — Encapsulated in CreateRestroomCommand]
 Duplicate Detection Evaluation (Advisory via Phase 1 GIS)
   ├─ No match found → Proceed directly to Batch Write
   └─ Match found → Advisory Modal Sheet (Top 3 candidates)
        ├─ [View Existing Restroom] → Open Preview on Map & Abandon Submit
        └─ [No, It's a Different Restroom] → Proceed to Batch Write
-  ↓ [Batch Write via Anonymous Auth with Stable ID]
-  ├─ Ambiguous failure / retry → Reconcile existing pair before retrying same ID
+  ↓ [Batch Write via Anonymous Auth with CreateRestroomCommand]
+  ├─ Ambiguous failure / retry → Reconcile existing pair before retrying same command
 Success Feedback & Authoritative Map Synchronization
   ├─ Show success toast/snackbar
   ├─ Navigate back to Map Discovery Shell
@@ -144,9 +145,15 @@ For Phase 2, LooRadar locks the authoritative representation of community-contri
 - Existing documents are NOT silently rewritten in Phase 2.
 - Discovery filters match ONLY explicit `true`.
 
-### 5.2 The `RestroomDraft` Domain Model
+### 5.2 The `RestroomDraft` Domain Model & Normalization Boundary
 
-Phase 2 introduces a dedicated input model:
+Phase 2 establishes a strict transformation boundary between raw user inputs, normalized domain data, and validation:
+
+```text
+raw UI input → draft.normalized() → normalizedDraft.validate() → CreateRestroomCommand → persistence
+```
+
+Validation operates strictly against the normalized state. Validation does NOT mutate fields.
 
 `lib/domain/models/restroom_draft.dart`
 
@@ -236,12 +243,51 @@ class RestroomDraft {
     this.hasHandDryer = TriStateAmenity.unknown,
   });
 
-  /// Normalizes and validates all draft fields according to domain rules.
+  /// Normalizes all strings and fields into canonical domain representations.
+  /// Converts whitespace-only strings to null and trims text Unicode-safely.
+  RestroomDraft normalized() {
+    String? clean(String? val) {
+      if (val == null) return null;
+      final trimmed = val.trim();
+      return trimmed.isEmpty ? null : trimmed;
+    }
+
+    final cleanCurrency = clean(feeCurrency)?.toUpperCase();
+    final cleanCountry = clean(countryCode)?.toUpperCase();
+
+    return RestroomDraft(
+      name: name.trim(),
+      coordinates: coordinates,
+      accessType: accessType,
+      countryCode: cleanCountry,
+      region: clean(region),
+      city: clean(city),
+      buildingName: clean(buildingName),
+      buildingSection: clean(buildingSection),
+      floor: clean(floor),
+      unitOrArea: clean(unitOrArea),
+      landmark: clean(landmark),
+      directionsNote: clean(directionsNote),
+      accessInstructions: clean(accessInstructions),
+      feeAmount: accessType == AccessType.paid ? feeAmount : null,
+      feeCurrency: accessType == AccessType.paid ? cleanCurrency : null,
+      male: male,
+      female: female,
+      allGender: allGender,
+      pwdAccessible: pwdAccessible,
+      babyChanging: babyChanging,
+      hasBidet: hasBidet,
+      hasToiletPaper: hasToiletPaper,
+      hasSoap: hasSoap,
+      hasHandDryer: hasHandDryer,
+    );
+  }
+
+  /// Validates normalized draft fields according to domain rules.
   List<String> validate() {
     final errors = <String>[];
-    final trimmedName = name.trim();
-    if (trimmedName.isEmpty) errors.add('Facility name is required');
-    if (trimmedName.length > 100) errors.add('Facility name cannot exceed 100 characters');
+    if (name.isEmpty) errors.add('Facility name is required');
+    if (name.length > 100) errors.add('Facility name cannot exceed 100 characters');
 
     // Coordinates validated through Coordinates domain object
     if (coordinates.latitude.isNaN || coordinates.latitude.isInfinite ||
@@ -253,18 +299,18 @@ class RestroomDraft {
       errors.add('Longitude must be a valid number between -180 and 180');
     }
 
-    if (countryCode != null && (countryCode!.trim().length < 2 || countryCode!.trim().length > 3)) {
+    if (countryCode != null && (countryCode!.length < 2 || countryCode!.length > 3)) {
       errors.add('Country code must be 2-3 characters');
     }
-    if (region != null && region!.trim().length > 100) errors.add('Region cannot exceed 100 characters');
-    if (city != null && city!.trim().length > 100) errors.add('City cannot exceed 100 characters');
-    if (buildingName != null && buildingName!.trim().length > 100) errors.add('Building name cannot exceed 100 characters');
-    if (buildingSection != null && buildingSection!.trim().length > 100) errors.add('Building section cannot exceed 100 characters');
-    if (floor != null && floor!.trim().length > 20) errors.add('Floor identifier cannot exceed 20 characters');
-    if (unitOrArea != null && unitOrArea!.trim().length > 100) errors.add('Unit or area cannot exceed 100 characters');
-    if (landmark != null && landmark!.trim().length > 100) errors.add('Landmark cannot exceed 100 characters');
-    if (directionsNote != null && directionsNote!.trim().length > 500) errors.add('Directions note cannot exceed 500 characters');
-    if (accessInstructions != null && accessInstructions!.trim().length > 300) {
+    if (region != null && region!.length > 100) errors.add('Region cannot exceed 100 characters');
+    if (city != null && city!.length > 100) errors.add('City cannot exceed 100 characters');
+    if (buildingName != null && buildingName!.length > 100) errors.add('Building name cannot exceed 100 characters');
+    if (buildingSection != null && buildingSection!.length > 100) errors.add('Building section cannot exceed 100 characters');
+    if (floor != null && floor!.length > 20) errors.add('Floor identifier cannot exceed 20 characters');
+    if (unitOrArea != null && unitOrArea!.length > 100) errors.add('Unit or area cannot exceed 100 characters');
+    if (landmark != null && landmark!.length > 100) errors.add('Landmark cannot exceed 100 characters');
+    if (directionsNote != null && directionsNote!.length > 500) errors.add('Directions note cannot exceed 500 characters');
+    if (accessInstructions != null && accessInstructions!.length > 300) {
       errors.add('Access instructions cannot exceed 300 characters');
     }
 
@@ -272,12 +318,9 @@ class RestroomDraft {
       if (feeAmount == null || feeAmount!.isNaN || feeAmount! < 0 || feeAmount! > 1000000) {
         errors.add('Paid restrooms require a valid fee amount between 0 and 1,000,000');
       }
-      if (feeCurrency == null || feeCurrency!.trim().length != 3 || !RegExp(r'^[A-Z]{3}$').hasMatch(feeCurrency!.trim())) {
+      if (feeCurrency == null || feeCurrency!.length != 3 || !RegExp(r'^[A-Z]{3}$').hasMatch(feeCurrency!)) {
         errors.add('Fee currency must be a valid 3-letter uppercase code (e.g., USD)');
       }
-    } else {
-      if (feeAmount != null) errors.add('Fee amount must be empty for non-paid restrooms');
-      if (feeCurrency != null) errors.add('Fee currency must be empty for non-paid restrooms');
     }
 
     // Gender stall configuration: either at least one is explicitly true, or all are null (unknown)
@@ -294,7 +337,7 @@ class RestroomDraft {
 
 ### 5.3 Enforcing Initial State & Aggregates
 
-When converting a `RestroomDraft` to a public Firestore document:
+When converting a `CreateRestroomCommand` to a public Firestore document:
 - `status`: Strictly set to `'unverified'` (`RestroomStatus.unverified`).
 - `averageRating`: Strictly `0.0`.
 - `ratingCount`: Strictly `0`.
@@ -369,7 +412,7 @@ This bidirectional contract strictly prevents:
 
 ---
 
-## 7. Firestore Security Rules Specification
+## 7. Firestore Security Rules Specification & Access Budget
 
 ### 7.1 Security Invariants for Phase 2
 
@@ -381,7 +424,15 @@ This bidirectional contract strictly prevents:
 6. **Create-Only Public Restrooms:** Public restroom updates and deletes are strictly prohibited in Phase 2 (`allow update, delete: if false;`).
 7. **Bidirectional Atomic Pairing:** Validated via pre-state and post-state rules on both paths.
 
-### 7.2 Target Rules Expression
+### 7.2 Security Rules Access Budget & Limits
+
+The atomic batch validation involves cross-document access calls (`exists`, `existsAfter`, `getAfter`):
+- Firestore Security Rules enforce strict per-operation / per-batch access limits (e.g. maximum 10 document access calls per rule evaluation, maximum 20 per write batch / transaction).
+- Document reads performed in Security Rules may contribute to billable read operations.
+- Firestore caches repeated lookups of the same document path within a single rule execution context.
+- **P2.1 Validation Requirement:** P2.1 emulator test execution must explicitly verify that the atomic batch write rule evaluation finishes within Firestore access limits, without access-limit termination or permission failure.
+
+### 7.3 Target Rules Expression
 
 ```javascript
 // Restrooms: Public facilities (CREATE-ONLY in Phase 2)
@@ -453,42 +504,55 @@ function isValidContributionCreate(contributionId) {
 
 ## 8. Canonical Document ID & Idempotent Submission
 
-### 8.1 Stable Submission ID Allocation
+### 8.1 The `CreateRestroomCommand` Application Contract
 
-A single logical contribution workflow generates a stable `submissionId` / `restroomId` **ONCE**, at the moment the user taps "Submit Restroom" and validation passes:
+To make the stable submission ID explicit across timeouts, retries, and reconciliation reads, Phase 2 locks a dedicated command object:
 
-```text
-Draft State
-  ↓ [User taps Submit]
-Validate Draft
-  ↓ [Valid]
-Check if draft has assigned submissionId:
-  ├─ None: Allocate canonical restroomId = _collection.doc().id
-  └─ Present: Reuse existing restroomId
-  ↓
-Run Bounded Duplicate Detection
-  ├─ Matches found → Show advisory warning → User confirms "Different Restroom"
-  └─ No matches → Proceed to submit
-  ↓
-Submit Batch (restrooms/{restroomId} + contributions/restroom_{restroomId})
-  ├─ SUCCESS → Clear draft, trigger map sync
-  ├─ RECOVERABLE FAILURE / NETWORK DROP → Retain SAME restroomId on draft
-  └─ RETRY → Attempt write using SAME restroomId
+`lib/domain/commands/create_restroom_command.dart`
+
+```dart
+class CreateRestroomCommand {
+  final String restroomId;
+  final RestroomDraft draft;
+
+  const CreateRestroomCommand({
+    required this.restroomId,
+    required this.draft,
+  });
+}
 ```
 
-The `restroomId` remains attached to the draft across all recoverable retry attempts. A new ID is allocated if and only if the user cancels or discards the draft to start a completely new contribution.
+The repository interface accepts this command directly:
 
-### 8.2 Ambiguous Commit Reconciliation
+```dart
+abstract class RestroomRepository {
+  // ... existing discovery methods ...
+
+  /// Submits a new community restroom atomically using an explicit stable ID.
+  Future<Restroom> submitRestroom(CreateRestroomCommand command);
+}
+```
+
+### 8.2 ID Ownership & Lifecycle
+
+- **Allocation Layer:** The application / presentation state layer (`AddRestroomNotifier`) allocates the canonical `restroomId`.
+- **Timing:** Allocation happens **ONCE** after draft validation passes and before the first persistence attempt.
+- **Factory Abstraction:** A testable `RestroomIdGenerator` or repository helper `newRestroomId()` may generate the ID, but the generated ID is held explicitly in the notifier state.
+- **Repository Invariant:** The repository does NOT generate a new ID; it strictly uses `command.restroomId`.
+- **Retry Preservation:** Retries reuse the exact same `CreateRestroomCommand` with the identical `restroomId`.
+- **Cancellation:** If the user cancels or discards the contribution, the ID is discarded. A new contribution gets a fresh ID.
+
+### 8.3 Ambiguous Commit Reconciliation
 
 If a network timeout or connection drop occurs during `batch.commit()`, the write may or may not have succeeded on the server. Before attempting a retry:
 
 1. **Reconciliation Read:** The client issues read requests for:
-   - `restrooms/{restroomId}`
-   - `contributions/restroom_{restroomId}`
+   - `restrooms/{command.restroomId}`
+   - `contributions/restroom_{command.restroomId}`
 2. **State Evaluation:**
    - **Both exist and match contract:** The write succeeded before the network dropped. Treat the operation as an immediate **SUCCESS**, navigate to map, and synchronize.
-   - **Neither exists:** The write failed before committing. Safely re-execute the batch write using the **SAME** `restroomId`.
-   - **Only one exists:** This represents an invariant violation (e.g. partial write or race). Surface a clear, recoverable error to the user without attempting to create an orphaned second facility.
+   - **Neither exists:** The write failed before committing. Safely re-execute the batch write using the **SAME** `CreateRestroomCommand`.
+   - **Only one exists:** This represents an invariant violation (e.g. partial write or race). Surface a clear, recoverable error to the user without generating another ID or creating an orphaned facility.
 
 ---
 
@@ -497,10 +561,17 @@ If a network timeout or connection drop occurs during `batch.commit()`, the writ
 ### 9.1 Spatial Search Reusing Phase 1 GIS Primitives
 
 Duplicate detection reuses the proven Phase 1 spatial algorithm:
-- Center: `(draft.coordinates.latitude, draft.coordinates.longitude)`.
+- Center: `draft.coordinates`.
 - Search radius: 500 meters.
-- Primitive: `GeohashService.getCandidatePrefixes(coordinates, radiusInMeters: 500)`.
-- Range cap: Maximum **16 ranges** (`take(AppConstants.maxGeohashQueryRanges)`), matching the Phase 1 GIS safety model.
+- **GIS API Call:**
+  ```dart
+  GeohashService.getCandidatePrefixes(
+    draft.coordinates,
+    500,
+    maxRanges: AppConstants.maxGeohashQueryRanges,
+  )
+  ```
+- Range cap: Maximum **16 ranges** (`AppConstants.maxGeohashQueryRanges`), matching the Phase 1 GIS safety model.
 - Per-range read limit: `.limit(20)`.
 - **Cost Math & Read Upper Bound:**
   - Theoretical raw documents read ceiling: `16 ranges × 20 docs = 320 documents`.
@@ -510,14 +581,23 @@ Duplicate detection reuses the proven Phase 1 spatial algorithm:
   - A partial duplicate scan **NEVER implies "no duplicates exist"**.
   - Duplicate detection is strictly **advisory**; users are never blocked from submitting.
 
-### 9.2 String Normalization
+### 9.2 Unicode-Preserving Text Normalization (Global-First)
 
-All text fields are normalized prior to comparison:
-- Lowercase conversion.
-- Unicode-safe whitespace trimming.
-- Punctuation removal (strip characters outside `[a-z0-9\s]`).
-- Whitespace collapse (multiple spaces collapsed to single space).
-- Tokenization into word sets.
+LooRadar is global-first. Text normalization must NOT strip non-Latin scripts (e.g. Japanese, Arabic, Cyrillic, Korean, Chinese, accented Latin).
+
+Normalization algorithm:
+1. Trim leading and trailing Unicode whitespace.
+2. Lowercase / case-fold where supported.
+3. Normalize Unicode representation (canonical decomposition/composition).
+4. Remove Unicode punctuation while preserving letters and numbers across all scripts (`[\p{P}\p{S}]` stripped while preserving `[\p{L}\p{N}]`).
+5. Collapse consecutive Unicode whitespace into a single space.
+6. Tokenize on whitespace into token sets $T$.
+7. Discard empty tokens.
+
+**Empty Token Set Handling & Zero-Denominator Guard:**
+- If both token sets are empty: `nameScore = 0.0`.
+- If only one token set is empty: `nameScore = 0.0`.
+- If $|T_D| + |T_C| == 0$: return `0.0` (never divide by zero).
 
 ### 9.3 Explicit Deterministic Scoring Formula
 
@@ -544,10 +624,9 @@ Each nearby candidate facility $C$ is compared against draft $D$:
    - Conflicting: `0.0`.
 6. **Floor Conflict Penalty ($P_{\text{floor}}$):**
    - If both have non-empty normalized `floor` and they **conflict** (e.g. "B1" vs "4F"): `P_{\text{floor}} = 0.40`.
-   - If both have non-empty normalized `floor` and they **match**: `P_{\text{floor}} = 0.0` (with $+0.05$ bonus).
-   - If either is empty/unspecified: `P_{\text{floor}} = 0.0`.
+   - Otherwise (either is empty or both match): `P_{\text{floor}} = 0.0`.
 
-**Weighted Score Formula:**
+**Authoritative Weighted Score Formula:**
 ```text
 rawScore = (0.40 * S_dist) + (0.30 * S_name) + (0.15 * S_building) + (0.10 * S_section) + (0.05 * S_landmark) - P_floor
 score = clamp(rawScore, 0.0, 1.0)
@@ -579,7 +658,7 @@ If one or more candidates score $\ge 0.50$:
    - **Candidate Cards:** Up to 3 candidates showing name, distance, floor, and access type.
    - **Actions:**
      - `View Existing Restroom`: Dismisses sheet, closes form, centers map on candidate, and opens preview sheet.
-     - `No, It's a Different Restroom`: Acknowledges warning and proceeds to execute batch write with stable `restroomId`.
+     - `No, It's a Different Restroom`: Acknowledges warning and proceeds to execute batch write with stable `command.restroomId`.
 
 ---
 
@@ -634,10 +713,10 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 
 1. Batch write commits successfully to Firestore.
 2. Form screen is popped, returning to `MapDiscoveryScreen`.
-3. Map camera animates to the new restroom coordinates `(draft.coordinates.latitude, draft.coordinates.longitude)` at `zoom: 16.5`.
+3. Map camera animates to the new restroom coordinates `(command.draft.coordinates.latitude, command.draft.coordinates.longitude)` at `zoom: 16.5`.
 4. Camera idle trigger initiates canonical viewport query refresh through the existing debounced pipeline.
 5. The repository returns the newly created facility (retrieved from Firestore server or local cache).
-6. Notifier automatically selects the new facility by its `restroomId` and opens `RestroomPreviewSheet`.
+6. Notifier automatically selects the new facility by its `command.restroomId` and opens `RestroomPreviewSheet`.
 7. Preview sheet prominently displays the `"Unverified"` status badge.
 
 ---
@@ -648,7 +727,7 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 | :--- | :--- | :--- | :--- |
 | **Location Pinpoint** | Interactive Map Drag | 0 Firestore reads | Client-side map rendering; no reverse geocoding API calls. |
 | **Duplicate Detection** | Nearby candidate search | Max 320 raw reads (theoretical ceiling) | 16 ranges × 20 limit; deduplicated and filtered in memory. |
-| **Restroom Submission** | Atomic Batch Write | 2 Firestore writes | 1 public write (`restrooms/`), 1 private write (`contributions/`). |
+| **Restroom Submission** | Atomic Batch Write | Application operations: 2 Firestore writes<br>Security Rules: bounded cross-document access checks; final P2.1 rules must remain within Firestore access-call limits | 1 public write (`restrooms/`), 1 private write (`contributions/`); Rules accesses subject to Firestore limits. |
 | **Reconciliation Read** | Retry ambiguity check | Max 2 Firestore reads | Direct document lookups for `restrooms/{id}` and `contributions/restroom_{id}`. |
 | **Anonymous Auth** | Background sign-in | 0 Firestore reads | Native Firebase Auth token exchange. |
 
@@ -663,14 +742,16 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 - *P2.1 implementation is BLOCKED pending independent P2.0 specification re-audit.*
 
 ### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests
-- Implement `RestroomDraft`, `TriStateAmenity`, and full domain validation.
+- Implement `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and validation in `lib/domain/models/restroom_draft.dart`.
+- Define `CreateRestroomCommand` in `lib/domain/commands/create_restroom_command.dart`.
 - Migrate `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls).
 - Update `RestroomFirestoreCodec` for nullable booleans and new `accessInstructions` field.
-- Update `RestroomRepository` interface with `Future<Restroom> submitRestroom(RestroomDraft draft)`.
-- Implement atomic batch write in `FirestoreRestroomRepository` writing `/restrooms/{id}` and `/contributions/restroom_{id}` with stable ID allocation and reconciliation.
-- Update `InMemoryRestroomRepository` with draft and batch support.
+- Update `RestroomRepository` interface with `Future<Restroom> submitRestroom(CreateRestroomCommand command)`.
+- Implement atomic batch write in `FirestoreRestroomRepository` writing `/restrooms/{id}` and `/contributions/restroom_{id}` using `command.restroomId`.
+- Update `InMemoryRestroomRepository` with command and batch support.
 - Update `firestore.rules`: create-only (`allow update, delete: if false;`), status `'unverified'`, zero aggregates, bidirectional pairing (`!exists` + `existsAfter` / `getAfter`).
-- Author comprehensive Firestore emulator tests in `rules_tests/p2_add_restroom_rules_test.js` (29 test cases).
+- Author Firestore Security Rules emulator tests in `rules_tests/p2_add_restroom_rules_test.js` (Rules layer only, verifying access limits).
+- Author domain/codec and repository/reconciliation tests in respective Dart test suites.
 - *Explicitly excludes form UI.*
 
 ### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX
@@ -682,17 +763,17 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 ### P2.3 — Contribution Form UI, Data-Truth Validation & State Management
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
 - Implement tri-state amenity selector widgets.
-- Implement `AddRestroomNotifier` form state management and input validation.
+- Implement `AddRestroomNotifier` form state management, normalization, validation, and ID allocation.
 - Unit tests for form validation and widget tests for form rendering and error states.
 
 ### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX
-- Implement `DuplicateDetectionService` with 500m geohash candidate retrieval (max 16 ranges, `.limit(20)`) and deterministic scoring model.
+- Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
 - Implement `DuplicateWarningSheet` advisory UI showing top 3 candidates.
-- Unit tests for similarity heuristics and edge cases; widget tests for modal display and button actions.
+- Unit tests for similarity heuristics and global script fixtures (`東京駅 トイレ`, `مطار دبي حمام`, etc.); widget tests for modal display and button actions.
 
 ### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback
 - Connect anonymous authentication lifecycle.
-- Wire submit action through repository batch write with stable submission ID and ambiguous commit reconciliation.
+- Wire submit action through repository batch write with `CreateRestroomCommand`, stable ID, and ambiguous commit reconciliation.
 - Sync successful submissions with canonical viewport refresh and preview selection.
 - End-to-end integration and widget tests.
 
@@ -705,18 +786,12 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 
 ---
 
-## 15. Testing Contract
+## 15. Testing Contract Across Test Layers
 
-### 15.1 Unit Tests
-- `RestroomDraft` field validations (all fields, coordinate limits, text lengths, currency format, fee constraints).
-- `TriStateAmenity` mapping to nullable booleans (`true`, `false`, `null`).
-- Stable submission ID generation and idempotency retention across retries.
-- Duplicate detection scoring algorithm (exact name matches, partial matches, conflicting floors, distance weighting, tie-breaking).
-
-### 15.2 Firestore Security Rules Emulator Tests (29 Scenarios in P2.1)
+### 15.1 Firestore Security Rules Emulator Tests (`rules_tests/p2_add_restroom_rules_test.js`)
 
 #### Public/Private Pair Invariants (10 Tests)
-1. Valid atomic restroom + contribution pair -> ALLOW.
+1. Valid atomic restroom + contribution pair within Firestore access-call limits -> ALLOW.
 2. Restroom created without contribution -> REJECT.
 3. Contribution created without restroom -> REJECT.
 4. Pre-existing contribution then restroom created -> REJECT.
@@ -741,25 +816,35 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 19. Client attempts coordinate or geohash update on public restroom -> REJECT.
 20. Client attempts deletion of public restroom -> REJECT.
 
-#### Nullable Truth & Field Validation (5 Tests)
-21. Explicit `true` amenity allowed -> ALLOW.
-22. Explicit `false` amenity allowed -> ALLOW.
-23. Explicit `null` / omitted amenity allowed -> ALLOW.
-24. Invalid amenity data type (e.g. string instead of bool) -> REJECT.
-25. Missing optional amenity decodes as unknown `null`.
+#### Nullable Truth & Field Validation at Rule Layer (2 Tests)
+21. Valid nullable amenity fields (explicit bool or missing/null) -> ALLOW.
+22. Invalid amenity data type in Firestore doc (e.g. string instead of bool) -> REJECT.
 
-#### Idempotency & Reconciliation (4 Tests)
-26. Submission retry reuses identical `restroomId`.
-27. Reconciliation reads verify existing pair and return success on lost network ack.
-28. Retry after ambiguous failure does not generate a second restroom ID.
-29. In-flight submit debounce prevents concurrent duplicate batch writes.
+### 15.2 Dart Domain & Codec Tests (`test/domain/` & `test/data/`)
+23. `RestroomDraft.normalized()` transforms whitespace-only optional strings to `null`, trims all text, and uppercases currency/country codes.
+24. Validation operates on normalized state and validates all length and numeric constraints.
+25. `TriStateAmenity` mapping to nullable booleans (`true`, `false`, `null`).
+26. `RestroomFirestoreCodec` encodes and decodes `bool?` amenities accurately.
+27. Legacy missing fields decode as `null` (not default `true`).
+28. `accessInstructions` encodes and decodes accurately (1..300 chars).
+29. Unicode duplicate name normalization preserves non-Latin scripts (e.g., `東京駅 トイレ`, `مطار دبي حمام`, `Туалет Москва`, `Café Central Restroom`, `화장실 서울역`).
+30. Dice coefficient returns `0.0` when both token sets are empty or either is empty, with zero-division guard.
+31. Duplicate scoring evaluates distance, name, context, and floor conflict penalty (-0.40) without undocumented bonuses.
 
-### 15.3 Widget & State Tests (Milestones P2.2–P2.5)
-- `AddRestroomLocationScreen`: Zoom floor disables/enables "Confirm Pin" button.
-- `AddRestroomFormScreen`: Form validation errors render appropriately.
-- Tri-state amenity toggles switch between Yes, No, and Unspecified states.
-- Duplicate advisory sheet displays candidate facilities and handles "View Existing" vs "Continue" actions.
-- Submission button enters loading state and disables inputs while in flight.
+### 15.3 Repository & Application State Tests (`test/data/` & `test/presentation/`)
+32. `AddRestroomNotifier` allocates canonical `restroomId` once upon validation and holds it in state.
+33. Submission builds `CreateRestroomCommand` with the stable ID.
+34. Submission retry reuses identical `CreateRestroomCommand.restroomId`.
+35. Reconciliation reads verify existing pair and return success on lost network ack.
+36. Retry after ambiguous failure does not generate a second restroom ID.
+37. Invariant failure when only one document exists surfaces as hard error.
+38. In-flight submit debounce disables button and prevents concurrent batch writes.
+
+### 15.4 Widget & Flow Tests (Milestones P2.2–P2.5)
+39. `AddRestroomLocationScreen`: Zoom floor disables/enables "Confirm Pin" button.
+40. `AddRestroomFormScreen`: Form validation errors render appropriately.
+41. Tri-state amenity toggles switch between Yes, No, and Unspecified states.
+42. Duplicate advisory sheet displays candidate facilities and handles "View Existing" vs "Continue" actions.
 
 ---
 
@@ -769,6 +854,7 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 - **Rating / Review Submission:** Phase 3.
 - **Verification / Reporting Submission:** Phase 3.
 - **Public Restroom Editing / Updates:** Deferred to a later explicitly designed facility editing workflow.
+- **Operating Hours:** Deferred to dedicated availability feature.
 - **Google Places Autocomplete / Geocoding API:** Prohibited due to cost and architecture invariants.
 - **Routing / Turn-by-Turn Navigation:** Prohibited; external navigation apps handle routing.
 - **Social Login / Traditional User Accounts:** Prohibited in V1.
@@ -783,12 +869,12 @@ Phase 2 is complete when:
 1. Users can initiate contribution from the map shell, pinpoint an exact entrance on the map with zoom enforcement, and input complete facility and indoor direction details.
 2. Form fields adhere to data-truth invariants: unconfirmed amenities are recorded as `null` and never defaulted to positive claims.
 3. Newly contributed restrooms are saved with `status: 'unverified'` and zero initial aggregates.
-4. Submissions are atomic across `/restrooms/{id}` and `/contributions/restroom_{id}` via Firestore `WriteBatch`, bidirectionally enforced by Security Rules.
+4. Submissions are atomic across `/restrooms/{id}` and `/contributions/restroom_{id}` via Firestore `WriteBatch`, bidirectionally enforced by Security Rules within access-call limits.
 5. Contributor UID is never stored in public documents; private ownership is secured in `/contributions/`.
 6. Public restrooms are strictly create-only in Phase 2; updates and deletions are rejected.
-7. Bounded duplicate detection alerts users of potential nearby matches without blocking submission.
-8. Submissions are idempotent, with stable ID retention and ambiguous commit reconciliation.
+7. Bounded duplicate detection with Unicode-preserving normalization alerts users of potential nearby matches without blocking submission.
+8. Submissions are idempotent, with `CreateRestroomCommand` holding a stable ID and ambiguous commit reconciliation.
 9. Submitting a restroom immediately reflects on the discovery map via canonical viewport discovery and preview selection.
 10. The production abuse rate-limiting release gate is verified.
-11. All format, analysis, Flutter tests, and emulator tests pass.
+11. All format, analysis, Flutter tests, and emulator tests pass across their designated test layers.
 12. `docs/STATUS.md` is updated with accurate evidence.
