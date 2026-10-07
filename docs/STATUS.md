@@ -7,24 +7,24 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom / Contribution Form Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.3 — Contribution Form UI, Data-Truth Validation & State Management [ACTIVE — implementation complete pending independent audit]
+- **Current milestone:** P2.3 implementation complete, remediation active / pending independent re-audit
 - **Current branch:** `phase-2/p2.3-contribution-form`
-- **Current PR:** TBD
+- **Current PR:** `#8 — feat: implement P2.3 contribution form and state`
 - **Base:** `main` at `ebb9c746e65cc9902a49cfaf96f9bc3e4ffcaf86` (includes PR #7 Add-entry hotfix squash merge)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [ACTIVE]; P2.4 [NOT STARTED].
 
 ## Current objective
 
-Establish and document executable staging environment configuration following the completed product and repository rename:
-- **Android Firebase Integration:** Declared `com.google.gms.google-services` plugin (4.4.2) in `settings.gradle.kts` and applied it conditionally in `build.gradle.kts` when `android/app/google-services.json` is present. Preserves credential-free builds in CI and local dev when absent.
-- **iOS Firebase Integration:** Added deterministic `Copy GoogleService-Info.plist` Xcode build phase in `Runner.xcodeproj/project.pbxproj` copying `ios/Runner/GoogleService-Info.plist` to the application bundle when present. Preserves credential-free builds when absent.
-- **Android Maps Wiring:** Bound `android/local.properties` (`MAPS_API_KEY`) through Gradle `manifestPlaceholders["MAPS_API_KEY"]` to `AndroidManifest.xml` with safe `DEFAULT_MAPS_API_KEY` fallback.
-- **iOS Maps Wiring:** Bound `ios/Flutter/Secrets.xcconfig` (`GOOGLE_MAPS_API_KEY`) through `Debug.xcconfig` / `Release.xcconfig` to `Info.plist` (`GoogleMapsApiKey`) and consumed in `AppDelegate.swift` with safe default check.
-- **Configuration Hygiene & Truth:** Updated `.env.example` as an informational reference matrix (no runtime dotenv loading). Removed dead Dart maps key and App Check token fields from `AppConfig`.
-- **App Check Alignment:** Configured Debug providers for `development` and `staging` (`!config.isProduction`), and Play Integrity / App Attest for `production`. Documented standard debug token console workflow.
-- **Scoped Deployment & Correct Activation Order:** Documented explicit project flag (`firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) and corrected human activation sequence to deploy audited rules before connectivity verification.
-- **Gitignore Protection:** Strengthened `.gitignore` patterns ensuring `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `Secrets.xcconfig`, `*debug-token*`, and `.env*` cannot be committed across any directory depth.
-- **Security & Integrity Preservation:** Production contribution writes remain guarded by the P2.6 abuse rate-limiting release gate. Offline development fallback is preserved and validated.
+Execute and remediate Phase 2 Milestone P2.3 — Contribution Form UI, Data-Truth Validation & State Management:
+- **Contribution Form UI:** Full scrollable contribution screen (`AddRestroomFormScreen`) with cards for Facility Identification (read-only coordinate summary), Indoor Context & Directions, Accessibility & Stalls, Hygiene & Amenities, and Access Instructions & Pricing (conditional fee inputs for paid access).
+- **Tri-State Truth-Preserving Controls:** Reusable accessible `TriStateAmenitySelector` supporting `TriStateAmenity` (`yes`, `no`, `unknown`) and nullable booleans (`bool?`), preserving data truth without default false fabrication.
+- **Normalized Validation & State Management:** `AddRestroomNotifier` managing draft inputs, real-time normalization (`draft.normalized()`), domain invariant validation (`RestroomDraft.validate()`), and field-level error mapping.
+- **Stable Restroom ID Preparation:** Cryptographically secure 20-character base62 ID allocation (`RestroomIdGenerator`) generated once upon successful validation and retained across session edits; zero IDs allocated for invalid drafts.
+- **Controller & Notifier Synchronization:** Guaranteed synchronization between screen text controllers and notifier state across access type switches (`Paid` → non-paid → `Paid`), preventing stale fee values from persisting or visually reappearing.
+- **P2.2 → P2.3 Flow Wiring:** Location pinpoint confirmation in `MainShellScreen` navigates to `AddRestroomFormScreen`; valid continuation prepares in-memory `CreateRestroomCommand` and displays truthful temporary milestone notice without claiming submission; cancel/back pops cleanly.
+- **Zero-Persistence Boundary Preserved:** 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding API calls; zero personal or contributor UID data collected.
+- **PR #8 Undergoing Audit/Remediation:** Remediate independent audit findings and maintain exact-head CI green.
+- **Manual Device QA:** Manual P2.3 Android/iOS QA remains PENDING until performed by the human owner.
 
 The active specification is:
 
@@ -166,15 +166,16 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Authored 10 focused widget tests in `test/presentation/main_shell_navigation_test.dart` verifying all behaviors, camera target preservation, fallback intactness, and zero Firestore operations on entry/exit.
 - Manual human QA: PASS on Android, PASS on iOS.
 
-### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [ACTIVE — implementation complete pending independent audit]
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [ACTIVE — implementation complete, remediation active / pending independent re-audit]
 - Implemented `AddRestroomFormScreen` (`lib/presentation/screens/add_restroom_form_screen.dart`) with organized card sections (Facility Identification with compact read-only coordinate display, Indoor Directions & Context, Accessibility & Stalls, Hygiene & Amenities, Access Instructions & Pricing).
 - Implemented accessible, reusable `TriStateAmenitySelector` (`lib/presentation/components/inputs/tri_state_amenity_selector.dart`) with min 48×48 touch targets, semantic labels, text scaling, checkmark visual indicators beyond color, and nullable boolean adapter.
 - Implemented `AddRestroomNotifier` (`lib/presentation/state/add_restroom_notifier.dart`) managing raw editable state, constructing `RestroomDraft`, validating via `draft.normalized().validate()`, and allocating stable restroom ID only upon valid preparation.
 - Implemented `RestroomIdGenerator` and `DefaultRestroomIdGenerator` (`lib/presentation/state/restroom_id_generator.dart`) producing 20-character alphanumeric IDs without network reads.
+- Synchronized fee controllers and notifier state across access type transitions (`Paid` → non-paid → `Paid`), ensuring controllers are cleared when hidden and genuinely empty when reappearing, with domain normalization clearing fee data for non-paid commands.
 - Wired P2.2 → P2.3 navigation in `MainShellScreen`: location confirmation opens `AddRestroomFormScreen`, valid continue prepares `CreateRestroomCommand` in memory and displays honest temporary validation notice without claiming submission, and cancel/back pops cleanly with zero writes.
 - Zero-persistence milestone: 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding calls, no personal data or contributor UID collected.
 - Manual device QA for P2.3: PENDING.
-- Authored 27 new unit and widget tests: 15 in `test/presentation/add_restroom_notifier_test.dart`, 12 in `test/presentation/add_restroom_form_screen_test.dart`, plus updated navigation tests in `test/presentation/main_shell_navigation_test.dart` (297 total Flutter tests, all PASS).
+- Authored 28 unit and widget tests: 15 in `test/presentation/add_restroom_notifier_test.dart`, 13 in `test/presentation/add_restroom_form_screen_test.dart`, plus 10 navigation tests in `test/presentation/main_shell_navigation_test.dart` (298 total Flutter tests, all PASS).
 
 ### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
 - Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
@@ -253,7 +254,7 @@ Owner-confirmed staging infrastructure state:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (86 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (297/297 passed)
+- `flutter test` — PASS (298/298 passed)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `flutter build apk --debug` without credentials — PASS
 - `flutter build ios --debug --no-codesign` without credentials — PASS
@@ -262,10 +263,11 @@ Owner-confirmed staging infrastructure state:
 
 ## Next recommended action
 
-1. Open PR `feat: implement P2.3 contribution form and state` against `main`.
-2. Await exact-head GitHub CI completion.
-3. Conduct independent exact-head audit for Milestone P2.3.
-4. Following audit pass and merge, proceed to Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX).
+1. Complete PR #8 remediation.
+2. Conduct independent exact-head re-audit for PR #8.
+3. Perform manual Android/iOS P2.3 QA after audit-ready build if requested by human owner (currently PENDING).
+4. Squash merge PR #8 only after explicit human approval.
+5. P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX) remains NOT STARTED until PR #8 is accepted and merged.
 
 ## Handoff template
 

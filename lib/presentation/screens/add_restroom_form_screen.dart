@@ -112,10 +112,23 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
     _feeCurrencyController.addListener(
       () => _notifier.setFeeCurrency(_feeCurrencyController.text),
     );
+    _notifier.addListener(_syncFeeControllers);
+  }
+
+  void _syncFeeControllers() {
+    if (_notifier.accessType != AccessType.paid) {
+      if (_feeAmountController.text.isNotEmpty) {
+        _feeAmountController.clear();
+      }
+      if (_feeCurrencyController.text.isNotEmpty) {
+        _feeCurrencyController.clear();
+      }
+    }
   }
 
   @override
   void dispose() {
+    _notifier.removeListener(_syncFeeControllers);
     _nameController.dispose();
     _buildingNameController.dispose();
     _floorController.dispose();
@@ -341,7 +354,17 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
             ),
           ],
           onChanged: (val) {
-            if (val != null) _notifier.setAccessType(val);
+            if (val != null) {
+              _notifier.setAccessType(val);
+              if (val != AccessType.paid) {
+                if (_feeAmountController.text.isNotEmpty) {
+                  _feeAmountController.clear();
+                }
+                if (_feeCurrencyController.text.isNotEmpty) {
+                  _feeCurrencyController.clear();
+                }
+              }
+            }
           },
         ),
       ],

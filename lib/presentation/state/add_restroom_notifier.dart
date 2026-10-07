@@ -210,6 +210,13 @@ class AddRestroomNotifier extends ChangeNotifier {
   }
 
   void setFeeAmountText(String value) {
+    if (_accessType != AccessType.paid) {
+      if (_feeAmountText.isEmpty) return;
+      _feeAmountText = '';
+      _clearPreparedCommand();
+      notifyListeners();
+      return;
+    }
     if (_feeAmountText == value) return;
     _feeAmountText = value;
     _clearPreparedCommand();
@@ -217,8 +224,16 @@ class AddRestroomNotifier extends ChangeNotifier {
   }
 
   void setFeeCurrency(String value) {
-    if (_feeCurrency == value) return;
-    _feeCurrency = value;
+    if (_accessType != AccessType.paid) {
+      if (_feeCurrency.isEmpty) return;
+      _feeCurrency = '';
+      _clearPreparedCommand();
+      notifyListeners();
+      return;
+    }
+    final trimmed = value.trim().toUpperCase();
+    if (_feeCurrency == trimmed) return;
+    _feeCurrency = trimmed;
     _clearPreparedCommand();
     notifyListeners();
   }

@@ -415,5 +415,131 @@ void main() {
       expect(find.byType(AddRestroomFormScreen), findsNothing);
       expect(resultCommand, isNull);
     });
+
+    testWidgets(
+      '29. Paid -> enter fee -> change to non-paid -> change back to Paid: fee controls are empty, notifier/UI agree, Continue requires newly entered valid fee data',
+      (tester) async {
+        CreateRestroomCommand? resultCommand;
+        final generator = TestRestroomIdGenerator('test_doc_id_fee_sync');
+
+        await tester.pumpWidget(
+          createFormTestApp(
+            coordinates: testCoords,
+            idGenerator: generator,
+            onResult: (cmd) => resultCommand = cmd,
+          ),
+        );
+        await tester.tap(find.text('Launch Form'));
+        await tester.pumpAndSettle();
+
+        // 1. Enter valid facility name
+        await tester.enterText(
+          find.widgetWithText(TextFormField, 'Facility Name *'),
+          'Highway Service Plaza Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // 2. Select Paid
+        await tester.tap(find.text('Free (Public Access)'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paid (Fee Required)').last);
+        await tester.pumpAndSettle();
+
+        // 3. Enter fee amount and currency
+        final feeAmountField = find.widgetWithText(
+          TextFormField,
+          'Fee Amount *',
+        );
+        final feeCurrencyField = find.widgetWithText(
+          TextFormField,
+          'Currency *',
+        );
+        await tester.ensureVisible(feeAmountField);
+        await tester.enterText(feeAmountField, '25.00');
+        await tester.enterText(feeCurrencyField, 'PHP');
+        await tester.pumpAndSettle();
+
+        // 4. Change to Free / Customer Only / Key Required (e.g. Customer Only)
+        final accessTypeDropdown = find.widgetWithText(
+          DropdownButtonFormField<AccessType>,
+          'Access Type',
+        );
+        await tester.ensureVisible(accessTypeDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paid (Fee Required)'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Customer Only').last);
+        await tester.pumpAndSettle();
+
+        // Ensure fee controls are hidden
+        expect(
+          find.widgetWithText(TextFormField, 'Fee Amount *'),
+          findsNothing,
+        );
+        expect(find.widgetWithText(TextFormField, 'Currency *'), findsNothing);
+
+        // 5. Change back to Paid
+        await tester.ensureVisible(accessTypeDropdown);
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Customer Only'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Paid (Fee Required)').last);
+        await tester.pumpAndSettle();
+
+        // 6. Fee controls must be genuinely empty and agree with notifier
+        final feeAmountFieldReappeared = find.widgetWithText(
+          TextFormField,
+          'Fee Amount *',
+        );
+        final feeCurrencyFieldReappeared = find.widgetWithText(
+          TextFormField,
+          'Currency *',
+        );
+        await tester.ensureVisible(feeAmountFieldReappeared);
+        await tester.pumpAndSettle();
+
+        final amountWidget = tester.widget<TextFormField>(
+          feeAmountFieldReappeared,
+        );
+        final currencyWidget = tester.widget<TextFormField>(
+          feeCurrencyFieldReappeared,
+        );
+        expect(amountWidget.controller?.text, isEmpty);
+        expect(currencyWidget.controller?.text, isEmpty);
+
+        // 7. Attempting to continue requires newly entered valid fee data
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'Paid restrooms require a valid fee amount between 0 and 1,000,000',
+          ),
+          findsWidgets,
+        );
+        expect(
+          find.text(
+            'Fee currency must be a valid 3-letter uppercase code (e.g., USD)',
+          ),
+          findsWidgets,
+        );
+        expect(find.byType(AddRestroomFormScreen), findsOneWidget);
+        expect(resultCommand, isNull);
+
+        // 8. Entering valid fee data allows successful Continue
+        await tester.enterText(feeAmountFieldReappeared, '10.00');
+        await tester.enterText(feeCurrencyFieldReappeared, 'USD');
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddRestroomFormScreen), findsNothing);
+        expect(resultCommand, isNotNull);
+        expect(resultCommand!.draft.accessType, equals(AccessType.paid));
+        expect(resultCommand!.draft.feeAmount, equals(10.00));
+        expect(resultCommand!.draft.feeCurrency, equals('USD'));
+      },
+    );
   });
 }
