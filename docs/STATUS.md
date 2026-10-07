@@ -7,24 +7,28 @@
 - **Repository:** `mrdzyn/looradar`
 - **Overall stage:** Application Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests: final documentation closure complete; independent exact-head audit pending
+- **Current milestone:** P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX: implementation complete; independent exact-head audit pending
 - **Current branch:** `phase-2/add-restroom`
 - **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 final documentation closure complete; independent exact-head audit pending; P2.2 [BLOCKED pending P2.1 audit].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.2 [IMPLEMENTED — independent exact-head audit pending]; P2.3 [BLOCKED pending P2.2 audit].
 
 ## Current objective
 
-Final exact-head audit of **Phase 2 Milestone P2.1** (`docs/09-phase-2-add-restroom.md`):
-- Reconciled canonical specification in `docs/09-phase-2-add-restroom.md` §8.3 with the approved hardened implementation: direct atomic write without pre-reads; on ambiguous failure, read public facility only; if absent, do not read private contribution, surface original failure, preserve command and ID; if public exists, point-read private contribution; handle missing/unreadable private contribution as invariant failure; handle `permission-denied` as invariant failure; handle transient network errors as retryable; validate independent public and private field identities; treat valid pair as success; preserve stable ID retry invariant without same-call auto-retry.
-- Preserved timestamp provenance note (rules validate type `is timestamp`; client repository sets `FieldValue.serverTimestamp()`; temporal equality hardening is deferred to server boundary hardening and is not yet trusted for security evidence).
-- MAJOR-1: Introduced `FirestoreDocumentData(documentId, data)` in `firestore_mutation_adapter.dart`. `ProductionFirestoreMutationAdapter` returns raw stored document map without mutating or injecting `data['id'] = docSnapshot.id`. `_validateReconciliationPair` validates both `documentId == restroomId` AND `publicDoc.data['id'] == restroomId` independently on public documents, and both `documentId == 'restroom_$restroomId'` AND `privateDoc.data['id'] == 'restroom_$restroomId'` independently on private contributions.
-- MAJOR-2: Wrapped private contribution reconciliation read in `try ... on FirebaseException`. Caught `permission-denied` and mapped to `SubmissionInvariantException('Unable to verify the private contribution paired with this restroom.')` to address live Firestore security rule behavior where unowned or missing private contribution reads fail with `permission-denied`. Transient network errors (`unavailable`, `deadline-exceeded`) rethrow as retryable `RepositoryException`.
-- MINOR-1: Evaluated and documented timestamp provenance: rules enforce `is timestamp`, and client writes populate `FieldValue.serverTimestamp()`. Temporal equality hardening (`request.resource.data.createdAt == request.time`) via client security rules is deferred to server boundary hardening (e.g. Cloud Functions / administrative boundary) and is not yet trusted for security/moderation evidence.
-- MINOR-2: Disallowed silent trimming of `command.restroomId` in both `FirestoreRestroomRepository` and `InMemoryRestroomRepository`. Rejects whitespace-containing IDs with `restroomId != restroomId.trim()` throwing `RepositoryException('Invalid stable restroom ID...', 'invalid-restroom-id')`.
-- Added 7 comprehensive regression unit tests in `test/data/firestore_restroom_repository_test.dart` (now 34 tests in suite, 232 total Flutter tests) covering all reconciliation invariant errors, documentId vs stored id mismatches, and FirebaseException cases.
-- Validated all 49 Firestore Security Rules tests (29 Phase 2 tests + 20 Phase 0 legacy tests) under Firestore emulator.
-- Validated all 232 Flutter tests with zero failures.
+Independent exact-head audit of **Phase 2 Milestone P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX** (`docs/09-phase-2-add-restroom.md` §4.2):
+- Implemented `AddRestroomLocationScreen` in `lib/presentation/screens/add_restroom_location_screen.dart` with interactive Google Map and fixed center target pin overlay (`_buildCenterTargetIndicator`).
+- Selected facility coordinate represented strictly via canonical `Coordinates` value object (`lib/domain/models/coordinates.dart`).
+- Enforced minimum zoom floor (`zoom >= 15.0`, `minConfirmationZoom`) with precision guidance hint: `"Zoom in to place the restroom more precisely."` shown whenever zoom is below 15.0; confirmation is disabled until zoom floor is met and camera is idle.
+- Live coordinate readout formatted to exactly 5 decimal places (~1.1m precision): `${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}` (e.g. `14.58390, 121.06170`).
+- Camera movement updates lightweight visual state (`_isCameraMoving`) and animates target pin without triggering persistence, domain updates, or database reads/writes; camera idle (`onCameraIdle`) commits selected coordinate from camera target.
+- Initial location order: 1) explicit `initialCoordinates` if provided; 2) current foreground device location via `LocationRepository`/`LocationNotifier` if permission granted; 3) safe fallback (`AppConstants.defaultLatitude`, `AppConstants.defaultLongitude`).
+- Added "Use my location" action (`MapRecenterButton`) to center map on current device location with non-blocking error feedback if permission denied or location disabled; manual map exploration remains fully functional without GPS.
+- Clean navigation seam returning `Coordinates` via `onLocationConfirmed` callback and `Navigator.pop(selectedCoordinates)` via static `route()` factory; no premature P2.3 form created.
+- Zero Firestore reads, zero Firestore writes, zero Places API, zero Geocoding API, zero Directions/Routes APIs, zero background location, zero movement history.
+- Full accessibility: touch targets $\ge 48\times 48$, semantics on center target pin, coordinate readout, location button, and Continue button.
+- Authored 16 focused unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all 14 prompt criteria plus antimeridian normalization and route navigation.
+- Validated full Flutter test suite (248 total Flutter tests, all PASS: 232 prior + 16 new P2.2 tests).
+- Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
 The active specification is:
 
@@ -113,13 +117,17 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` (49 total rules tests, all PASS).
 - Validated full Flutter test suite (232 total Flutter tests, all PASS).
 
-### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [BLOCKED pending P2.1 remediation audit]
-- Implement `AddRestroomLocationScreen` with interactive center crosshair / draggable pin on Google Maps.
-- Enforce zoom floor (`zoom >= 15.0`) with visual hint.
-- Display live formatted coordinate readouts (5 decimal places) via `Coordinates`.
-- Unit and widget tests for location selection interactions.
+### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [IMPLEMENTED — INDEPENDENT EXACT-HEAD AUDIT PENDING]
+- Implemented `AddRestroomLocationScreen` with interactive Google Map and fixed center crosshair / target pin overlay (`_buildCenterTargetIndicator`).
+- Selected facility coordinate represented strictly via canonical `Coordinates` domain model (`lib/domain/models/coordinates.dart`).
+- Enforced zoom floor (`zoom >= 15.0`) with visual precision hint: `"Zoom in to place the restroom more precisely."` and disabled Continue action until zoom floor is met and camera is idle.
+- Displayed live formatted coordinate readouts (5 decimal places, e.g. `14.58390, 121.06170`) via `Coordinates`.
+- Camera movement updates lightweight visual state (`_isCameraMoving`) without triggering persistence or queries; camera idle commits target coordinates.
+- "Use my location" button moves camera and updates selection if available; manual map selection remains fully functional when GPS is unavailable.
+- Clean navigation seam returning `Coordinates` via callback and `Navigator.pop`.
+- Authored 16 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all 14 prompt criteria plus antimeridian normalization and route navigation.
 
-### P2.3 — Contribution Form UI, Data-Truth Validation & State Management (PLANNED)
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [BLOCKED pending P2.2 audit]
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
 - Implement tri-state amenity selector widgets.
 - Implement `AddRestroomNotifier` form state management, normalization, validation, and ID allocation.
@@ -171,9 +179,9 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 76 files formatted)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 78 files formatted)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (232/232 passed across all unit, domain, codec, and repository suites)
+- `flutter test` — PASS (248/248 passed: 232 prior regressions + 16 new P2.2 unit/widget tests)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `git diff --check` — PASS (clean, no trailing whitespace or formatting defects)
 - Secrets scan — PASS (0 secrets or private keys in git tree)
@@ -182,7 +190,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Next recommended action
 
-Perform independent exact-head audit of Milestone P2.1 on `phase-2/add-restroom`. P2.2 remains BLOCKED pending P2.1 audit.
+Perform independent exact-head audit of Milestone P2.2 on `phase-2/add-restroom`. P2.3 remains BLOCKED pending P2.2 audit.
 
 ## Handoff template
 
