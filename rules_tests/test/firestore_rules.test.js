@@ -174,12 +174,26 @@ describe('Firestore Security Rules — LooRadar Phase 0', () => {
       }));
     });
 
-    test('authenticated anonymous-style user can submit valid restroom', async () => {
+    test('authenticated anonymous-style user can submit valid restroom with paired contribution', async () => {
       const authDb = testEnv.authenticatedContext('anon_user_123').firestore();
-      await assertSucceeds(authDb.collection('restrooms').doc('rr_anon_1').set({
+      const now = new Date();
+      const batch = authDb.batch();
+      batch.set(authDb.collection('restrooms').doc('rr_anon_1'), {
         ...getValidRestroomData(),
         id: 'rr_anon_1',
-      }));
+        status: 'unverified',
+      });
+      batch.set(authDb.collection('contributions').doc('restroom_rr_anon_1'), {
+        id: 'restroom_rr_anon_1',
+        contributionType: 'restroom',
+        resourceId: 'rr_anon_1',
+        restroomId: 'rr_anon_1',
+        userUid: 'anon_user_123',
+        moderationState: 'pending',
+        createdAt: now,
+        updatedAt: now,
+      });
+      await assertSucceeds(batch.commit());
     });
   });
 

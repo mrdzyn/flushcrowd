@@ -401,7 +401,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     final pills = <Widget>[];
 
     // Gender / Restroom types
-    if (restroom.allGender) {
+    if (restroom.allGender == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.all_inclusive_rounded,
@@ -410,7 +410,7 @@ class RestroomPreviewSheet extends StatelessWidget {
         ),
       );
     } else {
-      if (restroom.female) {
+      if (restroom.female == true) {
         pills.add(
           const AmenityChip(
             icon: Icons.female_rounded,
@@ -419,7 +419,7 @@ class RestroomPreviewSheet extends StatelessWidget {
           ),
         );
       }
-      if (restroom.male) {
+      if (restroom.male == true) {
         pills.add(
           const AmenityChip(
             icon: Icons.male_rounded,
@@ -431,7 +431,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     }
 
     // PWD Accessibility
-    if (restroom.pwdAccessible) {
+    if (restroom.pwdAccessible == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.accessible_rounded,
@@ -442,7 +442,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     }
 
     // Baby Changing
-    if (restroom.babyChanging) {
+    if (restroom.babyChanging == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.child_care_rounded,
@@ -453,7 +453,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     }
 
     // Bidet
-    if (restroom.hasBidet) {
+    if (restroom.hasBidet == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.water_drop_outlined,
@@ -464,7 +464,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     }
 
     // Toilet Paper
-    if (restroom.hasToiletPaper) {
+    if (restroom.hasToiletPaper == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.receipt_long_outlined,
@@ -475,7 +475,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     }
 
     // Soap
-    if (restroom.hasSoap) {
+    if (restroom.hasSoap == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.soap_outlined,
@@ -486,7 +486,7 @@ class RestroomPreviewSheet extends StatelessWidget {
     }
 
     // Hand Dryer
-    if (restroom.hasHandDryer) {
+    if (restroom.hasHandDryer == true) {
       pills.add(
         const AmenityChip(
           icon: Icons.air_rounded,

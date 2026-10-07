@@ -2,13 +2,18 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:looradar/core/constants/app_constants.dart';
 import 'package:looradar/core/errors/exceptions.dart';
+import 'package:looradar/data/repositories/auth_repository_impl.dart';
 import 'package:looradar/data/repositories/firestore_restroom_repository.dart';
+import 'package:looradar/data/services/firebase/firestore_mutation_adapter.dart';
 import 'package:looradar/data/services/firebase/firestore_query_executor.dart';
 import 'package:looradar/data/services/gis/geohash_service.dart';
 import 'package:looradar/data/services/gis/haversine.dart';
+import 'package:looradar/domain/commands/create_restroom_command.dart';
 import 'package:looradar/domain/models/coordinates.dart';
 import 'package:looradar/domain/models/discovery_result.dart';
+import 'package:looradar/domain/models/enums.dart';
 import 'package:looradar/domain/models/geo_bounding_box.dart';
+import 'package:looradar/domain/models/restroom_draft.dart';
 
 /// Test double that simulates Firestore's range query execution against an in-memory document store.
 class FakeFirestoreQueryExecutor implements FirestoreQueryExecutor {
@@ -50,6 +55,110 @@ class FakeFirestoreQueryExecutor implements FirestoreQueryExecutor {
 
     returnedBatchSizes.add(matches.length);
     return matches;
+  }
+}
+
+/// Test double that simulates Firestore batch mutation and point-read execution.
+class FakeFirestoreMutationAdapter implements FirestoreMutationAdapter {
+  final Map<String, Map<String, dynamic>> publicDocuments = {};
+  final Map<String, Map<String, dynamic>> privateDocuments = {};
+
+  final List<Map<String, dynamic>> recordedBatches = [];
+  int preReadPublicCount = 0;
+  int preReadPrivateCount = 0;
+
+  bool throwOnBatchCommit = false;
+  FirebaseException? batchCommitFirebaseException;
+  Object? batchCommitException;
+
+  FirebaseException? privateReadFirebaseException;
+  FirebaseException? publicReadFirebaseException;
+
+  FirestoreDocumentData? Function(String restroomId)? customGetPublicRestroom;
+  FirestoreDocumentData? Function(String contributionId)?
+  customGetPrivateContribution;
+
+  @override
+  Future<void> commitRestroomSubmissionBatch({
+    required String restroomId,
+    required Map<String, dynamic> publicData,
+    required String contributionId,
+    required Map<String, dynamic> contributionData,
+  }) async {
+    recordedBatches.add({
+      'restroomId': restroomId,
+      'publicData': Map<String, dynamic>.from(publicData),
+      'contributionId': contributionId,
+      'contributionData': Map<String, dynamic>.from(contributionData),
+    });
+
+    if (throwOnBatchCommit) {
+      if (batchCommitFirebaseException != null) {
+        throw batchCommitFirebaseException!;
+      }
+      if (batchCommitException != null) {
+        throw batchCommitException!;
+      }
+      throw FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+        message: 'Network drop during commit',
+      );
+    }
+
+    final resolvedPublic = Map<String, dynamic>.from(publicData);
+    if (resolvedPublic['createdAt'] is FieldValue) {
+      resolvedPublic['createdAt'] = Timestamp.now();
+    }
+    if (resolvedPublic['updatedAt'] is FieldValue) {
+      resolvedPublic['updatedAt'] = Timestamp.now();
+    }
+    final resolvedContrib = Map<String, dynamic>.from(contributionData);
+    if (resolvedContrib['createdAt'] is FieldValue) {
+      resolvedContrib['createdAt'] = Timestamp.now();
+    }
+    if (resolvedContrib['updatedAt'] is FieldValue) {
+      resolvedContrib['updatedAt'] = Timestamp.now();
+    }
+
+    publicDocuments[restroomId] = resolvedPublic;
+    privateDocuments[contributionId] = resolvedContrib;
+  }
+
+  @override
+  Future<FirestoreDocumentData?> getPublicRestroom(String restroomId) async {
+    preReadPublicCount++;
+    if (publicReadFirebaseException != null) {
+      throw publicReadFirebaseException!;
+    }
+    if (customGetPublicRestroom != null) {
+      return customGetPublicRestroom!(restroomId);
+    }
+    final doc = publicDocuments[restroomId];
+    if (doc == null) return null;
+    return FirestoreDocumentData(
+      documentId: restroomId,
+      data: Map<String, dynamic>.from(doc),
+    );
+  }
+
+  @override
+  Future<FirestoreDocumentData?> getPrivateContribution(
+    String contributionId,
+  ) async {
+    preReadPrivateCount++;
+    if (privateReadFirebaseException != null) {
+      throw privateReadFirebaseException!;
+    }
+    if (customGetPrivateContribution != null) {
+      return customGetPrivateContribution!(contributionId);
+    }
+    final doc = privateDocuments[contributionId];
+    if (doc == null) return null;
+    return FirestoreDocumentData(
+      documentId: contributionId,
+      data: Map<String, dynamic>.from(doc),
+    );
   }
 }
 
@@ -743,6 +852,710 @@ void main() {
       final distLast = Haversine.distanceInMeters(center, lastCenter);
 
       expect(distFirst, lessThanOrEqualTo(distLast));
+    });
+  });
+
+  group('FirestoreRestroomRepository Production Submission Engine (P2.1 Remediation)', () {
+    const testUid = 'user_author_777';
+    late InMemoryAuthRepository authRepo;
+    late FakeFirestoreMutationAdapter mutationAdapter;
+    late FirestoreRestroomRepository repo;
+
+    CreateRestroomCommand createSampleCommand({
+      String restroomId = 'rr_test_123',
+      String name = 'Test Facility',
+      double latitude = 14.5839,
+      double longitude = 121.0617,
+      AccessType accessType = AccessType.free,
+    }) {
+      return CreateRestroomCommand(
+        restroomId: restroomId,
+        draft: RestroomDraft(
+          name: name,
+          coordinates: Coordinates(latitude: latitude, longitude: longitude),
+          accessType: accessType,
+          male: true,
+          female: true,
+          allGender: null,
+          pwdAccessible: TriStateAmenity.yes,
+          babyChanging: TriStateAmenity.unknown,
+          hasBidet: TriStateAmenity.no,
+          hasToiletPaper: TriStateAmenity.yes,
+          hasSoap: TriStateAmenity.unknown,
+          hasHandDryer: TriStateAmenity.unknown,
+        ),
+      );
+    }
+
+    setUp(() {
+      authRepo = InMemoryAuthRepository(initialUid: testUid);
+      mutationAdapter = FakeFirestoreMutationAdapter();
+      repo = FirestoreRestroomRepository(
+        mutationAdapter: mutationAdapter,
+        authRepository: authRepo,
+      );
+    });
+
+    test(
+      '1. first submission does NOT pre-read private contribution',
+      () async {
+        final command = createSampleCommand();
+        await repo.submitRestroom(command);
+        expect(mutationAdapter.preReadPrivateCount, 0);
+      },
+    );
+
+    test(
+      '2. first submission attempts batch directly without pre-reads',
+      () async {
+        final command = createSampleCommand();
+        await repo.submitRestroom(command);
+        expect(mutationAdapter.preReadPublicCount, 0);
+        expect(mutationAdapter.preReadPrivateCount, 0);
+        expect(mutationAdapter.recordedBatches.length, 1);
+      },
+    );
+
+    test('3. exact command.restroomId used', () async {
+      final command = createSampleCommand(restroomId: 'rr_exact_id_999');
+      await repo.submitRestroom(command);
+      expect(
+        mutationAdapter.recordedBatches.first['restroomId'],
+        'rr_exact_id_999',
+      );
+    });
+
+    test('4. public path correct (restrooms/{restroomId})', () async {
+      final command = createSampleCommand(restroomId: 'rr_path_check');
+      await repo.submitRestroom(command);
+      final batch = mutationAdapter.recordedBatches.first;
+      expect(batch['restroomId'], 'rr_path_check');
+      expect((batch['publicData'] as Map)['id'], 'rr_path_check');
+    });
+
+    test(
+      '5. contribution path correct (contributions/restroom_{restroomId})',
+      () async {
+        final command = createSampleCommand(restroomId: 'rr_contrib_path');
+        await repo.submitRestroom(command);
+        final batch = mutationAdapter.recordedBatches.first;
+        expect(batch['contributionId'], 'restroom_rr_contrib_path');
+        expect(
+          (batch['contributionData'] as Map)['id'],
+          'restroom_rr_contrib_path',
+        );
+      },
+    );
+
+    test('6. public/private written atomically in the batch', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      expect(mutationAdapter.recordedBatches.length, 1);
+      final batch = mutationAdapter.recordedBatches.first;
+      expect(batch.containsKey('publicData'), isTrue);
+      expect(batch.containsKey('contributionData'), isTrue);
+    });
+
+    test(
+      '7. no .add() (explicit document IDs on both public and private)',
+      () async {
+        final command = createSampleCommand(restroomId: 'rr_explicit_ids');
+        await repo.submitRestroom(command);
+        final batch = mutationAdapter.recordedBatches.first;
+        expect((batch['publicData'] as Map)['id'], 'rr_explicit_ids');
+        expect(
+          (batch['contributionData'] as Map)['id'],
+          'restroom_rr_explicit_ids',
+        );
+      },
+    );
+
+    test('8. no merge/upsert (full schema documents provided)', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      final publicData =
+          mutationAdapter.recordedBatches.first['publicData'] as Map;
+      expect(publicData.containsKey('name'), isTrue);
+      expect(publicData.containsKey('latitude'), isTrue);
+      expect(publicData.containsKey('longitude'), isTrue);
+      expect(publicData.containsKey('geohash'), isTrue);
+      expect(publicData.containsKey('accessType'), isTrue);
+      expect(publicData.containsKey('status'), isTrue);
+    });
+
+    test('9. no UID in public payload', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      final publicData =
+          mutationAdapter.recordedBatches.first['publicData'] as Map;
+      expect(publicData.containsKey('userUid'), isFalse);
+      expect(publicData.containsKey('createdByUid'), isFalse);
+      expect(publicData.containsKey('userId'), isFalse);
+      expect(publicData.containsKey('authorUid'), isFalse);
+      expect(publicData.containsKey('uid'), isFalse);
+    });
+
+    test('10. private contribution uses current UID', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      final contribData =
+          mutationAdapter.recordedBatches.first['contributionData'] as Map;
+      expect(contribData['userUid'], testUid);
+      expect(contribData['moderationState'], 'pending');
+      expect(contribData['contributionType'], 'restroom');
+      expect(contribData['resourceId'], command.restroomId);
+      expect(contribData['restroomId'], command.restroomId);
+    });
+
+    test('11. status forced unverified', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      final publicData =
+          mutationAdapter.recordedBatches.first['publicData'] as Map;
+      expect(publicData['status'], 'unverified');
+    });
+
+    test('12. aggregates forced zero', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      final publicData =
+          mutationAdapter.recordedBatches.first['publicData'] as Map;
+      expect(publicData['averageRating'], 0.0);
+      expect(publicData['ratingCount'], 0);
+      expect(publicData['verificationCount'], 0);
+      expect(publicData['negativeVerificationCount'], 0);
+    });
+
+    test('13. geohash derived from normalized coordinates', () async {
+      final command = createSampleCommand(
+        latitude: 14.5839,
+        longitude: 121.0617,
+      );
+      await repo.submitRestroom(command);
+      final publicData =
+          mutationAdapter.recordedBatches.first['publicData'] as Map;
+      expect(
+        publicData['geohash'],
+        GeohashService.encode(command.draft.coordinates),
+      );
+    });
+
+    test('14. server timestamp transforms used in both payloads', () async {
+      final command = createSampleCommand();
+      await repo.submitRestroom(command);
+      final publicData =
+          mutationAdapter.recordedBatches.first['publicData'] as Map;
+      final contribData =
+          mutationAdapter.recordedBatches.first['contributionData'] as Map;
+      expect(publicData['createdAt'], isA<FieldValue>());
+      expect(publicData['updatedAt'], isA<FieldValue>());
+      expect(contribData['createdAt'], isA<FieldValue>());
+      expect(contribData['updatedAt'], isA<FieldValue>());
+    });
+
+    test('15. invalid draft rejected before mutation', () async {
+      final invalidCommand = CreateRestroomCommand(
+        restroomId: 'rr_invalid_draft',
+        draft: RestroomDraft(
+          name: '', // Empty name invalid
+          coordinates: Coordinates(latitude: 14.58, longitude: 121.05),
+          accessType: AccessType.free,
+        ),
+      );
+      expect(
+        () => repo.submitRestroom(invalidCommand),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-draft',
+          ),
+        ),
+      );
+      expect(mutationAdapter.recordedBatches.isEmpty, isTrue);
+    });
+
+    test('16. unauthenticated submission rejected', () async {
+      final unauthRepo = FirestoreRestroomRepository(
+        mutationAdapter: mutationAdapter,
+        authRepository: InMemoryAuthRepository(initialUid: null),
+      );
+      final command = createSampleCommand();
+      expect(
+        () => unauthRepo.submitRestroom(command),
+        throwsA(isA<UnauthenticatedException>()),
+      );
+      expect(mutationAdapter.recordedBatches.isEmpty, isTrue);
+    });
+
+    test('17. ambiguous failure triggers reconciliation', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_ambiguous_success');
+
+      // Pre-populate both documents to simulate server write succeeding before network drop
+      mutationAdapter.publicDocuments['rr_ambiguous_success'] = {
+        'id': 'rr_ambiguous_success',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'male': true,
+        'female': true,
+        'allGender': null,
+        'pwdAccessible': true,
+        'babyChanging': null,
+        'hasBidet': false,
+        'hasToiletPaper': true,
+        'hasSoap': null,
+        'hasHandDryer': null,
+        'averageRating': 0.0,
+        'ratingCount': 0,
+        'verificationCount': 0,
+        'negativeVerificationCount': 0,
+        'status': 'unverified',
+      };
+      mutationAdapter.privateDocuments['restroom_rr_ambiguous_success'] = {
+        'id': 'restroom_rr_ambiguous_success',
+        'contributionType': 'restroom',
+        'resourceId': 'rr_ambiguous_success',
+        'restroomId': 'rr_ambiguous_success',
+        'userUid': testUid,
+        'moderationState': 'pending',
+      };
+
+      final result = await repo.submitRestroom(command);
+      expect(result.id, 'rr_ambiguous_success');
+      expect(result.name, 'Test Facility');
+      expect(mutationAdapter.preReadPublicCount, 1);
+      expect(mutationAdapter.preReadPrivateCount, 1);
+    });
+
+    test('18. valid committed pair reconciles as success', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_valid_reconcile');
+
+      mutationAdapter.publicDocuments['rr_valid_reconcile'] = {
+        'id': 'rr_valid_reconcile',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'male': true,
+        'female': true,
+        'pwdAccessible': true,
+        'hasBidet': false,
+        'hasToiletPaper': true,
+        'averageRating': 0.0,
+        'ratingCount': 0,
+        'verificationCount': 0,
+        'negativeVerificationCount': 0,
+        'status': 'unverified',
+      };
+      mutationAdapter.privateDocuments['restroom_rr_valid_reconcile'] = {
+        'id': 'restroom_rr_valid_reconcile',
+        'contributionType': 'restroom',
+        'resourceId': 'rr_valid_reconcile',
+        'restroomId': 'rr_valid_reconcile',
+        'userUid': testUid,
+        'moderationState': 'pending',
+      };
+
+      final reconciled = await repo.submitRestroom(command);
+      expect(reconciled.id, 'rr_valid_reconcile');
+      expect(reconciled.status, RestroomStatus.unverified);
+    });
+
+    test(
+      '19. absent public document does not require private absent-doc read',
+      () async {
+        mutationAdapter.throwOnBatchCommit = true;
+        final command = createSampleCommand(restroomId: 'rr_absent_public');
+
+        await expectLater(
+          repo.submitRestroom(command),
+          throwsA(isA<RepositoryException>()),
+        );
+        expect(mutationAdapter.preReadPublicCount, 1);
+        expect(
+          mutationAdapter.preReadPrivateCount,
+          0,
+        ); // Crucial check: private doc NOT read!
+      },
+    );
+
+    test('20. public-only state -> invariant error', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_public_only');
+
+      mutationAdapter.publicDocuments['rr_public_only'] = {
+        'id': 'rr_public_only',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'status': 'unverified',
+      };
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+    });
+
+    test(
+      '21. invalid private pair (wrong UID or wrong state) -> invariant error',
+      () async {
+        mutationAdapter.throwOnBatchCommit = true;
+        final command = createSampleCommand(restroomId: 'rr_wrong_private');
+
+        mutationAdapter.publicDocuments['rr_wrong_private'] = {
+          'id': 'rr_wrong_private',
+          'name': 'Test Facility',
+          'latitude': 14.5839,
+          'longitude': 121.0617,
+          'geohash': GeohashService.encode(command.draft.coordinates),
+          'accessType': 'free',
+          'male': true,
+          'female': true,
+          'pwdAccessible': true,
+          'hasBidet': false,
+          'hasToiletPaper': true,
+          'status': 'unverified',
+        };
+        // Wrong user UID
+        mutationAdapter.privateDocuments['restroom_rr_wrong_private'] = {
+          'id': 'restroom_rr_wrong_private',
+          'contributionType': 'restroom',
+          'resourceId': 'rr_wrong_private',
+          'restroomId': 'rr_wrong_private',
+          'userUid': 'attacker_uid_999',
+          'moderationState': 'pending',
+        };
+
+        await expectLater(
+          repo.submitRestroom(command),
+          throwsA(isA<SubmissionInvariantException>()),
+        );
+      },
+    );
+
+    test(
+      '22. retry uses same stable restroom ID without generating replacement',
+      () async {
+        final command = createSampleCommand(restroomId: 'rr_stable_id_keep');
+        final first = await repo.submitRestroom(command);
+        expect(first.id, 'rr_stable_id_keep');
+
+        // Second attempt using same command
+        mutationAdapter.throwOnBatchCommit = true;
+        final second = await repo.submitRestroom(command);
+        expect(second.id, 'rr_stable_id_keep');
+      },
+    );
+
+    test('23. rejects empty or whitespace-containing restroom ID', () async {
+      for (final badId in ['', '   ', ' rr_123', 'rr_123 ', ' rr_123 ']) {
+        final badCommand = createSampleCommand(restroomId: badId);
+        expect(
+          () => repo.submitRestroom(badCommand),
+          throwsA(
+            isA<RepositoryException>().having(
+              (e) => e.code,
+              'code',
+              'invalid-restroom-id',
+            ),
+          ),
+        );
+      }
+    });
+
+    test('24. rejects restroom ID exceeding 100 characters', () async {
+      final longCommand = createSampleCommand(restroomId: 'a' * 101);
+      expect(
+        () => repo.submitRestroom(longCommand),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-restroom-id',
+          ),
+        ),
+      );
+    });
+
+    test(
+      '25. rejects restroom ID containing path separators or relative dots',
+      () async {
+        for (final badId in ['a/b', '.', '..', 'restrooms/nested']) {
+          final badCommand = createSampleCommand(restroomId: badId);
+          expect(
+            () => repo.submitRestroom(badCommand),
+            throwsA(
+              isA<RepositoryException>().having(
+                (e) => e.code,
+                'code',
+                'invalid-restroom-id',
+              ),
+            ),
+          );
+        }
+      },
+    );
+
+    test(
+      '26. successful first submit returns null createdAt and updatedAt',
+      () async {
+        final command = createSampleCommand();
+        final result = await repo.submitRestroom(command);
+        expect(result.createdAt, isNull);
+        expect(result.updatedAt, isNull);
+      },
+    );
+
+    test(
+      '27. first submit does not execute an extra post-write read',
+      () async {
+        final command = createSampleCommand();
+        await repo.submitRestroom(command);
+        expect(mutationAdapter.preReadPublicCount, 0);
+        expect(mutationAdapter.preReadPrivateCount, 0);
+      },
+    );
+
+    test('28. public documentId matches but stored data id is mismatched -> invariant error', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_stored_id_bad');
+      mutationAdapter.publicDocuments['rr_stored_id_bad'] = {
+        'id': 'different_id_here',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'status': 'unverified',
+      };
+      mutationAdapter.privateDocuments['restroom_rr_stored_id_bad'] = {
+        'id': 'restroom_rr_stored_id_bad',
+        'contributionType': 'restroom',
+        'resourceId': 'rr_stored_id_bad',
+        'restroomId': 'rr_stored_id_bad',
+        'userUid': testUid,
+        'moderationState': 'pending',
+      };
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+    });
+
+    test('29. private documentId matches but stored data id is mismatched -> invariant error', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(
+        restroomId: 'rr_private_stored_id_bad',
+      );
+      mutationAdapter.publicDocuments['rr_private_stored_id_bad'] = {
+        'id': 'rr_private_stored_id_bad',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'male': true,
+        'female': true,
+        'pwdAccessible': true,
+        'hasBidet': false,
+        'hasToiletPaper': true,
+        'averageRating': 0.0,
+        'ratingCount': 0,
+        'verificationCount': 0,
+        'negativeVerificationCount': 0,
+        'status': 'unverified',
+      };
+      mutationAdapter.privateDocuments['restroom_rr_private_stored_id_bad'] = {
+        'id': 'different_contrib_id',
+        'contributionType': 'restroom',
+        'resourceId': 'rr_private_stored_id_bad',
+        'restroomId': 'rr_private_stored_id_bad',
+        'userUid': testUid,
+        'moderationState': 'pending',
+      };
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+    });
+
+    test(
+      '30. public documentId mismatch during reconciliation -> invariant error',
+      () async {
+        mutationAdapter.throwOnBatchCommit = true;
+        final command = createSampleCommand(restroomId: 'rr_doc_id_bad');
+        mutationAdapter.customGetPublicRestroom = (id) {
+          return FirestoreDocumentData(
+            documentId: 'wrong_doc_id',
+            data: {
+              'id': 'rr_doc_id_bad',
+              'name': 'Test Facility',
+              'latitude': 14.5839,
+              'longitude': 121.0617,
+              'geohash': GeohashService.encode(command.draft.coordinates),
+              'accessType': 'free',
+              'status': 'unverified',
+            },
+          );
+        };
+        mutationAdapter.privateDocuments['restroom_rr_doc_id_bad'] = {
+          'id': 'restroom_rr_doc_id_bad',
+          'contributionType': 'restroom',
+          'resourceId': 'rr_doc_id_bad',
+          'restroomId': 'rr_doc_id_bad',
+          'userUid': testUid,
+          'moderationState': 'pending',
+        };
+
+        await expectLater(
+          repo.submitRestroom(command),
+          throwsA(isA<SubmissionInvariantException>()),
+        );
+      },
+    );
+
+    test('31. private documentId mismatch during reconciliation -> invariant error', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_priv_doc_id_bad');
+      mutationAdapter.publicDocuments['rr_priv_doc_id_bad'] = {
+        'id': 'rr_priv_doc_id_bad',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'male': true,
+        'female': true,
+        'pwdAccessible': true,
+        'hasBidet': false,
+        'hasToiletPaper': true,
+        'averageRating': 0.0,
+        'ratingCount': 0,
+        'verificationCount': 0,
+        'negativeVerificationCount': 0,
+        'status': 'unverified',
+      };
+      mutationAdapter.customGetPrivateContribution = (id) {
+        return const FirestoreDocumentData(
+          documentId: 'wrong_private_doc_id',
+          data: {
+            'id': 'restroom_rr_priv_doc_id_bad',
+            'contributionType': 'restroom',
+            'resourceId': 'rr_priv_doc_id_bad',
+            'restroomId': 'rr_priv_doc_id_bad',
+            'userUid': testUid,
+            'moderationState': 'pending',
+          },
+        );
+      };
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(isA<SubmissionInvariantException>()),
+      );
+    });
+
+    test('32. private contribution read throws permission-denied -> invariant error', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_perm_denied');
+      mutationAdapter.publicDocuments['rr_perm_denied'] = {
+        'id': 'rr_perm_denied',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'status': 'unverified',
+      };
+      mutationAdapter.privateReadFirebaseException = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing or insufficient permissions.',
+      );
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(
+          isA<SubmissionInvariantException>().having(
+            (e) => e.message,
+            'message',
+            contains(
+              'Unable to verify the private contribution paired with this restroom.',
+            ),
+          ),
+        ),
+      );
+    });
+
+    test('33. private contribution read throws unavailable -> retryable RepositoryException', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_unavail');
+      mutationAdapter.publicDocuments['rr_unavail'] = {
+        'id': 'rr_unavail',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'status': 'unverified',
+      };
+      mutationAdapter.privateReadFirebaseException = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+        message: 'The service is temporarily unavailable.',
+      );
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'unavailable',
+          ),
+        ),
+      );
+    });
+
+    test('34. private contribution read throws deadline-exceeded -> retryable RepositoryException', () async {
+      mutationAdapter.throwOnBatchCommit = true;
+      final command = createSampleCommand(restroomId: 'rr_deadline');
+      mutationAdapter.publicDocuments['rr_deadline'] = {
+        'id': 'rr_deadline',
+        'name': 'Test Facility',
+        'latitude': 14.5839,
+        'longitude': 121.0617,
+        'geohash': GeohashService.encode(command.draft.coordinates),
+        'accessType': 'free',
+        'status': 'unverified',
+      };
+      mutationAdapter.privateReadFirebaseException = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'deadline-exceeded',
+        message: 'Deadline exceeded.',
+      );
+
+      await expectLater(
+        repo.submitRestroom(command),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'deadline-exceeded',
+          ),
+        ),
+      );
     });
   });
 }

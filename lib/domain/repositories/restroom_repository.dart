@@ -1,3 +1,4 @@
+import '../commands/create_restroom_command.dart';
 import '../models/coordinates.dart';
 import '../models/discovery_result.dart';
 import '../models/geo_bounding_box.dart';
@@ -24,6 +25,6 @@ abstract class RestroomRepository {
   /// Retrieves a specific restroom by [id].
   Future<Restroom?> getRestroomById(String id);
 
-  /// Submits a new restroom record.
-  Future<void> submitRestroom(Restroom restroom);
+  /// Submits a new community restroom atomically using an explicit stable ID.
+  Future<Restroom> submitRestroom(CreateRestroomCommand command);
 }

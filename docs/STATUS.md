@@ -2,24 +2,42 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-**Last updated:** 2026-10-05  
-**Project:** LooRadar — global community-powered restroom finder  
-**Repository:** `mrdzyn/looradar`  
-**Overall stage:** Application Implementation  
-**Current phase:** Phase 1 — Map Discovery  
-**Current milestone:** P1.4 — final remediation complete; final independent Phase 1 exact-head re-audit pending  
-**Current branch:** `phase-1/map-discovery`  
-**Current PR:** [#3](https://github.com/mrdzyn/looradar/pull/3) — `feat: implement LooRadar Phase 1 map discovery` (draft)  
-**Phase 1 base:** `main` at `307baff1145287218a1056cee72295ec93de1624`  
-**Implementation status:** P1.1 audited (PASS); P1.2 audited (PASS); P1.3 audited (PASS); P1.4 hardening, platform builds, accessibility polish, CI modernization, bounds documentation, error overlay precedence, and failure resilience complete; ready for final independent Phase 1 / P1.4 exact-head audit.
+- **Last updated:** 2026-10-07
+- **Project:** LooRadar — global community-powered restroom finder
+- **Repository:** `mrdzyn/looradar`
+- **Overall stage:** Application Implementation
+- **Current phase:** Phase 2 — Add Restroom
+- **Current milestone:** P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX: audit remediation complete; independent exact-head re-audit pending
+- **Current branch:** `phase-2/add-restroom`
+- **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
+- **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.2 [REMEDIATION COMPLETE — independent exact-head audit pending]; P2.3 [BLOCKED pending P2.2 audit].
 
 ## Current objective
 
-Implement production-quality, bounded, cost-conscious map discovery on top of the merged Phase 0 foundation without weakening privacy/security or prematurely expanding into later product phases.
+Independent exact-head re-audit of **Phase 2 Milestone P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX** (`docs/09-phase-2-add-restroom.md` §4.2):
+- Implemented `AddRestroomLocationScreen` in `lib/presentation/screens/add_restroom_location_screen.dart` with interactive Google Map and fixed center target pin overlay (`_buildCenterTargetIndicator`).
+- Selected facility coordinate represented strictly via canonical `Coordinates` value object (`lib/domain/models/coordinates.dart`).
+- Enforced minimum zoom floor (`zoom >= 15.0`, `minConfirmationZoom`) with precision guidance hint: `"Zoom in to place the restroom more precisely."` shown whenever zoom is below 15.0; confirmation is disabled until zoom floor is met, camera is idle, and no programmatic move is pending.
+- Live coordinate readout formatted to exactly 5 decimal places (~1.1m precision): `${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}` (e.g. `14.58390, 121.06170`).
+- Camera movement updates lightweight visual state (`_isCameraMoving`) and animates target pin without triggering persistence, domain updates, or database reads/writes; camera idle (`onCameraIdle`) commits selected coordinate from camera target.
+- Initial location order: 1) explicit `initialCoordinates` if provided; 2) current foreground device location via `LocationRepository`/`LocationNotifier` if permission granted; 3) safe fallback (`AppConstants.defaultLatitude`, `AppConstants.defaultLongitude`).
+- Added "Use my location" action (`MapRecenterButton`) to center map on current device location with non-blocking error feedback if permission denied or location disabled; manual map exploration remains fully functional without GPS.
+- Remediated MAJOR-1: fresh foreground lookup strictly distinguishes services disabled, permission denied, and lookup failure; never consumes stale cached coordinates from `LocationNotifier`.
+- Remediated MAJOR-2 (Initial & Residual): decoupled map controller via `MapCameraController`; eliminated programmatic destination conflation by separating `_actualCameraTarget`/`_actualCameraZoom` from `_activeProgrammaticIntent`; initialized `_initialCameraPosition` once in `initState` to prevent rebuilds from passing pending targets to the native map constructor; rejected premature `onCameraIdle` events when movement has not yet been observed; handled identical-destination edge case; and provided robust camera-command failure recovery that unlocks manual panning without locking the screen.
+- Remediated MINOR-1: fixed safe-area test assertion to dynamically derive bottom limit from `MediaQuery` (`screenSize.height - viewPadding.bottom`).
+- Remediated MINOR-2: provided `CountingRestroomRepository` in test widget Provider tree to ensure zero accidental repository operations are actively verified.
+- Remediated MINOR-3: synchronized `docs/STATUS.md` P2.1 approved status and P2.2 audit remediation tracking.
+- Clean navigation seam returning `Coordinates` via `onLocationConfirmed` callback and `Navigator.pop(selectedCoordinates)` via static `route()` factory; no premature P2.3 form created.
+- Zero Firestore reads, zero Firestore writes, zero Places API, zero Geocoding API, zero Directions/Routes APIs, zero background location, zero movement history.
+- Full accessibility: touch targets $\ge 48\times 48$, semantics on center target pin, coordinate readout, location button, and Continue button.
+- Authored 25 unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all criteria, edge cases, and remediation assertions.
+- Validated full Flutter test suite (257 total Flutter tests, all PASS).
+- Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
 The active specification is:
 
-- `docs/08-phase-1-map-discovery.md`
+- `docs/09-phase-2-add-restroom.md`
 
 ## Locked decisions
 
@@ -28,151 +46,138 @@ The active specification is:
 - Flutter for iOS and Android.
 - Google Maps SDK for visualization.
 - Firebase Anonymous Authentication; no mandatory traditional login in V1.
-- Cloud Firestore + geohash candidate retrieval for MVP discovery.
+- Public/private data boundary strictly enforced: public documents NEVER contain contributor UIDs.
+- Public restroom facilities in Phase 2 are strictly CREATE-ONLY (`allow update, delete: if false;`).
+- Public contribution-derived amenity and stall fields use nullable booleans (`bool?`), preserving data truth.
+- Community-contributed facilities are strictly initialized as `status: 'unverified'` with zero initial aggregates.
+- Cloud Firestore + geohash candidate retrieval for MVP discovery and duplicate detection.
 - Exact Haversine filtering after geohash candidate retrieval.
 - Foreground location only; no background location or persisted movement history.
-- Discovery reads only sanitized public restroom data.
 - External navigation handoff; no built-in routing.
 - Avoid Places, Routes, Directions, Street View, and other unnecessary paid APIs.
 - Low Firestore/Maps cost is an architectural constraint.
+- Discovery repository and viewport query pipeline remain the single authoritative source of truth for the map.
+- Production community contribution writes require enforceable server-side rate limiting.
 - Canonical UI reference remains `docs/assets/looradar-mobile-ux-reference.png`.
 
 ## Canonical references
 
-Read before Phase 1 implementation:
+Read before Phase 2 implementation:
 
 1. `AGENTS.md`
 2. `docs/STATUS.md`
-3. `docs/08-phase-1-map-discovery.md`
-4. `docs/06-ui-ux-reference.md`
-5. `docs/01-architecture.md`
-6. `docs/02-data-model.md`
-7. `docs/03-privacy-security.md`
-8. `docs/07-environment-setup.md`
+3. `docs/09-phase-2-add-restroom.md`
+4. `docs/08-phase-1-map-discovery.md`
+5. `docs/06-ui-ux-reference.md`
+6. `docs/01-architecture.md`
+7. `docs/02-data-model.md`
+8. `docs/03-privacy-security.md`
+9. `docs/07-environment-setup.md`
 
-## Phase 0 baseline — merged
+## Merged baselines
 
-PR #2 was squash-merged into `main` at:
+### Phase 0 — Foundation & Design System [MERGED]
+Squash-merged into `main` at `307baff1145287218a1056cee72295ec93de1624` (PR #2).
+- Flutter scaffold, layered architecture, design tokens, map shell;
+- Domain models, Firestore codecs, Firebase Anonymous Auth & App Check boundaries;
+- Initial Firestore rules and emulator test harness.
 
-`307baff1145287218a1056cee72295ec93de1624`
+### Phase 1 — Map Discovery [MERGED]
+Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
+- **P1.1 GIS & Spatial Engine:** Complete polar coverage, spherical envelope expansion, candidate geohash ranges, exact Haversine/bounding box filtering, deterministic 16-range query limit.
+- **P1.2 Query Orchestration & Clustering:** Idle-triggered camera debounce (400ms), single discovery pipeline, permission convergence without extra reads, Google Maps native clustering (`ClusterManager`), zoom suppression (< 12.0).
+- **P1.3 Preview, List & Local Filters:** 100% in-memory preview card, nearby list, search, and local filters; derived-empty and degraded status messaging; 90-day verification freshness check.
+- **P1.4 Hardening & Cost Bounds:** Bounded read limits (theoretical max 800 reads, 200 decoded candidates), non-blocking refresh error retention and retry, 48×48 touch targets, CI Node.js 22 upgrade, verified Android and iOS builds.
+- Independent audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-Baseline capabilities include:
+---
 
-- Flutter iOS/Android scaffold and layered architecture;
-- design tokens and map-first UI shell;
-- pure Dart domain models;
-- Firestore Timestamp codec boundary;
-- Firebase Anonymous Auth and App Check boundaries;
-- restrictive Firestore rules plus emulator tests;
-- foreground location handling;
-- in-memory/demo repositories;
-- GIS primitives and Haversine utilities;
-- CI for formatting, analysis, Flutter tests, and Firestore Rules tests.
+## Active Phase 2 Scope — Add Restroom
 
-Last validated Phase 0 evidence before merge:
+### P2.0 — Specification & Task Contract [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]
+- Authored canonical implementation specification in `docs/09-phase-2-add-restroom.md`.
+- Remediated all audit findings (MAJOR-1 through MAJOR-3, MINOR-1 through MINOR-3).
+- Updated `docs/02-data-model.md` (nullable boolean schema and `accessInstructions`).
+- Updated `docs/03-privacy-security.md` (create-only rule and production rate-limiting release gate).
+- Updated project documentation index and tracking status.
+- Independent specification audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-- `flutter analyze` — PASS
-- `flutter test` — PASS (46/46)
-- Firestore Rules emulator tests — PASS (20/20)
-- Android debug build — PASS
-- iOS config/no-codesign build — PASS
+### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]
+- Reconciled canonical specification in `docs/09-phase-2-add-restroom.md` §8.3 to reflect the approved hardened ambiguous reconciliation contract (direct write without pre-reads, public-only initial read on ambiguous failure, conditional private read, permission-denied mapping to invariant failure, independent public/private field validation, stable ID retry invariant without same-call auto-retry, and preserved timestamp provenance note).
+- Implemented `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and domain validation.
+- Implemented `CreateRestroomCommand` in `lib/domain/commands/create_restroom_command.dart`.
+- Migrated `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls) and added `accessInstructions`.
+- Updated `RestroomFirestoreCodec` for nullable booleans, `accessInstructions`, fee fields, and legacy missing field decoding to `null`.
+- Updated `RestroomRepository` interface with `Future<Restroom> submitRestroom(CreateRestroomCommand command)`.
+- Remediated BLOCKER-1: removed pre-submission reads on first-submit path; first action executes atomic `WriteBatch` (`restrooms/{id}` and `contributions/restroom_{id}`) directly.
+- Remediated MAJOR-1: full ambiguous commit reconciliation on batch commit failure with full identity and field validation.
+- Remediated MAJOR-1 (Reconciliation Hardening): introduced `FirestoreDocumentData` to return unmutated document maps from `ProductionFirestoreMutationAdapter`, validating both `documentId` and stored `data['id']` independently on public and private documents.
+- Remediated MAJOR-1 (Parity): identical full-pair reconciliation validation in `InMemoryRestroomRepository`.
+- Remediated MAJOR-2 (Permission-Denied Handling): caught Firebase `permission-denied` on private contribution reconciliation read and mapped to `SubmissionInvariantException` to align with live security rules when private documents are unreadable or unowned. Transient network errors rethrow as retryable `RepositoryException`.
+- Remediated MAJOR-2 / 2B / 2C (Rules Hardening): updated `firestore.rules` with `isValidGenderConfiguration`, regex currency validation (`^[A-Z]{3}$`), and regex geohash validation (`^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$`).
+- Remediated MAJOR-3: narrow `FirestoreMutationAdapter` (`ProductionFirestoreMutationAdapter`) with 34 targeted tests in `test/data/firestore_restroom_repository_test.dart` verifying all required production criteria, error mappings, and documentId invariants.
+- Remediated MINOR-1: evaluated and documented timestamp provenance deferral to server boundary hardening.
+- Remediated MINOR-2: rejected whitespace-containing stable `restroomId` in both repositories (`restroomId != restroomId.trim()`) throwing `RepositoryException` with code `invalid-restroom-id` without trimming.
+- Remediated MINOR-3: first-submit returns `createdAt: null`, `updatedAt: null` without fabricating timestamps or running extra post-write reads.
+- Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` (49 total rules tests, all PASS).
+- Validated full Flutter test suite (232 total Flutter tests, all PASS).
 
-## Active Phase 1 scope
+### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [REMEDIATION COMPLETE — INDEPENDENT EXACT-HEAD AUDIT PENDING]
+- Implemented `AddRestroomLocationScreen` with interactive Google Map and fixed center crosshair / target pin overlay (`_buildCenterTargetIndicator`).
+- Selected facility coordinate represented strictly via canonical `Coordinates` domain model (`lib/domain/models/coordinates.dart`).
+- Enforced zoom floor (`zoom >= 15.0`) with visual precision hint: `"Zoom in to place the restroom more precisely."` and disabled Continue action until zoom floor is met, camera is idle, and no programmatic move is pending.
+- Displayed live formatted coordinate readouts (5 decimal places, e.g. `14.58390, 121.06170`) via `Coordinates`.
+- Camera movement updates lightweight visual state (`_isCameraMoving`) without triggering persistence or queries; camera idle commits target coordinates.
+- "Use my location" button moves camera and updates selection if available; manual map selection remains fully functional when GPS is unavailable.
+- Remediated MAJOR-1: Fresh foreground-location attempt directly queries `LocationRepository.getCurrentLocation()`, explicitly distinguishing location service disabled, permission denied/permanently denied, and retrieval failure/timeout without consuming stale cached coordinates from `LocationNotifier`. Manual map placement remains fully functional.
+- Remediated MAJOR-2 (Initial & Residual): Introduced `MapCameraController` interface (`animateCamera`, `moveCamera`) and `GoogleMapCameraController` adapter. Completely decoupled actual camera state (`_actualCameraTarget`, `_actualCameraZoom`) from programmatic desired destinations via `_ProgrammaticCameraIntent`. Initialized `_initialCameraPosition` once in `initState` so widget rebuilds do not pass pending coordinates to the native map constructor. Enforced that premature `onCameraIdle` events (before real movement frames) do not clear pending intents or falsely commit unreached coordinates. Handled identical-destination edge cases and camera command failures with non-blocking user notices and manual panning recovery. `_canConfirm` disables Continue while any programmatic move is pending.
+- Remediated MINOR-1: Fixed test 13 safe-area assertion to derive boundary from `screenSize.height - viewPadding.bottom` rather than a magic number.
+- Remediated MINOR-2: Injected `CountingRestroomRepository` into Provider tree via `createTestWidget` so that accidental Firestore queries/submissions are observable by tests.
+- Remediated MINOR-3: Synchronized `docs/STATUS.md` line 100 P2.1 heading to `[APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]`.
+- Clean navigation seam returning `Coordinates` via callback and `Navigator.pop`.
+- Authored 25 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all prompt criteria, edge cases, and remediation assertions.
+- Validated full Flutter test suite (257 total Flutter tests, all PASS).
+- Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
-### P1.0 — Specification and task contract
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [BLOCKED pending P2.2 audit]
+- Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
+- Implement tri-state amenity selector widgets.
+- Implement `AddRestroomNotifier` form state management, normalization, validation, and ID allocation.
+- Unit tests for form validation and widget tests for form rendering and error states.
 
-- Production discovery behavior and limits documented in `docs/08-phase-1-map-discovery.md`.
+### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
+- Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
+- Implement `DuplicateWarningSheet` advisory UI showing top 3 candidates.
+- Unit tests for similarity heuristics and global script fixtures (`東京駅 トイレ`, `مطار دبي حمام`, etc.); widget tests for modal display and button actions.
 
-### P1.1 — GIS + Firestore discovery engine (AUDITED & APPROVED)
+### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback (PLANNED)
+- Connect anonymous authentication lifecycle.
+- Wire submit action through repository batch write with `CreateRestroomCommand`, stable ID, and ambiguous commit reconciliation.
+- Sync successful submissions with canonical viewport refresh and preview selection.
+- End-to-end integration and widget tests.
 
-Audited at `d6771fb12b84b53d49602d21c0218b9771035559` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
+### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation (PLANNED)
+- Audit touch targets (>= 48×48), semantic labels, and contrast.
+- Verify production abuse rate-limiting release gate.
+- Run complete test suite (`flutter test`, Firestore emulator rules tests).
+- Validate platform compilation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
+- Update `docs/STATUS.md` and prepare Phase 2 for audit.
 
-Capabilities:
-- Full geometric envelope and spherical-cap polar coverage without fixed 3x3 grid assumptions;
-- Explicit completeness contract via `DiscoveryResult<T>` and `DiscoveryCompletenessReason`;
-- Antimeridian viewport correctness via `GeoBoundingBox.contains` and wrapping;
-- Domain layer purity with `GeoBoundingBox` in `lib/domain/models/`;
-- Minimum safe query precision floor `AppConstants.minDiscoveryGeohashPrecision = 3` (~156 km floor);
-- Deterministic 16-range query limit safety cap under real production constraints;
-- Center-distance prioritization for candidate prefixes under range-cap degradation.
+---
 
-### P1.2 — Query orchestration + markers/clustering (AUDITED & APPROVED)
-
-Audited at `b88d42d62d2688850d07eee8fffc7da480918e09` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
-
-Key capabilities:
-- Single authoritative discovery flow: camera idle → debounce (400ms) → viewport query → render.
-- Permission-grant camera animation converges strictly into the viewport idle pipeline with zero nearby reads.
-- Ephemeral last-committed viewport state restoration on equivalent viewports.
-- Selection lifecycle preserves explicit user selections and never auto-resumes once user interacts.
-- In-flight request cancellation on camera move start and zoom suppression.
-- Google Maps native clustering (`ClusterManager`), cluster tap zooms into region.
-- 116/116 unit/widget tests passing.
-
-### P1.3 — Restroom preview, nearby list & local filters (AUDITED & APPROVED)
-
-Audited at `120c445437ad88ac8f1e0a8f6dcb49cb39c27c14` with 0 BLOCKER / 0 MAJOR / 0 MINOR findings.
-
-Key capabilities:
-- Zero-read local execution: preview, list, search, and filters operate 100% in-memory against already-discovered restrooms.
-- Clear derived-empty and degraded status messages with targeted reset actions (`Clear search`, `Reset filters`, `Clear search & filters`).
-- Nearby restrooms list accessible without active selection via bottom bar.
-- Truthful status badges: no false "Open" claims; warning badge shown only when temporarily unavailable.
-- Strict 90-day verification freshness check and truthful preview freshness labels.
-- Deterministic 3-level sorting (distance, normalized name, restroom ID).
-
-### P1.4 — Hardening and human QA (FINAL AUDIT REMEDIATION COMPLETE, RE-AUDIT PENDING)
-
-Completed final Phase 1 hardening milestone:
-
-- **P1.4A — Firestore Read/Cost Upper Bounds (Aligned with Code Truth):**
-  - Viewport discovery bounded to zoom ≥ 12.0 (`AppConstants.minViewportZoom`), 400ms camera idle debounce (`AppConstants.cameraIdleDebounceDuration`).
-  - Geohash query ranges capped at max 16 (`AppConstants.maxGeohashQueryRanges`) for both nearby (`take(16)`) and viewport queries.
-  - Per-range Firestore document limit: 50 documents (`AppConstants.maxDocumentsPerRangeQuery`).
-  - Theoretical max raw documents read: `16 × 50 = 800` documents for both nearby and viewport discovery.
-  - Candidate document decoding safety ceiling: 200 candidates (`AppConstants.maxCandidateDocuments`) in local memory (clarified: local decoding ceiling, not billed Firestore reads).
-  - Maximum returned results cap: 100 facilities (`AppConstants.maxDiscoveryResults`).
-  - Zero rating/review fan-out reads (restroom aggregates used exclusively).
-  - Zero search/filter Firestore network fan-out (100% client-side memory evaluation).
-  - Full bounds documented in `docs/08-phase-1-map-discovery.md`.
-- **P1.4B — Privacy & Security Verification:**
-  - Zero background location permissions or service modes (`AndroidManifest.xml` and `Info.plist` clean).
-  - Zero telemetry or precise location coordinates persisted.
-  - 20/20 Firestore Security Rules emulator tests passing.
-  - Zero secrets or private keys in git tree.
-- **P1.4C — CI / Toolchain Hardening:**
-  - Node.js upgraded to LTS 22 in `.github/workflows/ci.yml`, resolving engine deprecation warnings.
-  - devDependencies npm audit classified (21 transitive dev-only dependencies in test runner; zero production impact).
-- **P1.4D — Failure Resilience & Non-Blocking Refresh Error Display:**
-  - Retained-results error handling: query failures retain previously discovered facilities and markers in memory rather than blanking the map.
-  - Error overlay precedence in `MapStatusOverlay`: error state takes presentation precedence over derived-empty and degraded messages. When refresh fails with existing results, displays `"Couldn't refresh this area — previous results retained"` with a `"Retry"` action; when an initial query fails with zero results, displays `"Couldn't find restrooms — check connection"` with `"Retry"`. After retry/query succeeds, error overlay clears and normal local search/filter messaging resumes.
-  - Notifier tracks `_lastAttemptedDescriptor` and provides `retryLastViewportQuery()`.
-  - Verified by unit test #35 in `test/presentation/map_discovery_notifier_test.dart` and 3 dedicated widget tests in `test/presentation/p1_3_preview_list_filter_test.dart`.
-- **P1.4E — Accessibility & Touch Target Polish:**
-  - Close button touch targets across `RestroomPreviewSheet` and `NearbyRestroomsSheet` meet standard 48×48 minWidth/minHeight with semantic tooltips.
-  - Broader dynamic type / contrast / screen reader audits marked as `NOT RUN / PLANNED` for dedicated manual QA pass.
-- **P1.4F — Platform Compilation Validation:**
-  - Android debug APK build verified: `flutter build apk --debug` PASS (exit code 0).
-  - iOS debug Runner build verified: `flutter build ios --debug --no-codesign` PASS (exit code 0).
-- **P1.4G — Live Device & Credential QA Protocol:**
-  - Live Firebase and Google Maps services documented as `NOT RUN` pending human owner credential configuration
-
-## Phase 1 intentionally excluded
+## Phase 2 Intentionally Excluded
 
 Do not implement in this phase:
 
-- add-restroom workflow;
-- rating/review submission;
-- verification/report submission;
-- photos;
-- built-in routing;
-- Google Places search/autocomplete;
-- Street View;
-- background location;
-- precise-location analytics;
-- PostGIS migration;
-- AI features;
-- donations/monetization.
+- photo uploads (Phase 5);
+- ratings and reviews submission (Phase 3);
+- verification and report submission (Phase 3);
+- public restroom editing / updates (deferred to dedicated workflow);
+- operating hours (deferred to dedicated availability feature);
+- Google Places autocomplete or Geocoding APIs;
+- turn-by-turn routing (external handoff only);
+- social logins or traditional user accounts;
+- web/admin moderation dashboards (Phase 4).
 
 ## Current owner actions / external dependencies
 
@@ -186,18 +191,18 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 71 files formatted)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 78 files formatted)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (171/171 passed)
-- Firestore Security Rules emulator tests — PASS (20/20 passed)
-- `flutter build apk --debug` — PASS (built `build/app/outputs/flutter-apk/app-debug.apk`)
-- `flutter build ios --debug --no-codesign` — PASS (built `build/ios/iphoneos/Runner.app`)
+- `flutter test` — PASS (248/248 passed: 232 prior regressions + 16 new P2.2 unit/widget tests)
+- Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
+- `git diff --check` — PASS (clean, no trailing whitespace or formatting defects)
+- Secrets scan — PASS (0 secrets or private keys in git tree)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform final independent Phase 1 / P1.4 exact-head audit on `phase-1/map-discovery`. Upon passing audit, squash-merge PR #3 into `main` and proceed to Phase 2 — Add Restroom.
+Perform independent exact-head audit of Milestone P2.2 on `phase-2/add-restroom`. P2.3 remains BLOCKED pending P2.2 audit.
 
 ## Handoff template
 

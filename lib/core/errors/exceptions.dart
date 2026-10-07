@@ -61,3 +61,18 @@ class RestroomNotFoundException extends AppException {
     super.message = 'Restroom facility not found.',
   ]);
 }
+
+class UnauthenticatedException extends AuthException {
+  const UnauthenticatedException([
+    super.message = 'Authentication required to perform this action.',
+    super.code = 'unauthenticated',
+  ]);
+}
+
+class SubmissionInvariantException extends RepositoryException {
+  const SubmissionInvariantException([
+    super.message =
+        'Submission invariant violation: atomic record state is inconsistent.',
+    super.code = 'submission-invariant-violation',
+  ]);
+}

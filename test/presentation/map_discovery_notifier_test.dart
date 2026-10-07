@@ -8,6 +8,7 @@ import 'package:looradar/domain/models/discovery_result.dart';
 import 'package:looradar/domain/models/geo_bounding_box.dart';
 import 'package:looradar/domain/models/restroom.dart';
 import 'package:looradar/domain/repositories/restroom_repository.dart';
+import 'package:looradar/domain/commands/create_restroom_command.dart';
 import 'package:looradar/presentation/state/map_discovery_notifier.dart';
 import 'package:looradar/presentation/state/viewport_query_descriptor.dart';
 
@@ -55,7 +56,9 @@ class FakeRestroomRepository implements RestroomRepository {
   Future<Restroom?> getRestroomById(String id) async => null;
 
   @override
-  Future<void> submitRestroom(Restroom restroom) async {}
+  Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
+    throw UnimplementedError();
+  }
 }
 
 Restroom _sampleRestroom(String id, {String name = 'Test Restroom'}) {

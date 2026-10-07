@@ -15,7 +15,8 @@ For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) fir
 7. [`05-phase-0-plan.md`](05-phase-0-plan.md) — Phase 0 implementation requirements and definition of done.
 8. [`06-ui-ux-reference.md`](06-ui-ux-reference.md) — UI/UX-first build rules, screen flows, design direction, validation gates, and the canonical mobile mockup.
 9. [`07-environment-setup.md`](07-environment-setup.md) — environment variables, restricted API keys, App Check strategy, signing safeguards, and budget alert procedures.
-10. [`08-phase-1-map-discovery.md`](08-phase-1-map-discovery.md) — active Phase 1 GIS/query contract, map orchestration, markers/clustering, preview/list/filter requirements, cost controls, testing, and definition of done.
+10. [`08-phase-1-map-discovery.md`](08-phase-1-map-discovery.md) — Phase 1 GIS/query contract, map orchestration, markers/clustering, preview/list/filter requirements, cost controls, testing, and definition of done.
+11. [`09-phase-2-add-restroom.md`](09-phase-2-add-restroom.md) — active Phase 2 Add Restroom specification, contribution workflow, duplicate detection, atomic batch writes, security rules, and testing contract.
 
 ## Canonical visual reference
 
@@ -46,9 +47,9 @@ User-facing implementation should follow the PNG's hierarchy, interaction model,
 ```text
 Phase 0 — Foundation + UI shell/design system        [MERGED]
    ↓
-Phase 1 — Map Discovery                              [ACTIVE]
+Phase 1 — Map Discovery                              [MERGED]
    ↓
-Phase 2 — Add Restroom
+Phase 2 — Add Restroom                               [ACTIVE]
    ↓
 Phase 3 — Ratings + Verification + Reporting
    ↓
