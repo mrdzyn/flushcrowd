@@ -1,6 +1,6 @@
-# LooRadar Documentation
+# FlushCrowd Documentation
 
-This folder is the source of truth for the LooRadar product and technical implementation.
+This folder is the source of truth for the FlushCrowd product and technical implementation.
 
 For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) first and then [`STATUS.md`](STATUS.md) for the current project state, active phase, blockers, and next action.
 
@@ -18,17 +18,26 @@ For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) fir
 10. [`08-phase-1-map-discovery.md`](08-phase-1-map-discovery.md) — Phase 1 GIS/query contract, map orchestration, markers/clustering, preview/list/filter requirements, cost controls, testing, and definition of done.
 11. [`09-phase-2-add-restroom.md`](09-phase-2-add-restroom.md) — active Phase 2 Add Restroom specification, contribution workflow, duplicate detection, atomic batch writes, security rules, and testing contract.
 
+## Canonical brand assets
+
+The human-approved canonical brand marks for FlushCrowd are:
+
+- **Icon mark:** `docs/assets/brand/flushcrowd-icon.png`
+- **Horizontal lockup:** `docs/assets/brand/flushcrowd-horizontal.png`
+
+Do not redraw, recolor, optimize, regenerate, or modify these files.
+
 ## Canonical visual reference
 
-![LooRadar mobile UX reference](assets/looradar-mobile-ux-reference.png)
+![FlushCrowd mobile UX reference](assets/flushcrowd-mobile-ux-reference.png)
 
-`assets/looradar-mobile-ux-reference.png` is the canonical visual reference for user-facing implementation. The SVG remains a secondary lightweight reference only.
+`assets/flushcrowd-mobile-ux-reference.png` is the canonical visual reference for user-facing implementation. The SVG remains a secondary lightweight reference only.
 
 User-facing implementation should follow the PNG's hierarchy, interaction model, and overall visual direction unless an intentional design change is documented in the same pull request.
 
 ## Current architectural decisions
 
-- Product name: **LooRadar**
+- Product name: **FlushCrowd**
 - Global-first mobile application
 - UI/UX-first delivery approach
 - Flutter for iOS and Android

@@ -1,4 +1,4 @@
-# LooRadar Phase 2 — Add Restroom
+# FlushCrowd Phase 2 — Add Restroom
 
 ## 1. Goal
 
@@ -26,7 +26,7 @@ By the end of Phase 2, a user should be able to:
 
 ## 3. Locked Phase 2 Principles
 
-- **Product Name:** **LooRadar**.
+- **Product Name:** **FlushCrowd**.
 - **Map-First, Mobile-First:** Contribution originates from and completes directly back into the map discovery context.
 - **Zero Login Friction:** Powered exclusively by Firebase Anonymous Authentication for V1; traditional accounts or social logins are strictly prohibited.
 - **Strict Privacy Boundary:** Contributor identity (`request.auth.uid`) is NEVER stored in the publicly readable restroom document.
@@ -44,7 +44,7 @@ By the end of Phase 2, a user should be able to:
 - **Authoritative Map State:** The discovery repository and viewport query remain the single source of truth for the map. No permanent optimistic cache injection into discovery source results.
 - **Explicit Stable Submission ID Contract:** The application/state layer allocates the canonical `restroomId` once upon validation; passed explicitly via `CreateRestroomCommand` across all retry attempts.
 - **Production Abuse-Control Gate:** A client-side disabled button is UX protection, not abuse protection. Phase 2 contribution writes must not be enabled in production until enforceable per-UID rate limiting exists.
-- **Canonical UI/UX Reference:** Preserves visual and interaction alignment with `docs/assets/looradar-mobile-ux-reference.png` and `docs/06-ui-ux-reference.md`.
+- **Canonical UI/UX Reference:** Preserves visual and interaction alignment with `docs/assets/flushcrowd-mobile-ux-reference.png` and `docs/06-ui-ux-reference.md`.
 
 ---
 
@@ -131,7 +131,7 @@ A clean, single-screen scrollable form structured into clear visual card groups:
 
 In the Phase 0 baseline (`lib/domain/models/restroom.dart`), default parameters were assigned non-nullable positive values (e.g. `hasToiletPaper = true`, `hasSoap = true`).
 
-For Phase 2, LooRadar locks the authoritative representation of community-contributed properties to **nullable booleans** (`bool?`):
+For Phase 2, FlushCrowd locks the authoritative representation of community-contributed properties to **nullable booleans** (`bool?`):
 
 | Value | Semantic Meaning | Discovery Filter Behavior | Preview & List UI Presentation |
 | :--- | :--- | :--- | :--- |
@@ -637,7 +637,7 @@ Duplicate detection reuses the proven Phase 1 spatial algorithm:
 
 ### 9.2 Unicode-Preserving Text Normalization (Global-First)
 
-LooRadar is global-first. Text normalization must NOT strip non-Latin scripts (e.g. Japanese, Arabic, Cyrillic, Korean, Chinese, accented Latin).
+FlushCrowd is global-first. Text normalization must NOT strip non-Latin scripts (e.g. Japanese, Arabic, Cyrillic, Korean, Chinese, accented Latin).
 
 Normalization algorithm:
 1. Trim leading and trailing Unicode whitespace.
@@ -746,7 +746,7 @@ To ensure production abuse resistance, Phase 2 defines an explicit **Production 
 
 ### 11.1 Separate Enforcement Boundaries
 Firebase App Check and Firestore Security Rules are distinct layers:
-- **Firebase App Check:** Validates that incoming requests originate from a genuine, untampered instance of the official LooRadar mobile app at the Firebase service boundary.
+- **Firebase App Check:** Validates that incoming requests originate from a genuine, untampered instance of the official FlushCrowd mobile app at the Firebase service boundary.
 - **Firestore Security Rules:** Enforces authenticated identity (`request.auth.uid`), data schema validation, status invariants (`unverified`), zero aggregates, and bidirectional atomic batch pairing.
 
 ### 11.2 Error Messaging

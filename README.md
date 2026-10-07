@@ -1,6 +1,6 @@
-# LooRadar
+# FlushCrowd
 
-LooRadar is a global, community-powered restroom finder focused on helping people quickly locate nearby toilets/comfort rooms, see practical details, contribute new locations, rate facilities, and verify whether listings are still usable.
+FlushCrowd is a global, community-powered restroom finder focused on helping people quickly locate nearby toilets/comfort rooms, see practical details, contribute new locations, rate facilities, and verify whether listings are still usable.
 
 ## Project goals
 
@@ -21,6 +21,12 @@ LooRadar is a global, community-powered restroom finder focused on helping peopl
 - Firebase App Check
 - Firebase Storage for photos later
 - Optional Cloud Run / Cloud Functions only where server-side enforcement is required
+
+## Brand & Visual Reference
+
+- Icon mark: [`docs/assets/brand/flushcrowd-icon.png`](docs/assets/brand/flushcrowd-icon.png)
+- Horizontal lockup: [`docs/assets/brand/flushcrowd-horizontal.png`](docs/assets/brand/flushcrowd-horizontal.png)
+- Mobile UX reference: [`docs/assets/flushcrowd-mobile-ux-reference.png`](docs/assets/flushcrowd-mobile-ux-reference.png)
 
 ## Documentation
 

@@ -2,19 +2,19 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
-import 'package:looradar/data/repositories/location_repository_impl.dart';
-import 'package:looradar/domain/commands/create_restroom_command.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/discovery_result.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/geo_bounding_box.dart';
-import 'package:looradar/domain/models/restroom.dart';
-import 'package:looradar/domain/repositories/location_repository.dart';
-import 'package:looradar/domain/repositories/restroom_repository.dart';
-import 'package:looradar/presentation/components/buttons/loo_primary_button.dart';
-import 'package:looradar/presentation/components/map/map_recenter_button.dart';
-import 'package:looradar/presentation/screens/add_restroom_location_screen.dart';
-import 'package:looradar/presentation/state/location_notifier.dart';
+import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
+import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/discovery_result.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/domain/repositories/location_repository.dart';
+import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
+import 'package:flushcrowd/presentation/components/map/map_recenter_button.dart';
+import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
+import 'package:flushcrowd/presentation/state/location_notifier.dart';
 
 /// Test helper implementing [MapCameraController] to record camera updates deterministically.
 class FakeMapCameraController implements MapCameraController {

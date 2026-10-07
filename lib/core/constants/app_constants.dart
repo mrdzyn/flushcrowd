@@ -2,7 +2,7 @@
 class AppConstants {
   AppConstants._();
 
-  static const String appName = 'LooRadar';
+  static const String appName = 'FlushCrowd';
   static const String appTagline = 'Find a better loo, anywhere.';
 
   // Default coordinate fallback (e.g., when location is not yet granted or denied)
@@ -46,7 +46,11 @@ class AppConstants {
   static const String ratingOwnershipCollection = 'ratingOwnership';
   static const String contributionOwnershipCollection = 'contributionOwnership';
 
-  // Support links
-  static const String buyMeACoffeeUrl = 'https://buymeacoffee.com/looradar';
-  static const String privacyPolicyUrl = 'https://looradar.app/privacy';
+  // Support & legal destinations
+  // NOTE: External destinations are pending verification and configuration by the project owner.
+  // Using explicit non-live empty string placeholders prevents directing users to unverified or unowned third-party addresses.
+  static const String buyMeACoffeeUrl =
+      ''; // Pending owner support/donation account verification
+  static const String privacyPolicyUrl =
+      ''; // Pending owner privacy policy destination verification
 }

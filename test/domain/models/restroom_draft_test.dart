@@ -1,8 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/core/errors/exceptions.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/restroom_draft.dart';
+import 'package:flushcrowd/core/errors/exceptions.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/restroom_draft.dart';
 
 void main() {
   group('TriStateAmenity Mapping', () {

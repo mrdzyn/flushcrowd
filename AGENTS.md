@@ -1,6 +1,6 @@
-# LooRadar — Agent Operating Guide
+# FlushCrowd — Agent Operating Guide
 
-This file is the shared operating contract for AI coding agents working on LooRadar. Read it before making changes.
+This file is the shared operating contract for AI coding agents working on FlushCrowd. Read it before making changes.
 
 ## 1. Source of truth
 
@@ -10,7 +10,7 @@ Before implementation, read in this order:
 2. `docs/STATUS.md` — current phase, completed work, active task, blockers, and next actions.
 3. `docs/README.md` — documentation index and locked project decisions.
 4. The phase/scope document relevant to the task.
-5. `docs/06-ui-ux-reference.md` and `docs/assets/looradar-mobile-ux-reference.png` for user-facing work.
+5. `docs/06-ui-ux-reference.md` and `docs/assets/flushcrowd-mobile-ux-reference.png` for user-facing work.
 6. Architecture, data, privacy, and security documents relevant to the change.
 
 If code, a prompt, or an agent assumption conflicts with the repository documentation, stop and surface the conflict. Do not silently redefine product requirements.
@@ -19,8 +19,8 @@ If code, a prompt, or an agent assumption conflicts with the repository document
 
 Unless a later approved document explicitly changes them:
 
-- Product name is **LooRadar**.
-- LooRadar is global-first and mobile-first.
+- Product name is **FlushCrowd**.
+- FlushCrowd is global-first and mobile-first.
 - Delivery is **UI/UX first**.
 - Flutter targets iOS and Android.
 - Google Maps SDK provides map visualization.
@@ -36,7 +36,14 @@ Unless a later approved document explicitly changes them:
 
 For user-facing implementation, the canonical visual reference is:
 
-`docs/assets/looradar-mobile-ux-reference.png`
+`docs/assets/flushcrowd-mobile-ux-reference.png`
+
+The canonical brand assets are:
+
+- `docs/assets/brand/flushcrowd-icon.png` (app icon / standalone mark)
+- `docs/assets/brand/flushcrowd-horizontal.png` (horizontal logo lockup)
+
+Do not modify or redraw these approved brand files.
 
 Use `docs/06-ui-ux-reference.md` for interaction rules, hierarchy, accessibility expectations, and allowed interpretation of the mockup.
 
@@ -124,7 +131,7 @@ If a requested implementation weakens these controls, stop and flag it for revie
 
 ## 8. GIS and cost guardrails
 
-LooRadar must remain inexpensive to operate during early growth.
+FlushCrowd must remain inexpensive to operate during early growth.
 
 - Do not query Firestore on every map movement frame.
 - Debounce viewport queries.

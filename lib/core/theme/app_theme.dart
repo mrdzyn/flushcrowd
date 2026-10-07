@@ -6,7 +6,7 @@ import 'app_radii.dart';
 import 'app_spacing.dart';
 import 'app_typography.dart';
 
-/// Builds the canonical Material 3 light theme for LooRadar.
+/// Builds the canonical Material 3 light theme for FlushCrowd.
 class AppTheme {
   AppTheme._();
 

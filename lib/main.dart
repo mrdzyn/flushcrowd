@@ -45,7 +45,7 @@ Future<void> main() async {
   final locationRepository = LocationRepositoryImpl();
 
   runApp(
-    LooRadarApp(
+    FlushCrowdApp(
       config: config,
       authRepository: authRepository,
       restroomRepository: restroomRepository,
@@ -54,13 +54,13 @@ Future<void> main() async {
   );
 }
 
-class LooRadarApp extends StatelessWidget {
+class FlushCrowdApp extends StatelessWidget {
   final AppConfig config;
   final AuthRepository authRepository;
   final RestroomRepository restroomRepository;
   final LocationRepository locationRepository;
 
-  const LooRadarApp({
+  const FlushCrowdApp({
     super.key,
     required this.config,
     required this.authRepository,

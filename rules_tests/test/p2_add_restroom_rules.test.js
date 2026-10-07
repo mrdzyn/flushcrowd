@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, before, after, beforeEach, describe } from 'node:test';
 
-const PROJECT_ID = 'looradar-p2-rules-test';
+const PROJECT_ID = 'flushcrowd-p2-rules-test';
 let testEnv;
 
 before(async () => {
@@ -69,7 +69,7 @@ function getValidContributionData(restroomId = 'rr_test_100', uid = 'test_user_1
   };
 }
 
-describe('Firestore Security Rules — LooRadar Phase 2 Milestone P2.1', () => {
+describe('Firestore Security Rules — FlushCrowd Phase 2 Milestone P2.1', () => {
   // ===============================================================
   // Group 1: Public/Private Pair Invariants (Tests 1–10)
   // ===============================================================

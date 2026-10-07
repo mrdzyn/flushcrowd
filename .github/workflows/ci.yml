@@ -1,4 +1,4 @@
-name: LooRadar CI
+name: FlushCrowd CI
 
 on:
   push:
@@ -6,6 +6,7 @@ on:
       - main
       - 'phase-*/**'
       - 'feature/**'
+      - 'chore/**'
   pull_request:
     branches:
       - main

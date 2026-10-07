@@ -1,4 +1,4 @@
-# LooRadar Product Vision
+# FlushCrowd Product Vision
 
 ## Problem
 
@@ -6,13 +6,13 @@ When someone urgently needs a restroom, a generic map pin is often not enough. U
 
 ## Vision
 
-LooRadar is a global, community-powered restroom discovery app that helps people quickly find the nearest usable restroom and understand whether it meets their needs before they walk there.
+FlushCrowd is a global, community-powered restroom discovery app that helps people quickly find the nearest usable restroom and understand whether it meets their needs before they walk there.
 
 ## Core value proposition
 
 **Find a usable restroom nearby, fast.**
 
-LooRadar combines map-based discovery with community-contributed quality data such as:
+FlushCrowd combines map-based discovery with community-contributed quality data such as:
 
 - exact building, floor, wing, and landmark notes
 - accessibility
@@ -48,11 +48,11 @@ LooRadar combines map-based discovery with community-contributed quality data su
 
 ## Global naming
 
-Working product name: **LooRadar**
+Product name: **FlushCrowd**
 
 Suggested store descriptor:
 
-**LooRadar — Restroom & Toilet Finder**
+**FlushCrowd — Restroom & Toilet Finder**
 
 Country-specific ASO wording can additionally include terms such as bathroom, washroom, WC, public toilet, and comfort room.
 

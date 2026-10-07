@@ -1,39 +1,38 @@
-# LooRadar — Project Status
+# FlushCrowd — Project Status
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
 - **Last updated:** 2026-10-07
-- **Project:** LooRadar — global community-powered restroom finder
-- **Repository:** `mrdzyn/looradar`
-- **Overall stage:** Application Implementation
+- **Project:** FlushCrowd — global community-powered restroom finder
+- **Repository:** `mrdzyn/flushcrowd`
+- **Overall stage:** Housekeeping / Product & Repository Rename
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX: audit remediation complete; independent exact-head re-audit pending
-- **Current branch:** `phase-2/add-restroom`
-- **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
-- **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.2 [REMEDIATION COMPLETE — independent exact-head audit pending]; P2.3 [BLOCKED pending P2.2 audit].
+- **Current milestone:** Product rename final audit remediation complete; independent exact-head re-audit pending
+- **Current branch:** `chore/rename-flushcrowd`
+- **Current PR:** [#5](https://github.com/mrdzyn/flushcrowd/pull/5) — `chore: rename LooRadar to FlushCrowd`
+- **Base:** `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5` (includes Phase 2 P2.2 squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [FINAL AUDIT REMEDIATION COMPLETE — independent exact-head re-audit pending]; P2.3 [NOT STARTED — BLOCKED pending rename PR audit and staging setup].
 
 ## Current objective
 
-Independent exact-head re-audit of **Phase 2 Milestone P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX** (`docs/09-phase-2-add-restroom.md` §4.2):
-- Implemented `AddRestroomLocationScreen` in `lib/presentation/screens/add_restroom_location_screen.dart` with interactive Google Map and fixed center target pin overlay (`_buildCenterTargetIndicator`).
-- Selected facility coordinate represented strictly via canonical `Coordinates` value object (`lib/domain/models/coordinates.dart`).
-- Enforced minimum zoom floor (`zoom >= 15.0`, `minConfirmationZoom`) with precision guidance hint: `"Zoom in to place the restroom more precisely."` shown whenever zoom is below 15.0; confirmation is disabled until zoom floor is met, camera is idle, and no programmatic move is pending.
-- Live coordinate readout formatted to exactly 5 decimal places (~1.1m precision): `${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}` (e.g. `14.58390, 121.06170`).
-- Camera movement updates lightweight visual state (`_isCameraMoving`) and animates target pin without triggering persistence, domain updates, or database reads/writes; camera idle (`onCameraIdle`) commits selected coordinate from camera target.
-- Initial location order: 1) explicit `initialCoordinates` if provided; 2) current foreground device location via `LocationRepository`/`LocationNotifier` if permission granted; 3) safe fallback (`AppConstants.defaultLatitude`, `AppConstants.defaultLongitude`).
-- Added "Use my location" action (`MapRecenterButton`) to center map on current device location with non-blocking error feedback if permission denied or location disabled; manual map exploration remains fully functional without GPS.
-- Remediated MAJOR-1: fresh foreground lookup strictly distinguishes services disabled, permission denied, and lookup failure; never consumes stale cached coordinates from `LocationNotifier`.
-- Remediated MAJOR-2 (Initial & Residual): decoupled map controller via `MapCameraController`; eliminated programmatic destination conflation by separating `_actualCameraTarget`/`_actualCameraZoom` from `_activeProgrammaticIntent`; initialized `_initialCameraPosition` once in `initState` to prevent rebuilds from passing pending targets to the native map constructor; rejected premature `onCameraIdle` events when movement has not yet been observed; handled identical-destination edge case; and provided robust camera-command failure recovery that unlocks manual panning without locking the screen.
-- Remediated MINOR-1: fixed safe-area test assertion to dynamically derive bottom limit from `MediaQuery` (`screenSize.height - viewPadding.bottom`).
-- Remediated MINOR-2: provided `CountingRestroomRepository` in test widget Provider tree to ensure zero accidental repository operations are actively verified.
-- Remediated MINOR-3: synchronized `docs/STATUS.md` P2.1 approved status and P2.2 audit remediation tracking.
-- Clean navigation seam returning `Coordinates` via `onLocationConfirmed` callback and `Navigator.pop(selectedCoordinates)` via static `route()` factory; no premature P2.3 form created.
-- Zero Firestore reads, zero Firestore writes, zero Places API, zero Geocoding API, zero Directions/Routes APIs, zero background location, zero movement history.
-- Full accessibility: touch targets $\ge 48\times 48$, semantics on center target pin, coordinate readout, location button, and Continue button.
-- Authored 25 unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all criteria, edge cases, and remediation assertions.
-- Validated full Flutter test suite (257 total Flutter tests, all PASS).
-- Validated all 49 Firestore Security Rules tests under Firestore emulator.
+Controlled repository and product rename from **LooRadar / looradar** to **FlushCrowd / flushcrowd**:
+- Canonical repository: `mrdzyn/flushcrowd` (`https://github.com/mrdzyn/flushcrowd.git`).
+- App display name: `FlushCrowd`.
+- Android package / namespace: `com.flushcrowd.flushcrowd`.
+- iOS bundle identifier: `com.flushcrowd.flushcrowd` (tests: `com.flushcrowd.flushcrowd.RunnerTests`).
+- Dart package name: `flushcrowd` (`pubspec.yaml`), imports updated to `package:flushcrowd/...`.
+- Main app entry widget: `FlushCrowdApp` (`lib/main.dart`).
+- Approved brand assets tracked: `docs/assets/brand/flushcrowd-icon.png` (SHA256: `246bc071...`) and `docs/assets/brand/flushcrowd-horizontal.png` (SHA256: `f81e2513...`), byte-for-byte exact copies.
+- Native launcher assets generated: Android `mipmap-*` (`ic_launcher.png`, 48 to 192px) and iOS `AppIcon.appiconset` (all 15 sizes, alpha removed for App Store compliance) derived from canonical `flushcrowd-icon.png`.
+- UX assets renamed: `docs/assets/flushcrowd-mobile-ux-reference.png` and `.svg`.
+- Non-live URL placeholders: `buyMeACoffeeUrl` and `privacyPolicyUrl` in `AppConstants` set to `''` pending owner destination verification; no unverified or unowned external destinations in code.
+- Sanitized environment template: `.env.example` uses neutral non-live placeholders `your_flushcrowd_firebase_project_id` and `your_flushcrowd_firebase_storage_bucket`.
+- GitHub repository metadata: description updated to `"FlushCrowd — global community-powered restroom and toilet finder."`.
+- CI workflow renamed to `FlushCrowd CI`, branch triggers updated for `chore/**`.
+- Security rules test project IDs updated to `flushcrowd-*-rules-test`.
+- Documentation updated across all specifications in `docs/` and root `README.md`, `AGENTS.md`.
+- Phase 0–P2.2 functionality and tests fully preserved and verified.
+- P2.3 remains strictly **NOT STARTED** and blocked until rename PR audit passes and staging configuration is established.
 
 The active specification is:
 
@@ -41,7 +40,9 @@ The active specification is:
 
 ## Locked decisions
 
-- Product name: **LooRadar**.
+- Product name: **FlushCrowd**.
+- Canonical brand marks: `docs/assets/brand/flushcrowd-icon.png` (icon) and `docs/assets/brand/flushcrowd-horizontal.png` (horizontal lockup).
+- Canonical UI reference: `docs/assets/flushcrowd-mobile-ux-reference.png`.
 - Global-first, mobile-first, UI/UX-first product.
 - Flutter for iOS and Android.
 - Google Maps SDK for visualization.
@@ -58,7 +59,6 @@ The active specification is:
 - Low Firestore/Maps cost is an architectural constraint.
 - Discovery repository and viewport query pipeline remain the single authoritative source of truth for the map.
 - Production community contribution writes require enforceable server-side rate limiting.
-- Canonical UI reference remains `docs/assets/looradar-mobile-ux-reference.png`.
 
 ## Canonical references
 
@@ -122,7 +122,7 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` (49 total rules tests, all PASS).
 - Validated full Flutter test suite (232 total Flutter tests, all PASS).
 
-### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [REMEDIATION COMPLETE — INDEPENDENT EXACT-HEAD AUDIT PENDING]
+### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]
 - Implemented `AddRestroomLocationScreen` with interactive Google Map and fixed center crosshair / target pin overlay (`_buildCenterTargetIndicator`).
 - Selected facility coordinate represented strictly via canonical `Coordinates` domain model (`lib/domain/models/coordinates.dart`).
 - Enforced zoom floor (`zoom >= 15.0`) with visual precision hint: `"Zoom in to place the restroom more precisely."` and disabled Continue action until zoom floor is met, camera is idle, and no programmatic move is pending.
@@ -138,8 +138,9 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Authored 25 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all prompt criteria, edge cases, and remediation assertions.
 - Validated full Flutter test suite (257 total Flutter tests, all PASS).
 - Validated all 49 Firestore Security Rules tests under Firestore emulator.
+- Merged into `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5`.
 
-### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [BLOCKED pending P2.2 audit]
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [NOT STARTED — BLOCKED pending rename PR audit and staging setup]
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
 - Implement tri-state amenity selector widgets.
 - Implement `AddRestroomNotifier` form state management, normalization, validation, and ID allocation.
@@ -181,28 +182,30 @@ Do not implement in this phase:
 
 ## Current owner actions / external dependencies
 
-These are not required for emulator/unit implementation but are required for full live QA:
+These are required for live staging QA and production readiness:
 
-1. Create/reuse platform-restricted Google Maps Android and iOS keys.
-2. Configure the Firebase project and enable Anonymous Authentication.
-3. Place local `google-services.json` and `GoogleService-Info.plist` files outside version control.
-4. Configure GCP budget alerts.
-5. Production Android signing remains a later release-readiness action.
+1. Create/reuse platform-restricted Google Maps Android and iOS keys restricted to package/bundle identifier `com.flushcrowd.flushcrowd`.
+2. Provision Firebase project (e.g. `flushcrowd-staging` / `flushcrowd-prod`) and enable Anonymous Authentication.
+3. Place local `google-services.json` and `GoogleService-Info.plist` configured for `com.flushcrowd.flushcrowd` outside version control.
+4. Establish and verify external support/donation account (e.g. Buy Me a Coffee or equivalent) and configure `AppConstants.buyMeACoffeeUrl`.
+5. Establish and publish external privacy policy URL (e.g. official domain/page) and configure `AppConstants.privacyPolicyUrl`.
+6. Configure GCP budget alerts.
+7. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 78 files formatted)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (248/248 passed: 232 prior regressions + 16 new P2.2 unit/widget tests)
+- `flutter test` — PASS (257/257 passed)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
-- `git diff --check` — PASS (clean, no trailing whitespace or formatting defects)
+- `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 - Firebase live discovery — NOT RUN; live device/owner config pending
 - Google Maps live discovery — NOT RUN; live device/owner config pending
 
 ## Next recommended action
 
-Perform independent exact-head audit of Milestone P2.2 on `phase-2/add-restroom`. P2.3 remains BLOCKED pending P2.2 audit.
+Perform independent exact-head audit and merge of product rename PR (`chore/rename-flushcrowd` -> `main`). Complete external Firebase staging project creation and Maps key restrictions for `com.flushcrowd.flushcrowd` before starting P2.3.
 
 ## Handoff template
 

@@ -1,4 +1,4 @@
-# LooRadar Data Model
+# FlushCrowd Data Model
 
 ## Design goals
 
@@ -14,7 +14,7 @@
 
 Firestore authorization applies to documents, not individual returned fields. Therefore a publicly readable document must not contain contributor UIDs or other private moderation/ownership metadata.
 
-LooRadar uses an explicit separation:
+FlushCrowd uses an explicit separation:
 
 - **public collections/documents** contain only data safe for any app user to read;
 - **private contribution/ownership documents** contain anonymous Firebase UID, moderation state, abuse-control metadata, and other internal fields;

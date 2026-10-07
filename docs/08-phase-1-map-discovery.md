@@ -1,4 +1,4 @@
-# LooRadar Phase 1 — Map Discovery
+# FlushCrowd Phase 1 — Map Discovery
 
 ## Goal
 
@@ -10,7 +10,7 @@ Phase 1 turns the Phase 0 map shell and repository abstractions into a real disc
 
 By the end of Phase 1, a user should be able to:
 
-- open LooRadar and see nearby restroom markers when location permission is available;
+- open FlushCrowd and see nearby restroom markers when location permission is available;
 - manually pan/zoom the map and request/receive restroom results for the visible area;
 - see accurate nearby results even when facilities lie across geohash cell boundaries;
 - tap a marker and inspect a restroom preview with distance, rating, indoor-location context, access type, and key amenities;
@@ -31,7 +31,7 @@ By the end of Phase 1, a user should be able to:
 - Do not add background location.
 - Keep Firestore and GIS behavior behind repository/service boundaries.
 - Keep infrastructure costs bounded and observable.
-- Preserve the canonical UI direction in `docs/assets/looradar-mobile-ux-reference.png` and `docs/06-ui-ux-reference.md`.
+- Preserve the canonical UI direction in `docs/assets/flushcrowd-mobile-ux-reference.png` and `docs/06-ui-ux-reference.md`.
 
 ## Scope
 

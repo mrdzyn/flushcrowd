@@ -1,7 +1,7 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/restroom.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
 
 void main() {
   group('Restroom Domain Model — Nullable Truth & Sentinel copyWith', () {

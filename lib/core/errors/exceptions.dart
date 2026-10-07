@@ -1,4 +1,4 @@
-/// Core exceptions thrown across LooRadar layers.
+/// Core exceptions thrown across FlushCrowd layers.
 class AppException implements Exception {
   final String message;
   final String? code;

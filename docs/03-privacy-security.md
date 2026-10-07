@@ -1,8 +1,8 @@
-# LooRadar Privacy & Security Baseline
+# FlushCrowd Privacy & Security Baseline
 
 ## Privacy objective
 
-LooRadar should minimize collection of personal information while still supporting useful community contributions and abuse prevention.
+FlushCrowd should minimize collection of personal information while still supporting useful community contributions and abuse prevention.
 
 ## Identity model
 

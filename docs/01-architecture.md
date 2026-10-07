@@ -1,4 +1,4 @@
-# LooRadar Technical Architecture
+# FlushCrowd Technical Architecture
 
 ## Objective
 
@@ -96,7 +96,7 @@ It is suitable for the MVP because:
 
 ## GIS strategy
 
-Firestore is not a full spatial database. LooRadar therefore uses:
+Firestore is not a full spatial database. FlushCrowd therefore uses:
 
 - latitude
 - longitude

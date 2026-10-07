@@ -1,16 +1,16 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/core/constants/app_constants.dart';
-import 'package:looradar/core/errors/exceptions.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/discovery_result.dart';
-import 'package:looradar/domain/models/geo_bounding_box.dart';
-import 'package:looradar/domain/models/restroom.dart';
-import 'package:looradar/domain/repositories/restroom_repository.dart';
-import 'package:looradar/domain/commands/create_restroom_command.dart';
-import 'package:looradar/presentation/state/map_discovery_notifier.dart';
-import 'package:looradar/presentation/state/viewport_query_descriptor.dart';
+import 'package:flushcrowd/core/constants/app_constants.dart';
+import 'package:flushcrowd/core/errors/exceptions.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/discovery_result.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
+import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
+import 'package:flushcrowd/presentation/state/viewport_query_descriptor.dart';
 
 class FakeRestroomRepository implements RestroomRepository {
   int getNearbyCalls = 0;

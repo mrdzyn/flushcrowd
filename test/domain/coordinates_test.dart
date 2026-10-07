@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/core/errors/exceptions.dart';
-import 'package:looradar/domain/models/coordinates.dart';
+import 'package:flushcrowd/core/errors/exceptions.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
 
 void main() {
   group('Coordinates Value Object', () {

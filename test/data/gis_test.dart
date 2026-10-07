@@ -1,9 +1,9 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/core/constants/app_constants.dart';
-import 'package:looradar/data/services/gis/geohash_service.dart';
-import 'package:looradar/data/services/gis/haversine.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/core/constants/app_constants.dart';
+import 'package:flushcrowd/data/services/gis/geohash_service.dart';
+import 'package:flushcrowd/data/services/gis/haversine.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
 
 void main() {
   group('GIS and Haversine Services', () {

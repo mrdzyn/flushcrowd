@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'app_colors.dart';
 
-/// Typography hierarchy for LooRadar design system.
+/// Typography hierarchy for FlushCrowd design system.
 class AppTypography {
   AppTypography._();
 
