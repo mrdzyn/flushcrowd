@@ -194,33 +194,69 @@ Do not implement in this phase:
 - social logins or traditional user accounts;
 - web/admin moderation dashboards (Phase 4).
 
+## External staging environment state
+
+Owner-confirmed staging infrastructure state:
+- Firebase project `flushcrowd-staging` — CREATED
+- Android Firebase app `com.flushcrowd.flushcrowd` — REGISTERED
+- iOS Firebase app `com.flushcrowd.flushcrowd` — REGISTERED
+- `google-services.json` — DOWNLOADED; local placement/verification pending unless independently confirmed
+- `GoogleService-Info.plist` — DOWNLOADED; local placement/verification pending unless independently confirmed
+- Anonymous Authentication — ENABLED
+- Anonymous account automatic cleanup — ENABLED
+- Cloud Firestore — CREATED
+- Maps SDK for Android — ENABLED
+- Maps SDK for iOS — ENABLED
+- Android restricted Maps key — PENDING
+- iOS restricted Maps key — PENDING
+- App Check live/debug verification — NOT RUN
+- Firestore Rules/index staging deployment — NOT RUN
+- Android live staging QA — NOT RUN
+- iOS live staging QA — NOT RUN
+
 ## Current owner actions / external dependencies
 
-These are required for live staging QA and production readiness:
+Remaining human owner actions required for live staging QA and P2.3 acceptance gate:
 
-1. Create Firebase project `flushcrowd-staging` and enable Anonymous Authentication.
-2. Register Android app (`com.flushcrowd.flushcrowd`) and iOS app (`com.flushcrowd.flushcrowd`).
-3. Place local `google-services.json` and `GoogleService-Info.plist` in documented gitignored paths outside version control.
-4. Create platform-restricted Google Maps Android and iOS keys restricted to package/bundle identifier `com.flushcrowd.flushcrowd` (Android: Maps SDK for Android only + SHA-1; iOS: Maps SDK for iOS only).
-5. Establish and verify external support/donation account (e.g. Buy Me a Coffee or equivalent) and configure `AppConstants.buyMeACoffeeUrl`.
-6. Establish and publish external privacy policy URL (e.g. official domain/page) and configure `AppConstants.privacyPolicyUrl`.
-7. Configure GCP budget alerts.
-8. Production Android signing remains a later release-readiness action.
+1. Verify downloaded Firebase config files (`google-services.json` and `GoogleService-Info.plist`) are placed in their documented local gitignored paths:
+   - `android/app/google-services.json`
+   - `ios/Runner/GoogleService-Info.plist`
+2. Create and restrict Android Maps API key in Google Cloud Console:
+   - Application restriction: Android apps (`com.flushcrowd.flushcrowd` + staging/debug SHA-1)
+   - API restriction: **Maps SDK for Android** only
+3. Create and restrict iOS Maps API key in Google Cloud Console:
+   - Application restriction: iOS apps (`com.flushcrowd.flushcrowd`)
+   - API restriction: **Maps SDK for iOS** only
+4. Configure local native Maps key files (outside version control):
+   - Add `MAPS_API_KEY=<restricted-android-key>` to `android/local.properties`
+   - Add `GOOGLE_MAPS_API_KEY=<restricted-ios-key>` to `ios/Flutter/Secrets.xcconfig`
+5. Run Android and iOS staging builds locally and perform live QA.
+6. Verify Firebase initialization and Anonymous Authentication in the live staging project.
+7. Verify App Check debug-token workflow (token emitted in runtime console registered in Firebase Console).
+8. After explicit owner approval, deploy audited Firestore Rules and indexes using:
+   ```bash
+   firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes
+   ```
+9. Verify Firestore read connectivity under the deployed staging rules.
+10. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
+11. Configure GCP billing budget alerts.
+12. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (257/257 passed)
+- `flutter test` — PASS (260/260 passed)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
+- `flutter build apk --debug` without credentials — PASS
+- `flutter build ios --debug --no-codesign` without credentials — PASS
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
-- Firebase live staging — PENDING HUMAN OWNER CONFIGURATION
-- Google Maps live staging — PENDING HUMAN OWNER CONFIGURATION
+- Exact-head CI (`FlushCrowd CI`) — PASS (all 4 GitHub Actions checks passed on exact head)
 
 ## Next recommended action
 
-Human owner to complete external Firebase staging setup (`flushcrowd-staging`) and Google Maps restricted keys following `docs/07-environment-setup.md` Section 5 to satisfy the 11-point staging acceptance gate and unblock Milestone P2.3.
+Human owner to complete remaining external setup steps (verify local Firebase config placement, generate restricted Maps keys, run live staging QA, and deploy audited rules via `firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) to satisfy the 11-point staging acceptance gate and unblock Milestone P2.3.
 
 ## Handoff template
 
