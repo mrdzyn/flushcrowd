@@ -545,15 +545,68 @@ abstract class RestroomRepository {
 
 ### 8.3 Ambiguous Commit Reconciliation
 
-If a network timeout or connection drop occurs during `batch.commit()`, the write may or may not have succeeded on the server. Before attempting a retry:
+#### 8.3.1 Canonical Flow & Single Direct Write
 
-1. **Reconciliation Read:** The client issues read requests for:
-   - `restrooms/{command.restroomId}`
-   - `contributions/restroom_{command.restroomId}`
-2. **State Evaluation:**
-   - **Both exist and match contract:** The write succeeded before the network dropped. Treat the operation as an immediate **SUCCESS**, navigate to map, and synchronize.
-   - **Neither exists:** The write failed before committing. Safely re-execute the batch write using the **SAME** `CreateRestroomCommand`.
-   - **Only one exists:** This represents an invariant violation (e.g. partial write or race). Surface a clear, recoverable error to the user without generating another ID or creating an orphaned facility.
+During normal first submission, the repository performs zero pre-submission reads:
+
+$$\text{validate/authenticate} \longrightarrow \text{execute atomic public/private batch directly}$$
+
+No pre-submission reconciliation reads or existence checks are performed prior to `batch.commit()`.
+
+If `batch.commit()` returns an ambiguous error or transient failure where the server-side commit status is uncertain (e.g. network timeout, dropped connection, unacknowledged socket drop):
+
+1. **Step 1 — Point-Read Public Facility Only:**
+   The repository reads only the public facility document:
+   $$\text{read } \texttt{restrooms/\{command.restroomId\}}$$
+
+2. **Step 2 — Public Restroom Absent:**
+   If the public restroom does **NOT** exist (`publicDoc == null`):
+   - The repository does **NOT** read the private contribution merely to prove absence.
+   - The original/retryable repository failure is surfaced directly (`RepositoryException`).
+   - The repository does **NOT** automatically re-execute the write batch within the same failed call.
+   - The same `CreateRestroomCommand` and stable `restroomId` are preserved.
+   - A later user or application retry must reuse the exact same command and ID; the repository never generates a replacement ID or trims the ID.
+
+3. **Step 3 — Public Restroom Exists:**
+   If the public restroom **DOES** exist:
+   The repository issues a targeted point-read for the paired private contribution:
+   $$\text{read } \texttt{contributions/restroom\_\{command.restroomId\}}$$
+
+4. **Step 4 — Private Contribution Read Result Handling:**
+   - **Valid owned private contribution exists:** Proceed to full-pair integrity validation.
+   - **Private document missing / unreadable (`null`):** Surface as invariant failure (`SubmissionInvariantException`).
+   - **Private read throws `permission-denied`:** Surface as invariant failure (`SubmissionInvariantException: 'Unable to verify the private contribution paired with this restroom.'`). Because security rules enforce `resource.data.userUid == request.auth.uid`, reading an unowned or non-existent contribution throws `permission-denied` on live Firestore; this is mapped cleanly to invariant failure rather than retry.
+   - **Private read throws transient errors (`unavailable`, `deadline-exceeded`):** Surface as retryable `RepositoryException` so the client may retry verification.
+
+5. **Step 5 — Independent Complete Pair Validation:**
+   Before treating the ambiguous write as successful, the repository independently verifies all identity, status, and payload fields across both documents:
+
+   **Public Facility Checks:**
+   - Document ID matches `command.restroomId` (`publicDoc.documentId == restroomId`).
+   - Stored document field `id` matches `command.restroomId` (`publicDoc.data['id'] == restroomId`).
+   - Lifecycle status is strictly `unverified` (`publicDoc.data['status'] == 'unverified'`).
+   - Immutable normalized command fields match exactly: name, coordinates (latitude, longitude), geohash, accessType, address/context hierarchy, fees, stalls, and amenities.
+
+   **Private Contribution Checks:**
+   - Document ID matches `'restroom_' + command.restroomId` (`privateDoc.documentId == 'restroom_' + restroomId`).
+   - Stored document field `id` matches `'restroom_' + command.restroomId` (`privateDoc.data['id'] == 'restroom_' + restroomId`).
+   - `contributionType == 'restroom'`
+   - `resourceId == command.restroomId`
+   - `restroomId == command.restroomId`
+   - `userUid == request.auth.uid` (contributor matches current authenticated user)
+   - `moderationState == 'pending'`
+
+6. **Step 6 — Resolution:**
+   - **Pair is fully valid & consistent:** The ambiguous write is reconciled as **SUCCESS**. The repository decodes the public facility via `RestroomFirestoreCodec.fromFirestore(publicDoc.data, documentId: publicDoc.documentId)` and returns the created `Restroom`.
+   - **Pair is missing or inconsistent:** Throws `SubmissionInvariantException` to prevent orphaned documents or corrupted records.
+
+#### 8.3.2 Idempotent Retry Contract
+
+The retry invariant across all network, timeout, and reconciliation boundaries is:
+
+$$\text{same logical submission} \longrightarrow \text{same } \texttt{CreateRestroomCommand} \longrightarrow \text{same } \texttt{restroomId}$$
+
+The application layer may retry the submission later using the identical `CreateRestroomCommand`. The repository never generates replacement IDs, never alters IDs, and never trims IDs silently.
 
 ---
 
@@ -729,7 +782,7 @@ In Phase 2, successful contributions do NOT inject the new restroom permanently 
 | **Location Pinpoint** | Interactive Map Drag | 0 Firestore reads | Client-side map rendering; no reverse geocoding API calls. |
 | **Duplicate Detection** | Nearby candidate search | Max 320 raw reads (theoretical ceiling) | 16 ranges × 20 limit; deduplicated and filtered in memory. |
 | **Restroom Submission** | Atomic Batch Write | Application operations: 2 Firestore writes<br>Security Rules: bounded cross-document access checks; final P2.1 rules must remain within Firestore access-call limits | 1 public write (`restrooms/`), 1 private write (`contributions/`); Rules accesses subject to Firestore limits. |
-| **Reconciliation Read** | Retry ambiguity check | Max 2 Firestore reads | Direct document lookups for `restrooms/{id}` and `contributions/restroom_{id}`. |
+| **Reconciliation Read** | Retry ambiguity check | Max 2 Firestore reads | Point-read of public doc (1 read); private contribution read (1 read) only if public facility exists. |
 | **Anonymous Auth** | Background sign-in | 0 Firestore reads | Native Firebase Auth token exchange. |
 
 ---

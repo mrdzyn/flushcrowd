@@ -7,15 +7,17 @@
 - **Repository:** `mrdzyn/looradar`
 - **Overall stage:** Application Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests: reconciliation hardening remediation complete; independent exact-head re-audit pending
+- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests: final documentation closure complete; independent exact-head audit pending
 - **Current branch:** `phase-2/add-restroom`
 - **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 reconciliation hardening remediation [COMPLETE — INDEPENDENT RE-AUDIT PENDING]; P2.2 [BLOCKED pending P2.1 remediation audit].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 final documentation closure complete; independent exact-head audit pending; P2.2 [BLOCKED pending P2.1 audit].
 
 ## Current objective
 
-Complete independent re-audit of **Phase 2 Milestone P2.1** (`docs/09-phase-2-add-restroom.md`):
+Final exact-head audit of **Phase 2 Milestone P2.1** (`docs/09-phase-2-add-restroom.md`):
+- Reconciled canonical specification in `docs/09-phase-2-add-restroom.md` §8.3 with the approved hardened implementation: direct atomic write without pre-reads; on ambiguous failure, read public facility only; if absent, do not read private contribution, surface original failure, preserve command and ID; if public exists, point-read private contribution; handle missing/unreadable private contribution as invariant failure; handle `permission-denied` as invariant failure; handle transient network errors as retryable; validate independent public and private field identities; treat valid pair as success; preserve stable ID retry invariant without same-call auto-retry.
+- Preserved timestamp provenance note (rules validate type `is timestamp`; client repository sets `FieldValue.serverTimestamp()`; temporal equality hardening is deferred to server boundary hardening and is not yet trusted for security evidence).
 - MAJOR-1: Introduced `FirestoreDocumentData(documentId, data)` in `firestore_mutation_adapter.dart`. `ProductionFirestoreMutationAdapter` returns raw stored document map without mutating or injecting `data['id'] = docSnapshot.id`. `_validateReconciliationPair` validates both `documentId == restroomId` AND `publicDoc.data['id'] == restroomId` independently on public documents, and both `documentId == 'restroom_$restroomId'` AND `privateDoc.data['id'] == 'restroom_$restroomId'` independently on private contributions.
 - MAJOR-2: Wrapped private contribution reconciliation read in `try ... on FirebaseException`. Caught `permission-denied` and mapped to `SubmissionInvariantException('Unable to verify the private contribution paired with this restroom.')` to address live Firestore security rule behavior where unowned or missing private contribution reads fail with `permission-denied`. Transient network errors (`unavailable`, `deadline-exceeded`) rethrow as retryable `RepositoryException`.
 - MINOR-1: Evaluated and documented timestamp provenance: rules enforce `is timestamp`, and client writes populate `FieldValue.serverTimestamp()`. Temporal equality hardening (`request.resource.data.createdAt == request.time`) via client security rules is deferred to server boundary hardening (e.g. Cloud Functions / administrative boundary) and is not yet trusted for security/moderation evidence.
@@ -91,7 +93,8 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Updated project documentation index and tracking status.
 - Independent specification audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [RECONCILIATION HARDENING REMEDIATION COMPLETE — RE-AUDIT PENDING]
+### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [FINAL DOCUMENTATION CLOSURE COMPLETE — INDEPENDENT EXACT-HEAD AUDIT PENDING]
+- Reconciled canonical specification in `docs/09-phase-2-add-restroom.md` §8.3 to reflect the approved hardened ambiguous reconciliation contract (direct write without pre-reads, public-only initial read on ambiguous failure, conditional private read, permission-denied mapping to invariant failure, independent public/private field validation, stable ID retry invariant without same-call auto-retry, and preserved timestamp provenance note).
 - Implemented `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and domain validation.
 - Implemented `CreateRestroomCommand` in `lib/domain/commands/create_restroom_command.dart`.
 - Migrated `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls) and added `accessInstructions`.
@@ -179,7 +182,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Next recommended action
 
-Perform independent exact-head re-audit of Milestone P2.1 reconciliation hardening remediation on `phase-2/add-restroom`. P2.2 remains BLOCKED until P2.1 audit passes.
+Perform independent exact-head audit of Milestone P2.1 on `phase-2/add-restroom`. P2.2 remains BLOCKED pending P2.1 audit.
 
 ## Handoff template
 
