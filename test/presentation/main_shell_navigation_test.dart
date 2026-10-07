@@ -11,6 +11,8 @@ import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
 import 'package:flushcrowd/domain/models/restroom.dart';
 import 'package:flushcrowd/domain/repositories/location_repository.dart';
 import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
+import 'package:flushcrowd/presentation/screens/add_restroom_form_screen.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
 import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
 import 'package:flushcrowd/presentation/state/location_notifier.dart';
@@ -347,7 +349,7 @@ void main() {
     });
 
     testWidgets(
-      '5. Successful P2.2 coordinate confirmation does not pretend submission succeeded',
+      '5. Successful P2.2 coordinate confirmation opens AddRestroomFormScreen and does not pretend submission succeeded',
       (tester) async {
         await tester.pumpWidget(
           createTestApp(
@@ -369,13 +371,33 @@ void main() {
         await tester.tap(find.text('Continue'));
         await tester.pumpAndSettle();
 
-        // Screen popped, back on shell
+        // Location screen popped, opens AddRestroomFormScreen
         expect(find.byType(AddRestroomLocationScreen), findsNothing);
+        expect(find.byType(AddRestroomFormScreen), findsOneWidget);
+
+        // Selected coordinates are preserved on the form
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+
+        // Enter valid facility name
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Central Station Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue on form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // Form popped, back on shell
+        expect(find.byType(AddRestroomFormScreen), findsNothing);
         expect(find.byType(MainShellScreen), findsOneWidget);
 
-        // Shows the honest temporary coming-soon message
+        // Shows honest temporary coming-soon message
         expect(
-          find.text('Restroom details form is coming in the next milestone.'),
+          find.text(
+            'Restroom details validated. Duplicate check comes in the next milestone.',
+          ),
           findsOneWidget,
         );
 

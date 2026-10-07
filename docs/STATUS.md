@@ -2,16 +2,16 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-07
+- **Last updated:** 2026-10-08
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
-- **Overall stage:** Phase 2 Add Restroom / Live Staging Verification
+- **Overall stage:** Phase 2 Add Restroom / Contribution Form Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** Restoring P2.2 Add Restroom navigation entry wiring following live staging QA finding; P2.3 remains blocked pending live staging verification
-- **Current branch:** `fix/p2.2-add-entry-wiring`
-- **Current PR:** [#7](https://github.com/mrdzyn/flushcrowd/pull/7) — `fix: restore Add Restroom navigation entry`
-- **Base:** `main` at `76e8669c1646667c7a1e6484d643b9d949a8846d` (includes PR #6 staging readiness squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [ACTIVE]; P2.3 [NOT STARTED — blocked pending completion of live staging verification].
+- **Current milestone:** P2.3 — Contribution Form UI, Data-Truth Validation & State Management [ACTIVE — implementation complete pending independent audit]
+- **Current branch:** `phase-2/p2.3-contribution-form`
+- **Current PR:** TBD
+- **Base:** `main` at `ebb9c746e65cc9902a49cfaf96f9bc3e4ffcaf86` (includes PR #7 Add-entry hotfix squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [ACTIVE]; P2.4 [NOT STARTED].
 
 ## Current objective
 
@@ -154,21 +154,27 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Documented explicit-scoped staging deployment command (`firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) and corrected 20-step human activation sequence.
 - Independent PR #6 exact-head audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### P2.2 — Add Restroom Navigation Entry Hotfix [ACTIVE]
+### P2.2 — Add Restroom Navigation Entry Hotfix [MERGED — PR #7]
+- Squash-merged into `main` at `ebb9c746e65cc9902a49cfaf96f9bc3e4ffcaf86` (PR #7).
 - Discovered during Android live staging QA: tapping bottom-navigation **Add** tab (index 2) mounted `_PhasePlaceholderScreen` instead of opening the implemented P2.2 `AddRestroomLocationScreen`.
 - Preserved `MainShellScreen` architecture while treating Add as an action entry point pushing `AddRestroomLocationScreen.route()`.
 - Replaced `IndexedStack` placeholder at index 2 with non-placeholder `SizedBox.shrink()`.
 - Protected against rapid duplicate taps stacking routes (`_isOpeningAddLocation`).
 - Remediated MAJOR-1: Preserved discovery map camera target by capturing continuous camera movement in `MapDiscoveryScreen` without triggering rebuilds, and passing it as `initialCoordinates` to `AddRestroomLocationScreen.route()`. Preserved device GPS / default fallback when no discovery target has been captured.
-- Handled coordinate confirmation by returning `Coordinates` and displaying temporary floating notice: `'Restroom details form is coming in the next milestone.'` without pretending submission succeeded or writing to Firestore.
+- Handled coordinate confirmation by returning `Coordinates` and navigating to the contribution form.
 - Cancel/back pops route and returns cleanly to prior shell tab preserving state.
 - Authored 10 focused widget tests in `test/presentation/main_shell_navigation_test.dart` verifying all behaviors, camera target preservation, fallback intactness, and zero Firestore operations on entry/exit.
+- Manual human QA: PASS on Android, PASS on iOS.
 
-### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [NOT STARTED — blocked pending live staging verification]
-- Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
-- Implement tri-state amenity selector widgets.
-- Implement `AddRestroomNotifier` form state management, normalization, validation, and ID allocation.
-- Unit tests for form validation and widget tests for form rendering and error states.
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [ACTIVE — implementation complete pending independent audit]
+- Implemented `AddRestroomFormScreen` (`lib/presentation/screens/add_restroom_form_screen.dart`) with organized card sections (Facility Identification with compact read-only coordinate display, Indoor Directions & Context, Accessibility & Stalls, Hygiene & Amenities, Access Instructions & Pricing).
+- Implemented accessible, reusable `TriStateAmenitySelector` (`lib/presentation/components/inputs/tri_state_amenity_selector.dart`) with min 48×48 touch targets, semantic labels, text scaling, checkmark visual indicators beyond color, and nullable boolean adapter.
+- Implemented `AddRestroomNotifier` (`lib/presentation/state/add_restroom_notifier.dart`) managing raw editable state, constructing `RestroomDraft`, validating via `draft.normalized().validate()`, and allocating stable restroom ID only upon valid preparation.
+- Implemented `RestroomIdGenerator` and `DefaultRestroomIdGenerator` (`lib/presentation/state/restroom_id_generator.dart`) producing 20-character alphanumeric IDs without network reads.
+- Wired P2.2 → P2.3 navigation in `MainShellScreen`: location confirmation opens `AddRestroomFormScreen`, valid continue prepares `CreateRestroomCommand` in memory and displays honest temporary validation notice without claiming submission, and cancel/back pops cleanly with zero writes.
+- Zero-persistence milestone: 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding calls, no personal data or contributor UID collected.
+- Manual device QA for P2.3: PENDING.
+- Authored 27 new unit and widget tests: 15 in `test/presentation/add_restroom_notifier_test.dart`, 12 in `test/presentation/add_restroom_form_screen_test.dart`, plus updated navigation tests in `test/presentation/main_shell_navigation_test.dart` (297 total Flutter tests, all PASS).
 
 ### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
 - Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
@@ -224,41 +230,42 @@ Owner-confirmed staging infrastructure state:
   - Maps rendering — PASS
   - App Check Debug registration — PASS
   - Firestore backend reached — PASS
+  - P2.2 navigation & camera target preservation — PASS
 - iOS live staging QA:
   - App launch — PASS
   - Maps rendering — PASS
   - App Check Debug registration — PASS
+  - P2.2 navigation & camera target preservation — PASS
 - Backend:
   - Firestore Rules/indexes deployment to `flushcrowd-staging` — PASS
 - Firestore authorized reads:
-  - Post-deployment runtime verification — PENDING
+  - Post-deployment runtime verification — PASS (previous `PERMISSION_DENIED` no longer occurs)
+- Milestone P2.3 gate:
+  - UNBLOCKED / ACTIVE
 
 ## Current owner actions / external dependencies
 
-Remaining human owner actions required for live staging QA and P2.3 acceptance gate:
-
-1. Perform post-deployment runtime verification of Firestore authorized reads on live staging.
-2. Manually verify corrected Add-entry behavior (camera target preservation into AddRestroomLocationScreen).
-3. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
-4. Configure GCP billing budget alerts.
-5. Production Android signing remains a later release-readiness action.
+1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
+2. Configure GCP billing budget alerts.
+3. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (86 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (270/270 passed)
+- `flutter test` — PASS (297/297 passed)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `flutter build apk --debug` without credentials — PASS
+- `flutter build ios --debug --no-codesign` without credentials — PASS
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Verify post-deployment Firestore authorized reads on live staging.
-2. Complete manual verification of corrected Add-entry camera preservation behavior.
-3. Review and merge PR #7 following independent audit pass.
-4. Once live staging verification criteria are satisfied, unblock Milestone P2.3.
+1. Open PR `feat: implement P2.3 contribution form and state` against `main`.
+2. Await exact-head GitHub CI completion.
+3. Conduct independent exact-head audit for Milestone P2.3.
+4. Following audit pass and merge, proceed to Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX).
 
 ## Handoff template
 

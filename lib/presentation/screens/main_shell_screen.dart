@@ -2,9 +2,12 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
+import '../../domain/commands/create_restroom_command.dart';
 import '../../domain/models/coordinates.dart';
 import '../components/feedback/empty_state_view.dart';
 import '../components/navigation/loo_bottom_nav_bar.dart';
+import '../state/restroom_id_generator.dart';
+import 'add_restroom_form_screen.dart';
 import 'add_restroom_location_screen.dart';
 import 'map_discovery_screen.dart';
 
@@ -12,11 +15,13 @@ import 'map_discovery_screen.dart';
 class MainShellScreen extends StatefulWidget {
   final MapWidgetBuilder? addLocationMapBuilder;
   final MapWidgetBuilder? discoveryMapBuilder;
+  final RestroomIdGenerator? formIdGenerator;
 
   const MainShellScreen({
     super.key,
     this.addLocationMapBuilder,
     this.discoveryMapBuilder,
+    this.formIdGenerator,
   });
 
   @override
@@ -48,16 +53,28 @@ class _MainShellScreenState extends State<MainShellScreen> {
       if (!mounted) return;
 
       if (confirmedCoordinates != null) {
-        ScaffoldMessenger.of(context).hideCurrentSnackBar();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Restroom details form is coming in the next milestone.',
+        final CreateRestroomCommand? command = await Navigator.of(context)
+            .push<CreateRestroomCommand>(
+              AddRestroomFormScreen.route(
+                coordinates: confirmedCoordinates,
+                idGenerator: widget.formIdGenerator,
+              ),
+            );
+
+        if (!mounted) return;
+
+        if (command != null) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                'Restroom details validated. Duplicate check comes in the next milestone.',
+              ),
+              duration: Duration(seconds: 4),
+              behavior: SnackBarBehavior.floating,
             ),
-            duration: Duration(seconds: 4),
-            behavior: SnackBarBehavior.floating,
-          ),
-        );
+          );
+        }
       }
     } finally {
       if (mounted) {
