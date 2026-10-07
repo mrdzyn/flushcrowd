@@ -423,6 +423,7 @@ This bidirectional contract strictly prevents:
 5. **No Contributor UID:** Public document rejects all UID-like fields (`hasNoContributorUid`).
 6. **Create-Only Public Restrooms:** Public restroom updates and deletes are strictly prohibited in Phase 2 (`allow update, delete: if false;`).
 7. **Bidirectional Atomic Pairing:** Validated via pre-state and post-state rules on both paths.
+8. **Timestamp Provenance Note:** `createdAt` and `updatedAt` are validated via rules as `is timestamp`. The client repository populates them using `FieldValue.serverTimestamp()`. Temporal equality hardening (`request.resource.data.createdAt == request.time`) via client security rules is deferred to server boundary hardening (e.g. Cloud Functions / administrative boundary) and is not yet trusted for security/moderation evidence.
 
 ### 7.2 Security Rules Access Budget & Limits
 

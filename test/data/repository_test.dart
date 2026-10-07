@@ -136,33 +136,27 @@ void main() {
           accessType: AccessType.free,
         );
 
-        // Empty ID
-        expect(
-          () => repo.submitRestroom(
-            CreateRestroomCommand(restroomId: '', draft: draft),
-          ),
-          throwsA(
-            isA<RepositoryException>().having(
-              (e) => e.code,
-              'code',
-              'invalid-restroom-id',
+        // Empty and whitespace-containing IDs
+        for (final badWhitespaceId in [
+          '',
+          '   ',
+          ' rr_123',
+          'rr_123 ',
+          ' rr_123 ',
+        ]) {
+          expect(
+            () => repo.submitRestroom(
+              CreateRestroomCommand(restroomId: badWhitespaceId, draft: draft),
             ),
-          ),
-        );
-
-        // Whitespace-only ID
-        expect(
-          () => repo.submitRestroom(
-            CreateRestroomCommand(restroomId: '   ', draft: draft),
-          ),
-          throwsA(
-            isA<RepositoryException>().having(
-              (e) => e.code,
-              'code',
-              'invalid-restroom-id',
+            throwsA(
+              isA<RepositoryException>().having(
+                (e) => e.code,
+                'code',
+                'invalid-restroom-id',
+              ),
             ),
-          ),
-        );
+          );
+        }
 
         // > 100 characters
         expect(

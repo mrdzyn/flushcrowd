@@ -7,24 +7,22 @@
 - **Repository:** `mrdzyn/looradar`
 - **Overall stage:** Application Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests: audit remediation complete; independent exact-head re-audit pending
+- **Current milestone:** P2.1 — Contribution Domain Model, Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests: reconciliation hardening remediation complete; independent exact-head re-audit pending
 - **Current branch:** `phase-2/add-restroom`
 - **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 audit remediation [COMPLETE — INDEPENDENT RE-AUDIT PENDING]; P2.2 [BLOCKED pending P2.1 remediation audit].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 reconciliation hardening remediation [COMPLETE — INDEPENDENT RE-AUDIT PENDING]; P2.2 [BLOCKED pending P2.1 remediation audit].
 
 ## Current objective
 
 Complete independent re-audit of **Phase 2 Milestone P2.1** (`docs/09-phase-2-add-restroom.md`):
-- BLOCKER-1: Removed pre-submission reads on first-submit path; first action executes atomic `WriteBatch` (`restrooms/{id}` and `contributions/restroom_{id}`) directly.
-- MAJOR-1: Implemented full ambiguous commit reconciliation contract: absent public doc does not read private contribution; when public exists, reads private contribution and validates complete pair (identity, status `unverified`, all normalized command fields, `userUid == current uid`, `moderationState == 'pending'`).
-- MAJOR-1 (Parity): Implemented identical full-pair reconciliation validation in `InMemoryRestroomRepository` with comprehensive negative and positive test coverage.
-- MAJOR-2 / 2B / 2C: Updated `firestore.rules` with `isValidGenderConfiguration(data)` (rejects all-false `false/false/false` and `false/null/false`, allows all-unknown or positive), ISO 4217 uppercase 3-letter currency regex (`^[A-Z]{3}$`), and base32 geohash regex (`^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$`).
-- MAJOR-3: Introduced narrow `FirestoreMutationAdapter` (`ProductionFirestoreMutationAdapter`) and 27 comprehensive tests in `test/data/firestore_restroom_repository_test.dart` verifying all 22 required production mutation path criteria.
-- MINOR-2: Validated stable `restroomId` in both repositories (rejects empty, whitespace, >100 chars, path separators, relative dots with deterministic code `invalid-restroom-id`).
-- MINOR-3: Persists `FieldValue.serverTimestamp()`, but returns `createdAt: null`, `updatedAt: null` on first submit without fabricating timestamps or running extra post-write reads.
+- MAJOR-1: Introduced `FirestoreDocumentData(documentId, data)` in `firestore_mutation_adapter.dart`. `ProductionFirestoreMutationAdapter` returns raw stored document map without mutating or injecting `data['id'] = docSnapshot.id`. `_validateReconciliationPair` validates both `documentId == restroomId` AND `publicDoc.data['id'] == restroomId` independently on public documents, and both `documentId == 'restroom_$restroomId'` AND `privateDoc.data['id'] == 'restroom_$restroomId'` independently on private contributions.
+- MAJOR-2: Wrapped private contribution reconciliation read in `try ... on FirebaseException`. Caught `permission-denied` and mapped to `SubmissionInvariantException('Unable to verify the private contribution paired with this restroom.')` to address live Firestore security rule behavior where unowned or missing private contribution reads fail with `permission-denied`. Transient network errors (`unavailable`, `deadline-exceeded`) rethrow as retryable `RepositoryException`.
+- MINOR-1: Evaluated and documented timestamp provenance: rules enforce `is timestamp`, and client writes populate `FieldValue.serverTimestamp()`. Temporal equality hardening (`request.resource.data.createdAt == request.time`) via client security rules is deferred to server boundary hardening (e.g. Cloud Functions / administrative boundary) and is not yet trusted for security/moderation evidence.
+- MINOR-2: Disallowed silent trimming of `command.restroomId` in both `FirestoreRestroomRepository` and `InMemoryRestroomRepository`. Rejects whitespace-containing IDs with `restroomId != restroomId.trim()` throwing `RepositoryException('Invalid stable restroom ID...', 'invalid-restroom-id')`.
+- Added 7 comprehensive regression unit tests in `test/data/firestore_restroom_repository_test.dart` (now 34 tests in suite, 232 total Flutter tests) covering all reconciliation invariant errors, documentId vs stored id mismatches, and FirebaseException cases.
 - Validated all 49 Firestore Security Rules tests (29 Phase 2 tests + 20 Phase 0 legacy tests) under Firestore emulator.
-- Validated all 225 Flutter tests with zero failures.
+- Validated all 232 Flutter tests with zero failures.
 
 The active specification is:
 
@@ -93,7 +91,7 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Updated project documentation index and tracking status.
 - Independent specification audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [AUDIT REMEDIATION COMPLETE — RE-AUDIT PENDING]
+### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [RECONCILIATION HARDENING REMEDIATION COMPLETE — RE-AUDIT PENDING]
 - Implemented `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and domain validation.
 - Implemented `CreateRestroomCommand` in `lib/domain/commands/create_restroom_command.dart`.
 - Migrated `Restroom` public domain model to nullable booleans (`bool?` for amenities/stalls) and added `accessInstructions`.
@@ -101,13 +99,16 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Updated `RestroomRepository` interface with `Future<Restroom> submitRestroom(CreateRestroomCommand command)`.
 - Remediated BLOCKER-1: removed pre-submission reads on first-submit path; first action executes atomic `WriteBatch` (`restrooms/{id}` and `contributions/restroom_{id}`) directly.
 - Remediated MAJOR-1: full ambiguous commit reconciliation on batch commit failure with full identity and field validation.
+- Remediated MAJOR-1 (Reconciliation Hardening): introduced `FirestoreDocumentData` to return unmutated document maps from `ProductionFirestoreMutationAdapter`, validating both `documentId` and stored `data['id']` independently on public and private documents.
 - Remediated MAJOR-1 (Parity): identical full-pair reconciliation validation in `InMemoryRestroomRepository`.
-- Remediated MAJOR-2 / 2B / 2C: updated `firestore.rules` with `isValidGenderConfiguration`, regex currency validation (`^[A-Z]{3}$`), and regex geohash validation (`^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$`).
-- Remediated MAJOR-3: narrow `FirestoreMutationAdapter` (`ProductionFirestoreMutationAdapter`) with 27 targeted tests in `test/data/firestore_restroom_repository_test.dart` verifying all 22 required production criteria.
-- Remediated MINOR-2: stable `restroomId` validation in both repositories throwing `RepositoryException` with code `invalid-restroom-id`.
+- Remediated MAJOR-2 (Permission-Denied Handling): caught Firebase `permission-denied` on private contribution reconciliation read and mapped to `SubmissionInvariantException` to align with live security rules when private documents are unreadable or unowned. Transient network errors rethrow as retryable `RepositoryException`.
+- Remediated MAJOR-2 / 2B / 2C (Rules Hardening): updated `firestore.rules` with `isValidGenderConfiguration`, regex currency validation (`^[A-Z]{3}$`), and regex geohash validation (`^[0-9bcdefghjkmnpqrstuvwxyz]{4,12}$`).
+- Remediated MAJOR-3: narrow `FirestoreMutationAdapter` (`ProductionFirestoreMutationAdapter`) with 34 targeted tests in `test/data/firestore_restroom_repository_test.dart` verifying all required production criteria, error mappings, and documentId invariants.
+- Remediated MINOR-1: evaluated and documented timestamp provenance deferral to server boundary hardening.
+- Remediated MINOR-2: rejected whitespace-containing stable `restroomId` in both repositories (`restroomId != restroomId.trim()`) throwing `RepositoryException` with code `invalid-restroom-id` without trimming.
 - Remediated MINOR-3: first-submit returns `createdAt: null`, `updatedAt: null` without fabricating timestamps or running extra post-write reads.
 - Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` (49 total rules tests, all PASS).
-- Validated full Flutter test suite (225 total Flutter tests, all PASS).
+- Validated full Flutter test suite (232 total Flutter tests, all PASS).
 
 ### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [BLOCKED pending P2.1 remediation audit]
 - Implement `AddRestroomLocationScreen` with interactive center crosshair / draggable pin on Google Maps.
@@ -169,7 +170,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (clean, 76 files formatted)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (225/225 passed across all unit, domain, codec, and repository suites)
+- `flutter test` — PASS (232/232 passed across all unit, domain, codec, and repository suites)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `git diff --check` — PASS (clean, no trailing whitespace or formatting defects)
 - Secrets scan — PASS (0 secrets or private keys in git tree)
@@ -178,7 +179,7 @@ These are not required for emulator/unit implementation but are required for ful
 
 ## Next recommended action
 
-Perform independent exact-head re-audit of Milestone P2.1 remediation on `phase-2/add-restroom`. P2.2 remains BLOCKED until P2.1 audit passes.
+Perform independent exact-head re-audit of Milestone P2.1 reconciliation hardening remediation on `phase-2/add-restroom`. P2.2 remains BLOCKED until P2.1 audit passes.
 
 ## Handoff template
 

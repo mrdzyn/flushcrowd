@@ -247,14 +247,15 @@ class InMemoryRestroomRepository implements RestroomRepository {
     final uid = authRepository?.currentUserId ?? 'mock_uid_123';
 
     // 1. Validate stable restroom ID (MINOR-2)
-    final restroomId = command.restroomId.trim();
+    final restroomId = command.restroomId;
     if (restroomId.isEmpty ||
+        restroomId != restroomId.trim() ||
         restroomId.length > 100 ||
         restroomId.contains('/') ||
         restroomId == '.' ||
         restroomId == '..') {
       throw const RepositoryException(
-        'Invalid stable restroom ID: must be non-empty, <= 100 characters, and contain no path separators.',
+        'Invalid stable restroom ID: must be non-empty, cannot contain leading/trailing whitespace, <= 100 characters, and contain no path separators.',
         'invalid-restroom-id',
       );
     }

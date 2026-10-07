@@ -2,6 +2,15 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../../../core/constants/app_constants.dart';
 
+/// Represents a raw document retrieved from Cloud Firestore during point reads,
+/// preserving the [documentId] and the raw [data] payload without mutating the payload map.
+class FirestoreDocumentData {
+  final String documentId;
+  final Map<String, dynamic> data;
+
+  const FirestoreDocumentData({required this.documentId, required this.data});
+}
+
 /// Narrow abstraction over Firestore batch mutation and point-read execution
 /// to enable clean, deterministic testing of production submission and reconciliation
 /// without mocking static methods or requiring emulator infrastructure for simple unit runs.
@@ -16,10 +25,10 @@ abstract class FirestoreMutationAdapter {
   });
 
   /// Reads a public restroom document by its ID, or returns null if not found.
-  Future<Map<String, dynamic>?> getPublicRestroom(String restroomId);
+  Future<FirestoreDocumentData?> getPublicRestroom(String restroomId);
 
   /// Reads a private contribution document by its ID, or returns null if not found.
-  Future<Map<String, dynamic>?> getPrivateContribution(String contributionId);
+  Future<FirestoreDocumentData?> getPrivateContribution(String contributionId);
 }
 
 /// Production implementation using standard FirebaseFirestore.
@@ -54,7 +63,7 @@ class ProductionFirestoreMutationAdapter implements FirestoreMutationAdapter {
   }
 
   @override
-  Future<Map<String, dynamic>?> getPublicRestroom(String restroomId) async {
+  Future<FirestoreDocumentData?> getPublicRestroom(String restroomId) async {
     final docSnapshot = await _firestore
         .collection(AppConstants.restroomsCollection)
         .doc(restroomId)
@@ -63,13 +72,14 @@ class ProductionFirestoreMutationAdapter implements FirestoreMutationAdapter {
     if (!docSnapshot.exists || data == null) {
       return null;
     }
-    final map = Map<String, dynamic>.from(data);
-    map['id'] = docSnapshot.id;
-    return map;
+    return FirestoreDocumentData(
+      documentId: docSnapshot.id,
+      data: Map<String, dynamic>.from(data),
+    );
   }
 
   @override
-  Future<Map<String, dynamic>?> getPrivateContribution(
+  Future<FirestoreDocumentData?> getPrivateContribution(
     String contributionId,
   ) async {
     final docSnapshot = await _firestore
@@ -80,8 +90,9 @@ class ProductionFirestoreMutationAdapter implements FirestoreMutationAdapter {
     if (!docSnapshot.exists || data == null) {
       return null;
     }
-    final map = Map<String, dynamic>.from(data);
-    map['id'] = docSnapshot.id;
-    return map;
+    return FirestoreDocumentData(
+      documentId: docSnapshot.id,
+      data: Map<String, dynamic>.from(data),
+    );
   }
 }
