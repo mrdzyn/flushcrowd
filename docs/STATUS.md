@@ -5,34 +5,26 @@
 - **Last updated:** 2026-10-07
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
-- **Overall stage:** Housekeeping / Product & Repository Rename
+- **Overall stage:** Staging Environment Readiness / Phase 2 Preparation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** Product rename final audit remediation complete; independent exact-head re-audit pending
-- **Current branch:** `chore/rename-flushcrowd`
-- **Current PR:** [#5](https://github.com/mrdzyn/flushcrowd/pull/5) — `chore: rename LooRadar to FlushCrowd`
-- **Base:** `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5` (includes Phase 2 P2.2 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [FINAL AUDIT REMEDIATION COMPLETE — independent exact-head re-audit pending]; P2.3 [NOT STARTED — BLOCKED pending rename PR audit and staging setup].
+- **Current milestone:** Staging repository configuration wiring complete; external Firebase/Maps provisioning and live QA pending owner verification
+- **Current branch:** `chore/flushcrowd-staging-readiness`
+- **Current PR:** [#6](https://github.com/mrdzyn/flushcrowd/pull/6) — `chore: prepare FlushCrowd staging environment`
+- **Base:** `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (includes PR #5 product rename squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [ACTIVE / CONFIGURATION WIRING COMPLETE]; P2.3 [NOT STARTED — blocked pending live staging verification].
 
 ## Current objective
 
-Controlled repository and product rename from **LooRadar / looradar** to **FlushCrowd / flushcrowd**:
-- Canonical repository: `mrdzyn/flushcrowd` (`https://github.com/mrdzyn/flushcrowd.git`).
-- App display name: `FlushCrowd`.
-- Android package / namespace: `com.flushcrowd.flushcrowd`.
-- iOS bundle identifier: `com.flushcrowd.flushcrowd` (tests: `com.flushcrowd.flushcrowd.RunnerTests`).
-- Dart package name: `flushcrowd` (`pubspec.yaml`), imports updated to `package:flushcrowd/...`.
-- Main app entry widget: `FlushCrowdApp` (`lib/main.dart`).
-- Approved brand assets tracked: `docs/assets/brand/flushcrowd-icon.png` (SHA256: `246bc071...`) and `docs/assets/brand/flushcrowd-horizontal.png` (SHA256: `f81e2513...`), byte-for-byte exact copies.
-- Native launcher assets generated: Android `mipmap-*` (`ic_launcher.png`, 48 to 192px) and iOS `AppIcon.appiconset` (all 15 sizes, alpha removed for App Store compliance) derived from canonical `flushcrowd-icon.png`.
-- UX assets renamed: `docs/assets/flushcrowd-mobile-ux-reference.png` and `.svg`.
-- Non-live URL placeholders: `buyMeACoffeeUrl` and `privacyPolicyUrl` in `AppConstants` set to `''` pending owner destination verification; no unverified or unowned external destinations in code.
-- Sanitized environment template: `.env.example` uses neutral non-live placeholders `your_flushcrowd_firebase_project_id` and `your_flushcrowd_firebase_storage_bucket`.
-- GitHub repository metadata: description updated to `"FlushCrowd — global community-powered restroom and toilet finder."`.
-- CI workflow renamed to `FlushCrowd CI`, branch triggers updated for `chore/**`.
-- Security rules test project IDs updated to `flushcrowd-*-rules-test`.
-- Documentation updated across all specifications in `docs/` and root `README.md`, `AGENTS.md`.
-- Phase 0–P2.2 functionality and tests fully preserved and verified.
-- P2.3 remains strictly **NOT STARTED** and blocked until rename PR audit passes and staging configuration is established.
+Establish and document executable staging environment configuration following the completed product and repository rename:
+- **Android Firebase Integration:** Declared `com.google.gms.google-services` plugin (4.4.2) in `settings.gradle.kts` and applied it conditionally in `build.gradle.kts` when `android/app/google-services.json` is present. Preserves credential-free builds in CI and local dev when absent.
+- **iOS Firebase Integration:** Added deterministic `Copy GoogleService-Info.plist` Xcode build phase in `Runner.xcodeproj/project.pbxproj` copying `ios/Runner/GoogleService-Info.plist` to the application bundle when present. Preserves credential-free builds when absent.
+- **Android Maps Wiring:** Bound `android/local.properties` (`MAPS_API_KEY`) through Gradle `manifestPlaceholders["MAPS_API_KEY"]` to `AndroidManifest.xml` with safe `DEFAULT_MAPS_API_KEY` fallback.
+- **iOS Maps Wiring:** Bound `ios/Flutter/Secrets.xcconfig` (`GOOGLE_MAPS_API_KEY`) through `Debug.xcconfig` / `Release.xcconfig` to `Info.plist` (`GoogleMapsApiKey`) and consumed in `AppDelegate.swift` with safe default check.
+- **Configuration Hygiene & Truth:** Updated `.env.example` as an informational reference matrix (no runtime dotenv loading). Removed dead Dart maps key and App Check token fields from `AppConfig`.
+- **App Check Alignment:** Configured Debug providers for `development` and `staging` (`!config.isProduction`), and Play Integrity / App Attest for `production`. Documented standard debug token console workflow.
+- **Scoped Deployment & Correct Activation Order:** Documented explicit project flag (`firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) and corrected human activation sequence to deploy audited rules before connectivity verification.
+- **Gitignore Protection:** Strengthened `.gitignore` patterns ensuring `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `Secrets.xcconfig`, `*debug-token*`, and `.env*` cannot be committed across any directory depth.
+- **Security & Integrity Preservation:** Production contribution writes remain guarded by the P2.6 abuse rate-limiting release gate. Offline development fallback is preserved and validated.
 
 The active specification is:
 
@@ -90,6 +82,15 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - **P1.4 Hardening & Cost Bounds:** Bounded read limits (theoretical max 800 reads, 200 decoded candidates), non-blocking refresh error retention and retry, 48×48 touch targets, CI Node.js 22 upgrade, verified Android and iOS builds.
 - Independent audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
+### Product & Repository Rename [MERGED]
+Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
+- Controlled rename from LooRadar / looradar to FlushCrowd / flushcrowd.
+- Android package / namespace: `com.flushcrowd.flushcrowd`.
+- iOS bundle identifier: `com.flushcrowd.flushcrowd`.
+- Canonical brand marks: `docs/assets/brand/flushcrowd-icon.png` and `docs/assets/brand/flushcrowd-horizontal.png`.
+- Native launcher assets generated for Android (mipmap-*) and iOS (AppIcon.appiconset).
+- Independent audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
+
 ---
 
 ## Active Phase 2 Scope — Add Restroom
@@ -140,7 +141,20 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Validated all 49 Firestore Security Rules tests under Firestore emulator.
 - Merged into `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5`.
 
-### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [NOT STARTED — BLOCKED pending rename PR audit and staging setup]
+### Staging Environment Readiness [ACTIVE / CONFIGURATION WIRING COMPLETE]
+- Defined canonical staging resource contract in `docs/07-environment-setup.md` (`flushcrowd-staging`, `com.flushcrowd.flushcrowd`).
+- Wired executable Android Firebase integration: declared `com.google.gms.google-services` (4.4.2) in `settings.gradle.kts` and conditionally applied in `build.gradle.kts` when `google-services.json` is present; credential-free builds succeed when absent.
+- Wired executable iOS Firebase integration: added `Copy GoogleService-Info.plist` build phase in `project.pbxproj` copying into the application bundle when present; credential-free builds succeed when absent.
+- Wired executable Android Maps integration: `android/local.properties` (`MAPS_API_KEY`) via Gradle manifest placeholder with `DEFAULT_MAPS_API_KEY` fallback.
+- Wired executable iOS Maps integration: `ios/Flutter/Secrets.xcconfig` (`GOOGLE_MAPS_API_KEY`) via `Debug.xcconfig` / `Release.xcconfig` to `Info.plist` (`GoogleMapsApiKey`) and `AppDelegate.swift`.
+- Cleaned up dead configuration: converted `.env.example` to truthful configuration matrix reference; removed unused maps key and debug token fields from `AppConfig`.
+- Aligned App Check providers: development & staging use Debug providers, production uses Play Integrity / App Attest.
+- Hardened `.gitignore` to protect `Secrets.xcconfig`, `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `*debug-token*`, and `.env*`.
+- Documented explicit-scoped staging deployment command (`firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) and corrected 20-step human activation sequence.
+- Documented 11-point acceptance criteria for unblocking Milestone P2.3.
+- External cloud provisioning and live QA pending owner verification.
+
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [NOT STARTED — blocked pending live staging verification]
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
 - Implement tri-state amenity selector widgets.
 - Implement `AddRestroomNotifier` form state management, normalization, validation, and ID allocation.
@@ -180,32 +194,69 @@ Do not implement in this phase:
 - social logins or traditional user accounts;
 - web/admin moderation dashboards (Phase 4).
 
+## External staging environment state
+
+Owner-confirmed staging infrastructure state:
+- Firebase project `flushcrowd-staging` — CREATED
+- Android Firebase app `com.flushcrowd.flushcrowd` — REGISTERED
+- iOS Firebase app `com.flushcrowd.flushcrowd` — REGISTERED
+- `google-services.json` — DOWNLOADED; local placement/verification pending unless independently confirmed
+- `GoogleService-Info.plist` — DOWNLOADED; local placement/verification pending unless independently confirmed
+- Anonymous Authentication — ENABLED
+- Anonymous account automatic cleanup — ENABLED
+- Cloud Firestore — CREATED
+- Maps SDK for Android — ENABLED
+- Maps SDK for iOS — ENABLED
+- Android restricted Maps key — PENDING
+- iOS restricted Maps key — PENDING
+- App Check live/debug verification — NOT RUN
+- Firestore Rules/index staging deployment — NOT RUN
+- Android live staging QA — NOT RUN
+- iOS live staging QA — NOT RUN
+
 ## Current owner actions / external dependencies
 
-These are required for live staging QA and production readiness:
+Remaining human owner actions required for live staging QA and P2.3 acceptance gate:
 
-1. Create/reuse platform-restricted Google Maps Android and iOS keys restricted to package/bundle identifier `com.flushcrowd.flushcrowd`.
-2. Provision Firebase project (e.g. `flushcrowd-staging` / `flushcrowd-prod`) and enable Anonymous Authentication.
-3. Place local `google-services.json` and `GoogleService-Info.plist` configured for `com.flushcrowd.flushcrowd` outside version control.
-4. Establish and verify external support/donation account (e.g. Buy Me a Coffee or equivalent) and configure `AppConstants.buyMeACoffeeUrl`.
-5. Establish and publish external privacy policy URL (e.g. official domain/page) and configure `AppConstants.privacyPolicyUrl`.
-6. Configure GCP budget alerts.
-7. Production Android signing remains a later release-readiness action.
+1. Verify downloaded Firebase config files (`google-services.json` and `GoogleService-Info.plist`) are placed in their documented local gitignored paths:
+   - `android/app/google-services.json`
+   - `ios/Runner/GoogleService-Info.plist`
+2. Create and restrict Android Maps API key in Google Cloud Console:
+   - Application restriction: Android apps (`com.flushcrowd.flushcrowd` + staging/debug SHA-1)
+   - API restriction: **Maps SDK for Android** only
+3. Create and restrict iOS Maps API key in Google Cloud Console:
+   - Application restriction: iOS apps (`com.flushcrowd.flushcrowd`)
+   - API restriction: **Maps SDK for iOS** only
+4. Configure local native Maps key files (outside version control):
+   - Add `MAPS_API_KEY=<restricted-android-key>` to `android/local.properties`
+   - Add `GOOGLE_MAPS_API_KEY=<restricted-ios-key>` to `ios/Flutter/Secrets.xcconfig`
+5. Run Android and iOS staging builds locally and perform live QA.
+6. Verify Firebase initialization and Anonymous Authentication in the live staging project.
+7. Verify App Check debug-token workflow (token emitted in runtime console registered in Firebase Console).
+8. After explicit owner approval, deploy audited Firestore Rules and indexes using:
+   ```bash
+   firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes
+   ```
+9. Verify Firestore read connectivity under the deployed staging rules.
+10. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
+11. Configure GCP billing budget alerts.
+12. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (257/257 passed)
+- `flutter test` — PASS (260/260 passed)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
+- `flutter build apk --debug` without credentials — PASS
+- `flutter build ios --debug --no-codesign` without credentials — PASS
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
-- Firebase live discovery — NOT RUN; live device/owner config pending
-- Google Maps live discovery — NOT RUN; live device/owner config pending
+- Exact-head CI (`FlushCrowd CI`) — PASS (all 4 GitHub Actions checks passed on exact head)
 
 ## Next recommended action
 
-Perform independent exact-head audit and merge of product rename PR (`chore/rename-flushcrowd` -> `main`). Complete external Firebase staging project creation and Maps key restrictions for `com.flushcrowd.flushcrowd` before starting P2.3.
+Human owner to complete remaining external setup steps (verify local Firebase config placement, generate restricted Maps keys, run live staging QA, and deploy audited rules via `firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) to satisfy the 11-point staging acceptance gate and unblock Milestone P2.3.
 
 ## Handoff template
 
