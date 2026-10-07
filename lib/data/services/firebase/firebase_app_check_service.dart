@@ -20,12 +20,14 @@ class FirebaseAppCheckService {
     }
 
     try {
-      if (kDebugMode || _config.isDevelopment) {
+      if (!_config.isProduction) {
         await FirebaseAppCheck.instance.activate(
           providerAndroid: const AndroidDebugProvider(),
           providerApple: const AppleDebugProvider(),
         );
-        debugPrint('[AppCheck] Activated with Debug provider.');
+        debugPrint(
+          '[AppCheck] Activated with Debug provider (environment: ${_config.environment.name}).',
+        );
       } else {
         await FirebaseAppCheck.instance.activate(
           providerAndroid: const AndroidPlayIntegrityProvider(),

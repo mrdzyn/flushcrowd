@@ -7,20 +7,23 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Staging Environment Readiness / Phase 2 Preparation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** Staging repository readiness complete; external Firebase/Maps configuration pending owner verification
+- **Current milestone:** Staging repository configuration wiring complete; external Firebase/Maps provisioning and live QA pending owner verification
 - **Current branch:** `chore/flushcrowd-staging-readiness`
 - **Current PR:** [#6](https://github.com/mrdzyn/flushcrowd/pull/6) — `chore: prepare FlushCrowd staging environment`
 - **Base:** `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (includes PR #5 product rename squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [ACTIVE / REPOSITORY READINESS COMPLETE]; P2.3 [NOT STARTED — blocked pending live staging verification].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [ACTIVE / CONFIGURATION WIRING COMPLETE]; P2.3 [NOT STARTED — blocked pending live staging verification].
 
 ## Current objective
 
-Establish and document staging environment readiness following the completed product and repository rename:
-- **Staging Resource Contract:** Canonical project ID `flushcrowd-staging`, application ID `com.flushcrowd.flushcrowd` (Android package and iOS bundle). Unified identifiers without extra flavors/schemes. Future production project `flushcrowd-prod` (uncreated).
-- **Google Maps API Restrictions:** Only `Maps SDK for Android` (restricted to `com.flushcrowd.flushcrowd` + SHA-1) and `Maps SDK for iOS` (restricted to `com.flushcrowd.flushcrowd`) are permitted. All paid Web Services APIs (Places, Geocoding, Directions, Routes, Street View) remain strictly disabled.
-- **Gitignore Protection:** Strengthened `.gitignore` patterns ensuring `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `*debug-token*`, and `.env*` cannot be committed across any directory depth.
-- **Human Activation Sequence:** Comprehensive 20-step activation sequence documented in `docs/07-environment-setup.md` for owner execution.
-- **Staging Acceptance Gate:** Strict 11-point acceptance criteria documented before P2.3 can begin.
+Establish and document executable staging environment configuration following the completed product and repository rename:
+- **Android Firebase Integration:** Declared `com.google.gms.google-services` plugin (4.4.2) in `settings.gradle.kts` and applied it conditionally in `build.gradle.kts` when `android/app/google-services.json` is present. Preserves credential-free builds in CI and local dev when absent.
+- **iOS Firebase Integration:** Added deterministic `Copy GoogleService-Info.plist` Xcode build phase in `Runner.xcodeproj/project.pbxproj` copying `ios/Runner/GoogleService-Info.plist` to the application bundle when present. Preserves credential-free builds when absent.
+- **Android Maps Wiring:** Bound `android/local.properties` (`MAPS_API_KEY`) through Gradle `manifestPlaceholders["MAPS_API_KEY"]` to `AndroidManifest.xml` with safe `DEFAULT_MAPS_API_KEY` fallback.
+- **iOS Maps Wiring:** Bound `ios/Flutter/Secrets.xcconfig` (`GOOGLE_MAPS_API_KEY`) through `Debug.xcconfig` / `Release.xcconfig` to `Info.plist` (`GoogleMapsApiKey`) and consumed in `AppDelegate.swift` with safe default check.
+- **Configuration Hygiene & Truth:** Updated `.env.example` as an informational reference matrix (no runtime dotenv loading). Removed dead Dart maps key and App Check token fields from `AppConfig`.
+- **App Check Alignment:** Configured Debug providers for `development` and `staging` (`!config.isProduction`), and Play Integrity / App Attest for `production`. Documented standard debug token console workflow.
+- **Scoped Deployment & Correct Activation Order:** Documented explicit project flag (`firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) and corrected human activation sequence to deploy audited rules before connectivity verification.
+- **Gitignore Protection:** Strengthened `.gitignore` patterns ensuring `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `Secrets.xcconfig`, `*debug-token*`, and `.env*` cannot be committed across any directory depth.
 - **Security & Integrity Preservation:** Production contribution writes remain guarded by the P2.6 abuse rate-limiting release gate. Offline development fallback is preserved and validated.
 
 The active specification is:
@@ -138,12 +141,18 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Validated all 49 Firestore Security Rules tests under Firestore emulator.
 - Merged into `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5`.
 
-### Staging Environment Readiness [ACTIVE / REPOSITORY READINESS COMPLETE]
+### Staging Environment Readiness [ACTIVE / CONFIGURATION WIRING COMPLETE]
 - Defined canonical staging resource contract in `docs/07-environment-setup.md` (`flushcrowd-staging`, `com.flushcrowd.flushcrowd`).
-- Hardened `.gitignore` to protect `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `*debug-token*`, and `.env*` at any path depth.
-- Documented 20-step human staging activation sequence in `docs/07-environment-setup.md`.
+- Wired executable Android Firebase integration: declared `com.google.gms.google-services` (4.4.2) in `settings.gradle.kts` and conditionally applied in `build.gradle.kts` when `google-services.json` is present; credential-free builds succeed when absent.
+- Wired executable iOS Firebase integration: added `Copy GoogleService-Info.plist` build phase in `project.pbxproj` copying into the application bundle when present; credential-free builds succeed when absent.
+- Wired executable Android Maps integration: `android/local.properties` (`MAPS_API_KEY`) via Gradle manifest placeholder with `DEFAULT_MAPS_API_KEY` fallback.
+- Wired executable iOS Maps integration: `ios/Flutter/Secrets.xcconfig` (`GOOGLE_MAPS_API_KEY`) via `Debug.xcconfig` / `Release.xcconfig` to `Info.plist` (`GoogleMapsApiKey`) and `AppDelegate.swift`.
+- Cleaned up dead configuration: converted `.env.example` to truthful configuration matrix reference; removed unused maps key and debug token fields from `AppConfig`.
+- Aligned App Check providers: development & staging use Debug providers, production uses Play Integrity / App Attest.
+- Hardened `.gitignore` to protect `Secrets.xcconfig`, `google-services.json`, `GoogleService-Info.plist`, `local.properties`, `key.properties`, `*debug-token*`, and `.env*`.
+- Documented explicit-scoped staging deployment command (`firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes`) and corrected 20-step human activation sequence.
 - Documented 11-point acceptance criteria for unblocking Milestone P2.3.
-- External cloud provisioning pending owner execution.
+- External cloud provisioning and live QA pending owner verification.
 
 ### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [NOT STARTED — blocked pending live staging verification]
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).

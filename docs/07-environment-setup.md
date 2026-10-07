@@ -1,6 +1,6 @@
 # FlushCrowd Environment & Secrets Setup Guide
 
-This document defines configuration, secrets management, staging environment specifications, and cost-control procedures for FlushCrowd.
+This document defines configuration, secrets management, staging environment specifications, native build integration paths, and cost-control procedures for FlushCrowd.
 
 ---
 
@@ -10,12 +10,23 @@ FlushCrowd enforces a strict zero-secrets-in-repo policy:
 
 - Never commit service-account credentials, private signing keys, App Check debug tokens, or unrestricted API keys.
 - `.gitignore` protects sensitive configuration across all paths:
-  - Environment files: `.env*` (with `!.env.example` tracked as a sanitized template)
+  - Environment files: `.env*` (with `!.env.example` tracked as a sanitized reference template)
   - Firebase configuration: `google-services.json`, `**/google-services.json`, `GoogleService-Info.plist`, `**/GoogleService-Info.plist`
   - App Check debug tokens: `*debug-token*`
   - Signing keys & certificates: `*.key`, `*.keystore`, `*.jks`, `*.p8`, `*.p12`, `*.mobileprovision`
-  - Local overrides: `local.properties`, `**/local.properties`, `key.properties`, `**/key.properties`
-- Compile-time values are passed using `--dart-define` or injected natively via Gradle / Xcode build properties.
+  - Local overrides & secrets: `local.properties`, `**/local.properties`, `key.properties`, `**/key.properties`, `ios/Flutter/Secrets.xcconfig`, `**/Secrets.xcconfig`
+
+### Configuration Matrix (No Dotenv Runtime Loader)
+FlushCrowd does **not** use a runtime dotenv package; `.env` is not loaded at runtime. Configuration is managed via:
+1. **Compile-time Dart defines (`--dart-define`):**
+   - `APP_ENV`: `development` | `staging` | `production` (default: `development`)
+   - `ENABLE_APP_CHECK`: `true` | `false` (default: `true`)
+2. **Platform-native Maps keys:**
+   - Android: `android/local.properties` -> `MAPS_API_KEY=<restricted-key>`
+   - iOS: `ios/Flutter/Secrets.xcconfig` -> `GOOGLE_MAPS_API_KEY=<restricted-key>`
+3. **Platform-native Firebase configuration:**
+   - Android: `android/app/google-services.json`
+   - iOS: `ios/Runner/GoogleService-Info.plist`
 
 ---
 
@@ -26,12 +37,12 @@ Staging uses the following canonical configuration:
 - **Firebase / GCP Staging Project ID:** `flushcrowd-staging`
 - **Android Application ID / Package Name:** `com.flushcrowd.flushcrowd`
 - **iOS Bundle Identifier:** `com.flushcrowd.flushcrowd`
-- **Flavors / Schemes:** None. The application uses unified bundle identifiers across staging and production unless future scope explicitly requires build flavors.
+- **Flavors / Schemes:** None. The application uses unified bundle identifiers across staging and production without build flavors or custom schemes.
 - **Future Production Project:** `flushcrowd-prod` (do **NOT** create or configure production resources during staging readiness).
 
 ---
 
-## 3. Google Maps Platform Setup & Restrictions
+## 3. Google Maps Platform Setup & Native Integration
 
 FlushCrowd requires **Google Maps SDK for Android** and **Google Maps SDK for iOS** for visualization.
 
@@ -40,71 +51,98 @@ FlushCrowd requires **Google Maps SDK for Android** and **Google Maps SDK for iO
 - FlushCrowd discovery uses Cloud Firestore spatial geohash queries, and navigation is handed off directly to external navigation applications (Google Maps, Apple Maps, Waze).
 - Avoid enabling paid Google Maps Platform Web Services APIs.
 
-### Platform API Key Restrictions:
+### Platform Key Restrictions & Native Wiring:
 
-1. **Android Key:**
+1. **Android Key Configuration:**
    - In Google Cloud Console -> **APIs & Services** -> **Credentials**.
    - Create an API Key named `FlushCrowd Android Staging Key`.
    - Set **API restrictions**: Select only **Maps SDK for Android**.
    - Set **Application restrictions**: Select **Android apps**.
-   - Add package name: `com.flushcrowd.flushcrowd`
-   - Add SHA-1 certificate fingerprint from your debug keystore (`keytool -list -v -keystore ~/.android/debug.keystore`) or release keystore.
-   - For local builds, add the key to `android/local.properties` (gitignored):
+   - Add package name: `com.flushcrowd.flushcrowd`.
+   - Add SHA-1 certificate fingerprint from your staging/debug keystore (`keytool -list -v -keystore ~/.android/debug.keystore`).
+   - Add the key to `android/local.properties` (gitignored):
      ```properties
      MAPS_API_KEY=AIzaSy...
      ```
-     Or build with:
-     ```bash
-     flutter run --dart-define=MAPS_API_KEY_ANDROID=AIzaSy...
-     ```
+   - **Native Consumption Path:** `android/app/build.gradle.kts` reads `MAPS_API_KEY` from `local.properties` and injects it into `manifestPlaceholders["MAPS_API_KEY"]`. `AndroidManifest.xml` references it via `<meta-data android:name="com.google.android.geo.API_KEY" android:value="${MAPS_API_KEY}" />`. If absent, defaults to `"DEFAULT_MAPS_API_KEY"`.
+   - Note: Dart `--dart-define` does not configure the native Android Maps SDK.
 
-2. **iOS Key:**
+2. **iOS Key Configuration:**
    - In Google Cloud Console, create an API Key named `FlushCrowd iOS Staging Key`.
    - Set **API restrictions**: Select only **Maps SDK for iOS**.
    - Set **Application restrictions**: Select **iOS apps**.
    - Add iOS bundle identifier: `com.flushcrowd.flushcrowd`.
-   - For local builds, pass via `--dart-define=MAPS_API_KEY_IOS=AIzaSy...` or configure in `ios/Flutter/Debug.xcconfig` / `Release.xcconfig`.
-   - Never commit API keys.
+   - Add the key to `ios/Flutter/Secrets.xcconfig` (gitignored):
+     ```xcconfig
+     GOOGLE_MAPS_API_KEY=AIzaSy...
+     ```
+   - **Native Consumption Path:** `ios/Flutter/Debug.xcconfig` and `Release.xcconfig` set a safe fallback (`GOOGLE_MAPS_API_KEY=DEFAULT_MAPS_API_KEY`) and optionally include `#include? "Secrets.xcconfig"`. `ios/Runner/Info.plist` defines `<key>GoogleMapsApiKey</key><string>$(GOOGLE_MAPS_API_KEY)</string>`. `AppDelegate.swift` reads `Bundle.main.object(forInfoDictionaryKey: "GoogleMapsApiKey")` and calls `GMSServices.provideAPIKey()` only when non-empty, non-default, and non-macro.
+   - Note: Dart `--dart-define` does not configure the native iOS Maps SDK.
 
 ---
 
-## 4. Firebase Staging Project & Services
+## 4. Firebase Staging Project & Native Integration Paths
 
-### 1. App Registrations & Configuration Files:
-- **Android App:** Registered with package `com.flushcrowd.flushcrowd`. Download `google-services.json` and place at `android/app/google-services.json` (gitignored).
-- **iOS App:** Registered with bundle identifier `com.flushcrowd.flushcrowd`. Download `GoogleService-Info.plist` and place at `ios/Runner/GoogleService-Info.plist` (gitignored).
-- Both configuration files must strictly remain outside version control.
+### 1. Native Build Integration Boundaries:
+
+- **Android Google Services Plugin (`android/app/google-services.json`):**
+  - Declared in `android/settings.gradle.kts`: `id("com.google.gms.google-services") version "4.4.2" apply false`.
+  - Conditionally applied in `android/app/build.gradle.kts`:
+    ```kotlin
+    if (file("google-services.json").exists()) {
+        apply(plugin = "com.google.gms.google-services")
+    }
+    ```
+  - **Absent-file behavior:** CI and local development builds without `google-services.json` succeed cleanly without error.
+  - **Present-file behavior:** When `android/app/google-services.json` is provided, the plugin generates the required Android resources (`google_app_id`, etc.) consumed by `Firebase.initializeApp()`.
+
+- **iOS GoogleService-Info.plist Bundle Mechanism (`ios/Runner/GoogleService-Info.plist`):**
+  - Deterministic Xcode build phase in `ios/Runner.xcodeproj/project.pbxproj`: `Copy GoogleService-Info.plist` executes after `Resources`.
+  - Shell script logic:
+    ```sh
+    PLIST="${PROJECT_DIR}/Runner/GoogleService-Info.plist"
+    TARGET_DIR="${TARGET_BUILD_DIR}/${UNLOCALIZED_RESOURCES_FOLDER_PATH}"
+    if [ -f "$PLIST" ]; then
+      echo "Copying GoogleService-Info.plist into application bundle..."
+      mkdir -p "$TARGET_DIR"
+      cp "$PLIST" "$TARGET_DIR/GoogleService-Info.plist"
+    fi
+    ```
+  - **Absent-file behavior:** If `GoogleService-Info.plist` is absent, the script exits cleanly; credential-free builds (CI and local) succeed.
+  - **Present-file behavior:** When `ios/Runner/GoogleService-Info.plist` is placed by the owner, it is copied directly into the app bundle where `FirebaseApp.configure()` discovers it at runtime.
 
 ### 2. Authentication:
 - In Firebase Console -> **Build** -> **Authentication** -> **Sign-in method**.
 - Enable **Anonymous** provider only.
 - **DO NOT** enable email/password, Google sign-in, Apple login, Facebook, phone, or any other identity provider. Traditional login is not required for FlushCrowd V1.
 
-### 3. Cloud Firestore:
-- Provision Cloud Firestore in the `flushcrowd-staging` project.
-- **Do NOT deploy security rules during initial staging setup.**
-- When ready and explicitly approved by the owner, rules and indexes are deployed via:
+### 3. Cloud Firestore & Explicit Staging Deployment:
+- Provision Cloud Firestore in `flushcrowd-staging`.
+- Because `.firebaserc` is not checked into version control, all deployment commands **must explicitly specify** the target project:
   ```bash
-  firebase deploy --only firestore:rules,firestore:indexes
+  firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes
   ```
+- **Do NOT deploy security rules during initial staging setup.** Rules are deployed only during the structured activation sequence after explicit human owner approval.
 - Public/private separation: `restrooms` and `ratings` are sanitized for public read. `ratingOwnership`, `contributions`, and `reports` are private.
 
 ### 4. Firebase App Check Strategy:
-FlushCrowd integrates App Check to protect backend resources from abuse:
-- **Staging / Local Development / Simulator / CI:**
+FlushCrowd integrates App Check with environment-aligned provider selection:
+- **Development & Staging (`!config.isProduction`):**
   - Configured with `AndroidDebugProvider()` and `AppleDebugProvider()`.
-  - For local device testing, register the printed debug token in Firebase Console -> **App Check** -> **Apps** -> **Manage debug tokens**.
+  - At runtime, the Firebase SDK logs an App Check debug token to the console.
+  - Register the emitted debug token in Firebase Console -> **App Check** -> **Apps** -> **Manage debug tokens**.
   - **Never commit debug tokens to git.**
-- **Production Android:** Configured with `AndroidPlayIntegrityProvider()` linked to Google Play Console.
-- **Production Apple:** Configured with `AppleAppAttestWithDeviceCheckFallbackProvider()`.
+- **Production (`config.isProduction`):**
+  - Android: `AndroidPlayIntegrityProvider()` linked to Google Play Console.
+  - iOS: `AppleAppAttestWithDeviceCheckFallbackProvider()`.
 - **Enforcement Notice:**
-  - Do **NOT** enable App Check enforcement in staging. Leave providers in monitoring/un-enforced mode until traffic metrics are observed and validated.
+  - Do **NOT** enable App Check enforcement in staging. Leave providers in monitoring/un-enforced mode until valid release traffic metrics are observed.
 
 ---
 
-## 5. Human Staging Activation Sequence
+## 5. Corrected Human Staging Activation Sequence
 
-The human owner can follow this exact 20-step sequence to activate the staging environment:
+The human owner should follow this exact sequence in order:
 
 1. Create Firebase / GCP project `flushcrowd-staging`.
 2. Register Android app with package name `com.flushcrowd.flushcrowd`.
@@ -115,18 +153,23 @@ The human owner can follow this exact 20-step sequence to activate the staging e
 7. Place both config files locally in their documented gitignored paths:
    - `android/app/google-services.json`
    - `ios/Runner/GoogleService-Info.plist`
-8. Create Google Maps Android API key in Google Cloud Console.
-9. Restrict Android key: Application restriction to Android apps (`com.flushcrowd.flushcrowd` + staging SHA-1 fingerprint) and API restriction to **Maps SDK for Android** only.
-10. Create Google Maps iOS API key in Google Cloud Console.
-11. Restrict iOS key: Application restriction to iOS apps (`com.flushcrowd.flushcrowd`) and API restriction to **Maps SDK for iOS** only.
-12. Configure local keys without committing them (in `android/local.properties` or via `--dart-define`).
-13. Register App Check debug token in Firebase Console only when local device/simulator testing requires it.
-14. Build and run Android staging build locally (`flutter run -d <android-device>`).
-15. Build and run iOS staging build locally (`flutter run -d <ios-device>`).
-16. Verify anonymous authentication sign-in succeeds in the staging console.
-17. Verify Google Map tiles render correctly on both platforms using the restricted keys.
-18. Verify Cloud Firestore connectivity without executing live contribution writes.
-19. Only after explicit owner approval: deploy Firestore Rules and indexes via `firebase deploy --only firestore:rules,firestore:indexes`.
+8. Create Google Maps Android API key in Google Cloud Console; restrict to Android apps (`com.flushcrowd.flushcrowd` + staging SHA-1) and **Maps SDK for Android** only.
+9. Create Google Maps iOS API key in Google Cloud Console; restrict to iOS apps (`com.flushcrowd.flushcrowd`) and **Maps SDK for iOS** only.
+10. Configure local Maps keys without committing them:
+    - Add `MAPS_API_KEY=<restricted-android-key>` to `android/local.properties`
+    - Add `GOOGLE_MAPS_API_KEY=<restricted-ios-key>` to `ios/Flutter/Secrets.xcconfig`
+11. Build and run Android and iOS staging builds locally; verify native builds succeed and Google Maps render correctly.
+12. Verify Firebase SDK initializes successfully on both platforms without fallback error logs.
+13. Obtain explicit human owner approval before deploying Firestore security rules.
+14. Deploy audited Firestore Rules and indexes explicitly to staging:
+    ```bash
+    firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes
+    ```
+15. Verify Cloud Firestore read connectivity under the deployed rules without executing contribution writes.
+16. Verify Anonymous Authentication sign-in succeeds and creates an anonymous user session.
+17. Verify Firebase App Check debug behavior: note debug token in console and register it in Firebase Console -> App Check -> Manage debug tokens.
+18. Evaluate staging acceptance gate: confirm all 11 criteria in Section 6 are verified.
+19. Confirm that production contribution writes remain blocked by the P2.6 rate-limiting release gate.
 20. Only after observed App Check traffic and validated release builds: consider enabling enforcement later.
 
 > [!NOTE]

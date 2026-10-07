@@ -61,3 +61,10 @@ kotlin {
 flutter {
     source = "../.."
 }
+
+// Apply Google Services Gradle plugin only when google-services.json is present locally.
+// This allows CI and credential-free development builds to succeed without error, while
+// properly processing Firebase configuration when the file is provided.
+if (file("google-services.json").exists()) {
+    apply(plugin = "com.google.gms.google-services")
+}
