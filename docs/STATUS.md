@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 — Add Restroom
 - **Current milestone:** Restoring P2.2 Add Restroom navigation entry wiring following live staging QA finding; P2.3 remains blocked pending live staging verification
 - **Current branch:** `fix/p2.2-add-entry-wiring`
-- **Current PR:** pending
+- **Current PR:** [#7](https://github.com/mrdzyn/flushcrowd/pull/7) — `fix: restore Add Restroom navigation entry`
 - **Base:** `main` at `76e8669c1646667c7a1e6484d643b9d949a8846d` (includes PR #6 staging readiness squash merge)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [ACTIVE]; P2.3 [NOT STARTED — blocked pending completion of live staging verification].
 
