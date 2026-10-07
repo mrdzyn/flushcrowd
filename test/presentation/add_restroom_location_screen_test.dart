@@ -23,6 +23,7 @@ class FakeMapCameraController implements MapCameraController {
   int moveCameraCalls = 0;
   CameraUpdate? lastCameraUpdate;
   bool autoSettle = true;
+  bool shouldThrow = false;
 
   FakeMapCameraController(this.fakeMapState);
 
@@ -30,6 +31,9 @@ class FakeMapCameraController implements MapCameraController {
   Future<void> animateCamera(CameraUpdate cameraUpdate) async {
     animateCameraCalls++;
     lastCameraUpdate = cameraUpdate;
+    if (shouldThrow) {
+      throw Exception('Platform animateCamera failed');
+    }
     if (autoSettle) {
       _applyUpdate(cameraUpdate);
     }
@@ -39,6 +43,9 @@ class FakeMapCameraController implements MapCameraController {
   Future<void> moveCamera(CameraUpdate cameraUpdate) async {
     moveCameraCalls++;
     lastCameraUpdate = cameraUpdate;
+    if (shouldThrow) {
+      throw Exception('Platform moveCamera failed');
+    }
     if (autoSettle) {
       _applyUpdate(cameraUpdate);
     }
@@ -78,6 +85,7 @@ class FakeMapCameraController implements MapCameraController {
 
 /// Test helper to capture map callbacks and simulate camera events deterministically.
 class FakeMapState {
+  bool isInitialized = false;
   late CameraPosition currentCameraPosition;
   void Function(CameraPosition position)? onCameraMove;
   VoidCallback? onCameraIdle;
@@ -210,7 +218,10 @@ void main() {
         required VoidCallback? onCameraIdle,
         required VoidCallback? onCameraMoveStarted,
       }) {
-        fakeMap.currentCameraPosition = initialCameraPosition;
+        if (!fakeMap.isInitialized) {
+          fakeMap.currentCameraPosition = initialCameraPosition;
+          fakeMap.isInitialized = true;
+        }
         fakeMap.onMapCreated = onMapCreated;
         fakeMap.onCameraMove = onCameraMove;
         fakeMap.onCameraIdle = onCameraIdle;
@@ -998,20 +1009,18 @@ void main() {
     );
 
     testWidgets(
-      '21. programmatic move does NOT commit coordinates until camera settles on idle, and Continue is disabled while pending',
+      '21. Use my location with controller connected does not falsely commit B on idle before movement to B',
       (tester) async {
+        final coordA = Coordinates(latitude: 14.5839, longitude: 121.0617);
+        final coordB = Coordinates(latitude: 14.6500, longitude: 121.0500);
+
         locationRepo.setPermissionState(LocationPermissionState.granted);
-        locationRepo.setCoordinates(
-          Coordinates(latitude: 14.6500, longitude: 121.0500),
-        );
+        locationRepo.setCoordinates(coordB);
 
         await tester.pumpWidget(
           createTestWidget(
             child: AddRestroomLocationScreen(
-              initialCoordinates: Coordinates(
-                latitude: 14.5839,
-                longitude: 121.0617,
-              ),
+              initialCoordinates: coordA,
               locationRepository: locationRepo,
               mapBuilder: createFakeMapBuilder(),
             ),
@@ -1019,10 +1028,12 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Disable autoSettle to observe intermediate programmatic moving state
-        fakeMap.controller.autoSettle = false;
+        final state = tester.state<AddRestroomLocationScreenState>(
+          find.byType(AddRestroomLocationScreen),
+        );
 
         // Initial resting state: Continue is enabled
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
         final initialButton = tester.widget<ElevatedButton>(
           find.descendant(
             of: find.byType(LooPrimaryButton),
@@ -1031,6 +1042,9 @@ void main() {
         );
         expect(initialButton.onPressed, isNotNull);
 
+        // Disable autoSettle to observe intermediate programmatic moving state
+        fakeMap.controller.autoSettle = false;
+
         // Tap "Use my location"
         await tester.tap(find.byType(MapRecenterButton));
         await tester.pump();
@@ -1038,7 +1052,9 @@ void main() {
         // Programmatic animateCamera was called
         expect(fakeMap.controller.animateCameraCalls, 1);
 
-        // Readout has NOT yet updated because onCameraIdle has not fired
+        // Readout and actual camera target stay at A before movement callback
+        expect(state.actualCameraTarget.latitude, 14.5839);
+        expect(state.isProgrammaticMovePending, isTrue);
         expect(find.text('14.58390, 121.06170'), findsOneWidget);
         expect(find.text('14.65000, 121.05000'), findsNothing);
 
@@ -1051,15 +1067,34 @@ void main() {
         );
         expect(movingButton.onPressed, isNull);
 
-        // Simulate camera reaching destination and settling
-        fakeMap.simulateMove(
-          const CameraPosition(target: LatLng(14.6500, 121.0500), zoom: 16.0),
-        );
+        // Premature idle callback without observed movement MUST NOT falsely commit B
         fakeMap.simulateIdle();
         await tester.pump();
 
-        // Now coordinates commit to the settled position and Continue is re-enabled
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+        expect(find.text('14.65000, 121.05000'), findsNothing);
+        expect(state.isProgrammaticMovePending, isTrue);
+        final stillDisabledButton = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(stillDisabledButton.onPressed, isNull);
+
+        // Emit actual camera movement to B
+        fakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.6500, 121.0500), zoom: 16.0),
+        );
+        await tester.pump();
+
+        // Emit idle
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        // Now coordinates commit to the settled position B and Continue is re-enabled
         expect(find.text('14.65000, 121.05000'), findsOneWidget);
+        expect(state.isProgrammaticMovePending, isFalse);
         final settledButton = tester.widget<ElevatedButton>(
           find.descendant(
             of: find.byType(LooPrimaryButton),
@@ -1071,81 +1106,142 @@ void main() {
     );
 
     testWidgets(
-      '22. device location resolved before onMapCreated queues camera intent and synchronizes on controller creation',
+      '22. queued GPS intent before controller does NOT commit on premature idle until movement to target occurs',
       (tester) async {
+        final coordA = Coordinates(latitude: 14.5839, longitude: 121.0617);
+        final coordB = Coordinates(latitude: 14.7000, longitude: 121.1000);
+
         locationRepo.setPermissionState(LocationPermissionState.granted);
-        locationRepo.setCoordinates(
-          Coordinates(latitude: 14.7000, longitude: 121.1000),
-        );
+        locationRepo.setCoordinates(coordB);
+
+        // Disable autoSettle so controller execution doesn't automatically simulate movement
+        fakeMap.controller.autoSettle = false;
 
         await tester.pumpWidget(
           createTestWidget(
             child: AddRestroomLocationScreen(
+              initialCoordinates: coordA,
               locationRepository: locationRepo,
               mapBuilder: createFakeMapBuilder(autoConnectController: false),
             ),
           ),
         );
-        // Pump post-frame callback where _initializeFromDeviceLocationIfAvailable runs
         await tester.pump();
 
-        // Controller is not connected yet, so animateCamera was not called yet
-        expect(fakeMap.controller.animateCameraCalls, 0);
+        // Tap Use my location before controller is connected
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pump();
 
-        // Now simulate controller creation (e.g. map platform view finishes loading)
+        final state = tester.state<AddRestroomLocationScreenState>(
+          find.byType(AddRestroomLocationScreen),
+        );
+
+        // 1. Destination B is pending, but actual camera state remains A
+        expect(state.isProgrammaticMovePending, isTrue);
+        expect(state.actualCameraTarget.latitude, 14.5839);
+        expect(fakeMap.currentCameraPosition.target.latitude, 14.5839);
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+        expect(find.text('14.70000, 121.10000'), findsNothing);
+
+        // Continue is disabled while pending
+        final buttonBefore = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(buttonBefore.onPressed, isNull);
+
+        // 2. Connect controller -> dispatches queued intent
         fakeMap.simulateMapCreated();
         await tester.pump();
-
-        // Queued intent executes immediately
         expect(fakeMap.controller.animateCameraCalls, 1);
 
-        // Settle camera
+        // 3. Before any onCameraMove, fire onCameraIdle
         fakeMap.simulateIdle();
         await tester.pump();
 
+        // Selected coordinates MUST remain A!
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+        expect(find.text('14.70000, 121.10000'), findsNothing);
+        expect(state.isProgrammaticMovePending, isTrue);
+
+        // Continue MUST remain disabled
+        final buttonPremature = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(buttonPremature.onPressed, isNull);
+
+        // 4. Emit actual camera movement to B
+        fakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.7000, 121.1000), zoom: 16.0),
+        );
+        await tester.pump();
+
+        // 5. Emit idle
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        // 6. Only now commits B and enables Continue
         expect(find.text('14.70000, 121.10000'), findsOneWidget);
+        expect(state.isProgrammaticMovePending, isFalse);
+        final buttonSettled = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(buttonSettled.onPressed, isNotNull);
       },
     );
 
     testWidgets(
-      '23. Use my location tapped before onMapCreated queues camera intent and synchronizes on controller creation',
+      '23. widget rebuild does not implicitly relocate simulated native map',
       (tester) async {
-        locationRepo.setPermissionState(LocationPermissionState.granted);
-        locationRepo.setCoordinates(
-          Coordinates(latitude: 14.6800, longitude: 121.0800),
-        );
+        final coordA = Coordinates(latitude: 14.5839, longitude: 121.0617);
 
         await tester.pumpWidget(
           createTestWidget(
             child: AddRestroomLocationScreen(
-              initialCoordinates: Coordinates(
-                latitude: 14.5839,
-                longitude: 121.0617,
-              ),
+              initialCoordinates: coordA,
               locationRepository: locationRepo,
-              mapBuilder: createFakeMapBuilder(autoConnectController: false),
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(fakeMap.currentCameraPosition.target.latitude, 14.5839);
+
+        // User moves camera to C
+        fakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.6100, 121.0900), zoom: 16.0),
+        );
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        expect(fakeMap.currentCameraPosition.target.latitude, 14.6100);
+        expect(find.text('14.61000, 121.09000'), findsOneWidget);
+
+        // Rebuild the widget tree (e.g. parent rebuilds or orientation change)
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              initialCoordinates: coordA,
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(),
             ),
           ),
         );
         await tester.pump();
 
-        // Tap "Use my location" before map is created
-        await tester.tap(find.byType(MapRecenterButton));
-        await tester.pump();
-
-        expect(fakeMap.controller.animateCameraCalls, 0);
-
-        // Map controller is created
-        fakeMap.simulateMapCreated();
-        await tester.pump();
-
-        // Queued intent immediately triggers animateCamera
-        expect(fakeMap.controller.animateCameraCalls, 1);
-
-        fakeMap.simulateIdle();
-        await tester.pump();
-
-        expect(find.text('14.68000, 121.08000'), findsOneWidget);
+        // Simulated native platform map MUST NOT reset to coordA! It remains at 14.6100.
+        expect(fakeMap.currentCameraPosition.target.latitude, 14.6100);
+        expect(fakeMap.currentCameraPosition.target.longitude, 121.0900);
+        expect(find.text('14.61000, 121.09000'), findsOneWidget);
       },
     );
 
@@ -1165,6 +1261,68 @@ void main() {
           CameraUpdate.newLatLngZoom(const LatLng(14.6, 121.1), 16.0),
         );
         expect(controller.moveCameraCalls, 1);
+      },
+    );
+
+    testWidgets(
+      '25. camera-command failure recovers state without being stuck in pending move',
+      (tester) async {
+        final coordA = Coordinates(latitude: 14.5839, longitude: 121.0617);
+        locationRepo.setPermissionState(LocationPermissionState.granted);
+        locationRepo.setCoordinates(
+          Coordinates(latitude: 14.6500, longitude: 121.0500),
+        );
+
+        // Both animateCamera and fallback moveCamera will throw
+        fakeMap.controller.shouldThrow = true;
+
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              initialCoordinates: coordA,
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final state = tester.state<AddRestroomLocationScreenState>(
+          find.byType(AddRestroomLocationScreen),
+        );
+
+        // Tap "Use my location"
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pumpAndSettle();
+
+        // 1. Not stuck in programmatic pending state
+        expect(state.isProgrammaticMovePending, isFalse);
+
+        // 2. Preserves the last legitimately committed coordinate A
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+
+        // 3. Shows non-blocking notice
+        expect(
+          find.text('Unable to move map camera. Move the map manually.'),
+          findsOneWidget,
+        );
+
+        // 4. Manual map placement remains fully functional
+        fakeMap.controller.shouldThrow = false;
+        fakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.7200, 121.0300), zoom: 16.0),
+        );
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        expect(find.text('14.72000, 121.03000'), findsOneWidget);
+        final button = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(button.onPressed, isNotNull);
       },
     );
   });

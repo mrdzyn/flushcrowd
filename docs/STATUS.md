@@ -24,15 +24,15 @@ Independent exact-head re-audit of **Phase 2 Milestone P2.2 — Interactive Loca
 - Initial location order: 1) explicit `initialCoordinates` if provided; 2) current foreground device location via `LocationRepository`/`LocationNotifier` if permission granted; 3) safe fallback (`AppConstants.defaultLatitude`, `AppConstants.defaultLongitude`).
 - Added "Use my location" action (`MapRecenterButton`) to center map on current device location with non-blocking error feedback if permission denied or location disabled; manual map exploration remains fully functional without GPS.
 - Remediated MAJOR-1: fresh foreground lookup strictly distinguishes services disabled, permission denied, and lookup failure; never consumes stale cached coordinates from `LocationNotifier`.
-- Remediated MAJOR-2: decoupled map controller via `MapCameraController`, introduced `_pendingProgrammaticCameraIntent` queue for controller startup synchronization, disabled Continue while move is pending, and committed selected coordinates strictly on `onCameraIdle`.
+- Remediated MAJOR-2 (Initial & Residual): decoupled map controller via `MapCameraController`; eliminated programmatic destination conflation by separating `_actualCameraTarget`/`_actualCameraZoom` from `_activeProgrammaticIntent`; initialized `_initialCameraPosition` once in `initState` to prevent rebuilds from passing pending targets to the native map constructor; rejected premature `onCameraIdle` events when movement has not yet been observed; handled identical-destination edge case; and provided robust camera-command failure recovery that unlocks manual panning without locking the screen.
 - Remediated MINOR-1: fixed safe-area test assertion to dynamically derive bottom limit from `MediaQuery` (`screenSize.height - viewPadding.bottom`).
 - Remediated MINOR-2: provided `CountingRestroomRepository` in test widget Provider tree to ensure zero accidental repository operations are actively verified.
 - Remediated MINOR-3: synchronized `docs/STATUS.md` P2.1 approved status and P2.2 audit remediation tracking.
 - Clean navigation seam returning `Coordinates` via `onLocationConfirmed` callback and `Navigator.pop(selectedCoordinates)` via static `route()` factory; no premature P2.3 form created.
 - Zero Firestore reads, zero Firestore writes, zero Places API, zero Geocoding API, zero Directions/Routes APIs, zero background location, zero movement history.
 - Full accessibility: touch targets $\ge 48\times 48$, semantics on center target pin, coordinate readout, location button, and Continue button.
-- Authored 24 unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all criteria, edge cases, and remediation assertions.
-- Validated full Flutter test suite (256 total Flutter tests, all PASS).
+- Authored 25 unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all criteria, edge cases, and remediation assertions.
+- Validated full Flutter test suite (257 total Flutter tests, all PASS).
 - Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
 The active specification is:
@@ -130,13 +130,13 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Camera movement updates lightweight visual state (`_isCameraMoving`) without triggering persistence or queries; camera idle commits target coordinates.
 - "Use my location" button moves camera and updates selection if available; manual map selection remains fully functional when GPS is unavailable.
 - Remediated MAJOR-1: Fresh foreground-location attempt directly queries `LocationRepository.getCurrentLocation()`, explicitly distinguishing location service disabled, permission denied/permanently denied, and retrieval failure/timeout without consuming stale cached coordinates from `LocationNotifier`. Manual map placement remains fully functional.
-- Remediated MAJOR-2: Introduced `MapCameraController` interface (`animateCamera`, `moveCamera`) and `GoogleMapCameraController` adapter. Implemented `_pendingProgrammaticCameraIntent` queue to solve startup race conditions when device GPS resolves before `onMapCreated`. Programmatic movements no longer eagerly mutate `_selectedCoordinates`; selection commits strictly in `_onCameraIdle()`. `_canConfirm` disables Continue while a programmatic move is pending (`_isProgrammaticMovePending`).
+- Remediated MAJOR-2 (Initial & Residual): Introduced `MapCameraController` interface (`animateCamera`, `moveCamera`) and `GoogleMapCameraController` adapter. Completely decoupled actual camera state (`_actualCameraTarget`, `_actualCameraZoom`) from programmatic desired destinations via `_ProgrammaticCameraIntent`. Initialized `_initialCameraPosition` once in `initState` so widget rebuilds do not pass pending coordinates to the native map constructor. Enforced that premature `onCameraIdle` events (before real movement frames) do not clear pending intents or falsely commit unreached coordinates. Handled identical-destination edge cases and camera command failures with non-blocking user notices and manual panning recovery. `_canConfirm` disables Continue while any programmatic move is pending.
 - Remediated MINOR-1: Fixed test 13 safe-area assertion to derive boundary from `screenSize.height - viewPadding.bottom` rather than a magic number.
 - Remediated MINOR-2: Injected `CountingRestroomRepository` into Provider tree via `createTestWidget` so that accidental Firestore queries/submissions are observable by tests.
 - Remediated MINOR-3: Synchronized `docs/STATUS.md` line 100 P2.1 heading to `[APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]`.
 - Clean navigation seam returning `Coordinates` via callback and `Navigator.pop`.
-- Authored 24 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all prompt criteria, edge cases, and remediation assertions.
-- Validated full Flutter test suite (256 total Flutter tests, all PASS).
+- Authored 25 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all prompt criteria, edge cases, and remediation assertions.
+- Validated full Flutter test suite (257 total Flutter tests, all PASS).
 - Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
 ### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [BLOCKED pending P2.2 audit]

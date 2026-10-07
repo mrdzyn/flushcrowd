@@ -102,21 +102,49 @@ class AddRestroomLocationScreen extends StatefulWidget {
 
   @override
   State<AddRestroomLocationScreen> createState() =>
-      _AddRestroomLocationScreenState();
+      AddRestroomLocationScreenState();
 }
 
-class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
-  MapCameraController? _mapController;
-  CameraUpdate? _pendingProgrammaticCameraIntent;
+class _ProgrammaticCameraIntent {
+  final int id;
+  final LatLng target;
+  final double zoom;
+  bool isDispatched;
+  bool movementObserved;
 
+  _ProgrammaticCameraIntent({
+    required this.id,
+    required this.target,
+    required this.zoom,
+    this.movementObserved = false,
+  }) : isDispatched = false;
+}
+
+class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
+  MapCameraController? _mapController;
+
+  late final CameraPosition _initialCameraPosition;
+  late LatLng _actualCameraTarget;
+  late double _actualCameraZoom;
   late Coordinates _selectedCoordinates;
-  late LatLng _currentCameraTarget;
-  late double _currentZoom;
 
   bool _isCameraMoving = false;
-  bool _isProgrammaticMovePending = false;
   bool _isLocating = false;
   bool _isPermissionGranted = false;
+
+  _ProgrammaticCameraIntent? _activeProgrammaticIntent;
+  int _nextIntentId = 0;
+
+  @visibleForTesting
+  LatLng get actualCameraTarget => _actualCameraTarget;
+
+  @visibleForTesting
+  double get actualCameraZoom => _actualCameraZoom;
+
+  @visibleForTesting
+  bool get isProgrammaticMovePending => _activeProgrammaticIntent != null;
+
+  bool get _isProgrammaticMovePending => _activeProgrammaticIntent != null;
 
   @override
   void initState() {
@@ -130,8 +158,12 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
         );
 
     _selectedCoordinates = initial;
-    _currentCameraTarget = LatLng(initial.latitude, initial.longitude);
-    _currentZoom = AddRestroomLocationScreen.defaultInitialZoom;
+    _actualCameraTarget = LatLng(initial.latitude, initial.longitude);
+    _actualCameraZoom = AddRestroomLocationScreen.defaultInitialZoom;
+    _initialCameraPosition = CameraPosition(
+      target: _actualCameraTarget,
+      zoom: _actualCameraZoom,
+    );
 
     // If an explicit coordinate was not provided, attempt to center on known device location
     if (widget.initialCoordinates == null) {
@@ -158,35 +190,60 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
 
   void _onControllerCreated(MapCameraController controller) {
     _mapController = controller;
-    if (_pendingProgrammaticCameraIntent != null) {
-      final intent = _pendingProgrammaticCameraIntent!;
-      _pendingProgrammaticCameraIntent = null;
-      unawaited(_executeCameraMove(intent));
+    if (_activeProgrammaticIntent != null &&
+        !_activeProgrammaticIntent!.isDispatched) {
+      unawaited(_dispatchProgrammaticIntent(_activeProgrammaticIntent!));
     }
+  }
+
+  bool _isAlreadyAt(LatLng target, double zoom) {
+    final latDiff = (target.latitude - _actualCameraTarget.latitude).abs();
+    final lngDiff = (target.longitude - _actualCameraTarget.longitude).abs();
+    final zoomDiff = (zoom - _actualCameraZoom).abs();
+    return latDiff < 1e-6 && lngDiff < 1e-6 && zoomDiff < 1e-3;
   }
 
   void _requestProgrammaticCameraMove(LatLng target, double zoom) {
-    final update = CameraUpdate.newLatLngZoom(target, zoom);
+    final intent = _ProgrammaticCameraIntent(
+      id: ++_nextIntentId,
+      target: target,
+      zoom: zoom,
+      movementObserved: _isAlreadyAt(target, zoom),
+    );
+
     setState(() {
-      _isProgrammaticMovePending = true;
-      _currentCameraTarget = target;
-      _currentZoom = zoom;
+      _activeProgrammaticIntent = intent;
     });
 
     if (_mapController != null) {
-      unawaited(_executeCameraMove(update));
-    } else {
-      _pendingProgrammaticCameraIntent = update;
+      unawaited(_dispatchProgrammaticIntent(intent));
     }
   }
 
-  Future<void> _executeCameraMove(CameraUpdate update) async {
+  Future<void> _dispatchProgrammaticIntent(
+    _ProgrammaticCameraIntent intent,
+  ) async {
+    intent.isDispatched = true;
+    final update = CameraUpdate.newLatLngZoom(intent.target, intent.zoom);
+
     try {
       await _mapController?.animateCamera(update);
     } catch (_) {
       try {
         await _mapController?.moveCamera(update);
-      } catch (_) {}
+      } catch (_) {
+        // Both animateCamera and fallback moveCamera failed.
+        // Recover state without locking the user out.
+        if (mounted && _activeProgrammaticIntent?.id == intent.id) {
+          setState(() {
+            _activeProgrammaticIntent = null;
+            _isCameraMoving = false;
+          });
+          _showLocationNotice(
+            'Unable to move map camera. Move the map manually.',
+          );
+        }
+      }
     }
   }
 
@@ -206,7 +263,7 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
             });
             _requestProgrammaticCameraMove(
               LatLng(coords.latitude, coords.longitude),
-              _currentZoom,
+              _actualCameraZoom,
             );
           }
           return;
@@ -224,7 +281,7 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
           });
           _requestProgrammaticCameraMove(
             LatLng(coords.latitude, coords.longitude),
-            _currentZoom,
+            _actualCameraZoom,
           );
         }
       }
@@ -242,8 +299,13 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
   }
 
   void _onCameraMove(CameraPosition position) {
-    _currentCameraTarget = position.target;
-    _currentZoom = position.zoom;
+    _actualCameraTarget = position.target;
+    _actualCameraZoom = position.zoom;
+
+    if (_activeProgrammaticIntent != null) {
+      _activeProgrammaticIntent!.movementObserved = true;
+    }
+
     if (!_isCameraMoving) {
       setState(() {
         _isCameraMoving = true;
@@ -252,20 +314,31 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
   }
 
   void _onCameraIdle() {
+    // If a programmatic move is pending and movement has not yet been observed,
+    // this idle event is an unrelated or initial idle callback before the move began.
+    // We MUST NOT clear the pending intent and MUST NOT falsely commit.
+    if (_activeProgrammaticIntent != null &&
+        !_activeProgrammaticIntent!.movementObserved) {
+      return;
+    }
+
+    // Programmatic move has completed; clear intent.
+    if (_activeProgrammaticIntent != null) {
+      _activeProgrammaticIntent = null;
+    }
+
     // Normalize longitude to [-180.0, 180.0] and clamp latitude to [-90.0, 90.0]
-    double lng = _currentCameraTarget.longitude;
+    double lng = _actualCameraTarget.longitude;
     while (lng < -180.0) {
       lng += 360.0;
     }
     while (lng > 180.0) {
       lng -= 360.0;
     }
-    final lat = _currentCameraTarget.latitude.clamp(-90.0, 90.0);
+    final lat = _actualCameraTarget.latitude.clamp(-90.0, 90.0);
 
     setState(() {
       _isCameraMoving = false;
-      _isProgrammaticMovePending = false;
-      _pendingProgrammaticCameraIntent = null;
       _selectedCoordinates = Coordinates(latitude: lat, longitude: lng);
     });
   }
@@ -303,9 +376,9 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
       if (!mounted) return;
 
       final targetZoom =
-          _currentZoom < AddRestroomLocationScreen.minConfirmationZoom
+          _actualCameraZoom < AddRestroomLocationScreen.minConfirmationZoom
           ? AddRestroomLocationScreen.minConfirmationZoom
-          : _currentZoom;
+          : _actualCameraZoom;
 
       _requestProgrammaticCameraMove(
         LatLng(freshCoords.latitude, freshCoords.longitude),
@@ -337,7 +410,7 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
   }
 
   bool get _isZoomSufficient =>
-      _currentZoom >= AddRestroomLocationScreen.minConfirmationZoom;
+      _actualCameraZoom >= AddRestroomLocationScreen.minConfirmationZoom;
 
   bool get _canConfirm =>
       _isZoomSufficient && !_isCameraMoving && !_isProgrammaticMovePending;
@@ -454,15 +527,10 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
   }
 
   Widget _buildMap() {
-    final initialCameraPosition = CameraPosition(
-      target: _currentCameraTarget,
-      zoom: _currentZoom,
-    );
-
     if (widget.mapBuilder != null) {
       return widget.mapBuilder!(
         context: context,
-        initialCameraPosition: initialCameraPosition,
+        initialCameraPosition: _initialCameraPosition,
         onMapCreated: _onControllerCreated,
         onCameraMove: _onCameraMove,
         onCameraIdle: _onCameraIdle,
@@ -471,7 +539,7 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
     }
 
     return GoogleMap(
-      initialCameraPosition: initialCameraPosition,
+      initialCameraPosition: _initialCameraPosition,
       myLocationEnabled: _isPermissionGranted,
       myLocationButtonEnabled: false,
       zoomControlsEnabled: false,
