@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 — Add Restroom
 - **Current milestone:** Staging repository readiness complete; external Firebase/Maps configuration pending owner verification
 - **Current branch:** `chore/flushcrowd-staging-readiness`
-- **Current PR:** Pending creation (`chore/flushcrowd-staging-readiness` -> `main`)
+- **Current PR:** [#6](https://github.com/mrdzyn/flushcrowd/pull/6) — `chore: prepare FlushCrowd staging environment`
 - **Base:** `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (includes PR #5 product rename squash merge)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [ACTIVE / REPOSITORY READINESS COMPLETE]; P2.3 [NOT STARTED — blocked pending live staging verification].
 
