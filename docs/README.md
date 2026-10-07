@@ -18,6 +18,15 @@ For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) fir
 10. [`08-phase-1-map-discovery.md`](08-phase-1-map-discovery.md) — Phase 1 GIS/query contract, map orchestration, markers/clustering, preview/list/filter requirements, cost controls, testing, and definition of done.
 11. [`09-phase-2-add-restroom.md`](09-phase-2-add-restroom.md) — active Phase 2 Add Restroom specification, contribution workflow, duplicate detection, atomic batch writes, security rules, and testing contract.
 
+## Canonical brand assets
+
+The human-approved canonical brand marks for FlushCrowd are:
+
+- **Icon mark:** `docs/assets/brand/flushcrowd-icon.png`
+- **Horizontal lockup:** `docs/assets/brand/flushcrowd-horizontal.png`
+
+Do not redraw, recolor, optimize, regenerate, or modify these files.
+
 ## Canonical visual reference
 
 ![FlushCrowd mobile UX reference](assets/flushcrowd-mobile-ux-reference.png)

@@ -4,6 +4,15 @@
 
 FlushCrowd is a **UI/UX-first project**. The mobile experience should be designed and validated before backend convenience is allowed to shape the product.
 
+## Canonical brand assets
+
+The human-approved canonical brand marks are:
+
+- **Icon mark:** `docs/assets/brand/flushcrowd-icon.png` (app icon / standalone mark)
+- **Horizontal lockup:** `docs/assets/brand/flushcrowd-horizontal.png` (logo with wordmark)
+
+Do not redraw, recolor, optimize, regenerate, or otherwise modify these files.
+
 ## Canonical visual reference
 
 ![FlushCrowd mobile UX reference](assets/flushcrowd-mobile-ux-reference.png)

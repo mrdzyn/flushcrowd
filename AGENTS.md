@@ -38,6 +38,13 @@ For user-facing implementation, the canonical visual reference is:
 
 `docs/assets/flushcrowd-mobile-ux-reference.png`
 
+The canonical brand assets are:
+
+- `docs/assets/brand/flushcrowd-icon.png` (app icon / standalone mark)
+- `docs/assets/brand/flushcrowd-horizontal.png` (horizontal logo lockup)
+
+Do not modify or redraw these approved brand files.
+
 Use `docs/06-ui-ux-reference.md` for interaction rules, hierarchy, accessibility expectations, and allowed interpretation of the mockup.
 
 The mockup is directional rather than a pixel-perfect specification, but accidental UX drift is a defect. Intentional changes must be documented in the same PR.

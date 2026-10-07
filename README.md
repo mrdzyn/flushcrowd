@@ -22,6 +22,12 @@ FlushCrowd is a global, community-powered restroom finder focused on helping peo
 - Firebase Storage for photos later
 - Optional Cloud Run / Cloud Functions only where server-side enforcement is required
 
+## Brand & Visual Reference
+
+- Icon mark: [`docs/assets/brand/flushcrowd-icon.png`](docs/assets/brand/flushcrowd-icon.png)
+- Horizontal lockup: [`docs/assets/brand/flushcrowd-horizontal.png`](docs/assets/brand/flushcrowd-horizontal.png)
+- Mobile UX reference: [`docs/assets/flushcrowd-mobile-ux-reference.png`](docs/assets/flushcrowd-mobile-ux-reference.png)
+
 ## Documentation
 
 See the [`docs/`](docs/) folder for architecture, product requirements, data model, privacy/security guidance, and phased delivery planning.

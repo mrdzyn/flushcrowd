@@ -22,10 +22,13 @@ Controlled repository and product rename from **LooRadar / looradar** to **Flush
 - iOS bundle identifier: `com.flushcrowd.flushcrowd` (tests: `com.flushcrowd.flushcrowd.RunnerTests`).
 - Dart package name: `flushcrowd` (`pubspec.yaml`), imports updated to `package:flushcrowd/...`.
 - Main app entry widget: `FlushCrowdApp` (`lib/main.dart`).
-- Assets renamed: `docs/assets/flushcrowd-mobile-ux-reference.png` and `.svg`.
+- Approved brand assets added: `docs/assets/brand/flushcrowd-icon.png` and `docs/assets/brand/flushcrowd-horizontal.png`.
+- UX assets renamed: `docs/assets/flushcrowd-mobile-ux-reference.png` and `.svg`.
+- Non-live URL placeholders: `buyMeACoffeeUrl` and `privacyPolicyUrl` in `AppConstants` set to `''` pending owner destination verification; no unverified or unowned external destinations in code.
+- GitHub repository metadata: description updated to `"FlushCrowd — global community-powered restroom and toilet finder."`.
 - CI workflow renamed to `FlushCrowd CI`, branch triggers updated for `chore/**`.
 - Security rules test project IDs updated to `flushcrowd-*-rules-test`.
-- Documentation updated across all 10 specifications in `docs/` and root `README.md`, `AGENTS.md`.
+- Documentation updated across all specifications in `docs/` and root `README.md`, `AGENTS.md`.
 - Phase 0–P2.2 functionality and tests fully preserved and verified.
 - P2.3 remains strictly **NOT STARTED** and blocked until rename PR audit passes and staging configuration is established.
 
@@ -36,6 +39,8 @@ The active specification is:
 ## Locked decisions
 
 - Product name: **FlushCrowd**.
+- Canonical brand marks: `docs/assets/brand/flushcrowd-icon.png` (icon) and `docs/assets/brand/flushcrowd-horizontal.png` (horizontal lockup).
+- Canonical UI reference: `docs/assets/flushcrowd-mobile-ux-reference.png`.
 - Global-first, mobile-first, UI/UX-first product.
 - Flutter for iOS and Android.
 - Google Maps SDK for visualization.
@@ -52,7 +57,6 @@ The active specification is:
 - Low Firestore/Maps cost is an architectural constraint.
 - Discovery repository and viewport query pipeline remain the single authoritative source of truth for the map.
 - Production community contribution writes require enforceable server-side rate limiting.
-- Canonical UI reference remains `docs/assets/flushcrowd-mobile-ux-reference.png`.
 
 ## Canonical references
 
@@ -181,8 +185,10 @@ These are required for live staging QA and production readiness:
 1. Create/reuse platform-restricted Google Maps Android and iOS keys restricted to package/bundle identifier `com.flushcrowd.flushcrowd`.
 2. Provision Firebase project (e.g. `flushcrowd-staging` / `flushcrowd-prod`) and enable Anonymous Authentication.
 3. Place local `google-services.json` and `GoogleService-Info.plist` configured for `com.flushcrowd.flushcrowd` outside version control.
-4. Configure GCP budget alerts.
-5. Production Android signing remains a later release-readiness action.
+4. Establish and verify external support/donation account (e.g. Buy Me a Coffee or equivalent) and configure `AppConstants.buyMeACoffeeUrl`.
+5. Establish and publish external privacy policy URL (e.g. official domain/page) and configure `AppConstants.privacyPolicyUrl`.
+6. Configure GCP budget alerts.
+7. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
 

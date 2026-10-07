@@ -46,7 +46,11 @@ class AppConstants {
   static const String ratingOwnershipCollection = 'ratingOwnership';
   static const String contributionOwnershipCollection = 'contributionOwnership';
 
-  // Support links
-  static const String buyMeACoffeeUrl = 'https://buymeacoffee.com/flushcrowd';
-  static const String privacyPolicyUrl = 'https://flushcrowd.app/privacy';
+  // Support & legal destinations
+  // NOTE: External destinations are pending verification and configuration by the project owner.
+  // Using explicit non-live empty string placeholders prevents directing users to unverified or unowned third-party addresses.
+  static const String buyMeACoffeeUrl =
+      ''; // Pending owner support/donation account verification
+  static const String privacyPolicyUrl =
+      ''; // Pending owner privacy policy destination verification
 }
