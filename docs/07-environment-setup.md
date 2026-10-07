@@ -51,7 +51,7 @@ FlushCrowd requires **Google Maps SDK for Android** and **Google Maps SDK for iO
 ## 3. Firebase Project & Authentication
 
 ### 1. Project Initialization:
-1. Create a Firebase project named `flushcrowd-staging` (or `flushcrowd-prod`). Existing development references to `looradar-dev` are pending replacement during the upcoming FlushCrowd Firebase staging setup.
+1. Create a Firebase project named `flushcrowd-staging` (or `flushcrowd-prod`).
 2. Add an **Android app** with package name `com.flushcrowd.flushcrowd` and download `google-services.json` to `android/app/google-services.json`.
 3. Add an **iOS app** with bundle ID `com.flushcrowd.flushcrowd` and download `GoogleService-Info.plist` to `ios/Runner/GoogleService-Info.plist`.
 

@@ -7,11 +7,11 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Housekeeping / Product & Repository Rename
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** Product & Repository Rename (LooRadar → FlushCrowd)
+- **Current milestone:** Product rename final audit remediation complete; independent exact-head re-audit pending
 - **Current branch:** `chore/rename-flushcrowd`
 - **Current PR:** [#5](https://github.com/mrdzyn/flushcrowd/pull/5) — `chore: rename LooRadar to FlushCrowd`
 - **Base:** `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5` (includes Phase 2 P2.2 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [ACTIVE]; P2.3 [NOT STARTED — BLOCKED pending rename PR audit and staging setup].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [FINAL AUDIT REMEDIATION COMPLETE — independent exact-head re-audit pending]; P2.3 [NOT STARTED — BLOCKED pending rename PR audit and staging setup].
 
 ## Current objective
 
@@ -22,9 +22,11 @@ Controlled repository and product rename from **LooRadar / looradar** to **Flush
 - iOS bundle identifier: `com.flushcrowd.flushcrowd` (tests: `com.flushcrowd.flushcrowd.RunnerTests`).
 - Dart package name: `flushcrowd` (`pubspec.yaml`), imports updated to `package:flushcrowd/...`.
 - Main app entry widget: `FlushCrowdApp` (`lib/main.dart`).
-- Approved brand assets added: `docs/assets/brand/flushcrowd-icon.png` and `docs/assets/brand/flushcrowd-horizontal.png`.
+- Approved brand assets tracked: `docs/assets/brand/flushcrowd-icon.png` (SHA256: `246bc071...`) and `docs/assets/brand/flushcrowd-horizontal.png` (SHA256: `f81e2513...`), byte-for-byte exact copies.
+- Native launcher assets generated: Android `mipmap-*` (`ic_launcher.png`, 48 to 192px) and iOS `AppIcon.appiconset` (all 15 sizes, alpha removed for App Store compliance) derived from canonical `flushcrowd-icon.png`.
 - UX assets renamed: `docs/assets/flushcrowd-mobile-ux-reference.png` and `.svg`.
 - Non-live URL placeholders: `buyMeACoffeeUrl` and `privacyPolicyUrl` in `AppConstants` set to `''` pending owner destination verification; no unverified or unowned external destinations in code.
+- Sanitized environment template: `.env.example` uses neutral non-live placeholders `your_flushcrowd_firebase_project_id` and `your_flushcrowd_firebase_storage_bucket`.
 - GitHub repository metadata: description updated to `"FlushCrowd — global community-powered restroom and toilet finder."`.
 - CI workflow renamed to `FlushCrowd CI`, branch triggers updated for `chore/**`.
 - Security rules test project IDs updated to `flushcrowd-*-rules-test`.
