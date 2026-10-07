@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-/// Semantic color palette for LooRadar design system,
+/// Semantic color palette for FlushCrowd design system,
 /// reflecting the canonical mobile UX reference.
 class AppColors {
   AppColors._();

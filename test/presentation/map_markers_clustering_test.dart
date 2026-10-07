@@ -1,11 +1,11 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/discovery_result.dart';
-import 'package:looradar/domain/models/restroom.dart';
-import 'package:looradar/presentation/components/map/map_marker_adapter.dart';
-import 'package:looradar/presentation/models/restroom_marker_item.dart';
-import 'package:looradar/presentation/state/map_discovery_notifier.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/discovery_result.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/presentation/components/map/map_marker_adapter.dart';
+import 'package:flushcrowd/presentation/models/restroom_marker_item.dart';
+import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
 
 import 'map_discovery_notifier_test.dart';
 

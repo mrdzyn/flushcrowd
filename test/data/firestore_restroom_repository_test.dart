@@ -1,19 +1,19 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/core/constants/app_constants.dart';
-import 'package:looradar/core/errors/exceptions.dart';
-import 'package:looradar/data/repositories/auth_repository_impl.dart';
-import 'package:looradar/data/repositories/firestore_restroom_repository.dart';
-import 'package:looradar/data/services/firebase/firestore_mutation_adapter.dart';
-import 'package:looradar/data/services/firebase/firestore_query_executor.dart';
-import 'package:looradar/data/services/gis/geohash_service.dart';
-import 'package:looradar/data/services/gis/haversine.dart';
-import 'package:looradar/domain/commands/create_restroom_command.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/discovery_result.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/geo_bounding_box.dart';
-import 'package:looradar/domain/models/restroom_draft.dart';
+import 'package:flushcrowd/core/constants/app_constants.dart';
+import 'package:flushcrowd/core/errors/exceptions.dart';
+import 'package:flushcrowd/data/repositories/auth_repository_impl.dart';
+import 'package:flushcrowd/data/repositories/firestore_restroom_repository.dart';
+import 'package:flushcrowd/data/services/firebase/firestore_mutation_adapter.dart';
+import 'package:flushcrowd/data/services/firebase/firestore_query_executor.dart';
+import 'package:flushcrowd/data/services/gis/geohash_service.dart';
+import 'package:flushcrowd/data/services/gis/haversine.dart';
+import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/discovery_result.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/domain/models/restroom_draft.dart';
 
 /// Test double that simulates Firestore's range query execution against an in-memory document store.
 class FakeFirestoreQueryExecutor implements FirestoreQueryExecutor {

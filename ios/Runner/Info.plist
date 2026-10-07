@@ -7,9 +7,9 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>LooRadar</string>
+	<string>FlushCrowd</string>
 	<key>NSLocationWhenInUseUsageDescription</key>
-	<string>LooRadar uses your location to discover nearby restrooms and show them on the map.</string>
+	<string>FlushCrowd uses your location to discover nearby restrooms and show them on the map.</string>
 	<key>LSApplicationQueriesSchemes</key>
 	<array>
 		<string>comgooglemaps</string>
@@ -24,7 +24,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>looradar</string>
+	<string>flushcrowd</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>

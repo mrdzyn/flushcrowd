@@ -1,4 +1,4 @@
-/// Defines runtime environments for LooRadar.
+/// Defines runtime environments for FlushCrowd.
 enum Environment {
   development,
   staging,

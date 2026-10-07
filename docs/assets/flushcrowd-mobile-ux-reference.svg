@@ -3,7 +3,7 @@
   <style>
     .title{font:700 44px Arial,sans-serif;fill:#0F172A}.sub{font:400 22px Arial,sans-serif;fill:#475569}.phone{fill:#FFFFFF;stroke:#111827;stroke-width:5}.screenTitle{font:700 20px Arial,sans-serif;fill:#111827}.body{font:400 15px Arial,sans-serif;fill:#475569}.tiny{font:400 12px Arial,sans-serif;fill:#64748B}.btn{fill:#1677FF}.btnText{font:700 14px Arial,sans-serif;fill:#FFFFFF}.chip{fill:#EEF4FF;stroke:#C9DAFF}.label{font:700 15px Arial,sans-serif;fill:#0F172A}.blue{fill:#1677FF}.green{fill:#22C55E}.amber{fill:#F59E0B}.muted{fill:#E2E8F0}.card{fill:#FFFFFF;stroke:#E2E8F0;stroke-width:2}.map{fill:#EAF2E4}.road{stroke:#FFFFFF;stroke-width:16}.water{fill:#DCEEFF}.pin{fill:#1677FF;stroke:#FFFFFF;stroke-width:3}
   </style>
-  <text x="70" y="75" class="title">LooRadar — Mobile UI/UX Reference</text>
+  <text x="70" y="75" class="title">FlushCrowd — Mobile UI/UX Reference</text>
   <text x="70" y="112" class="sub">Map-first, anonymous, global restroom discovery and contribution experience</text>
 
   <!-- Splash -->
@@ -13,7 +13,7 @@
     <circle cx="140" cy="245" r="58" class="blue"/>
     <path d="M140 195 C115 195 96 214 96 239 C96 281 140 316 140 316 C140 316 184 281 184 239 C184 214 165 195 140 195Z" fill="#1677FF"/>
     <text x="140" y="246" text-anchor="middle" font-family="Arial" font-size="30" font-weight="700" fill="#FFFFFF">WC</text>
-    <text x="140" y="340" text-anchor="middle" class="screenTitle" font-size="28">LooRadar</text>
+    <text x="140" y="340" text-anchor="middle" class="screenTitle" font-size="28">FlushCrowd</text>
     <text x="140" y="372" text-anchor="middle" class="body">Find a better loo, anywhere.</text>
     <text x="36" y="460" class="body">• Find nearby restrooms</text>
     <text x="36" y="490" class="body">• See ratings & amenities</text>

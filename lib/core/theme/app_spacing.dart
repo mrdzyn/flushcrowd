@@ -1,4 +1,4 @@
-/// Spacing constants for consistent layout across LooRadar.
+/// Spacing constants for consistent layout across FlushCrowd.
 class AppSpacing {
   AppSpacing._();
 

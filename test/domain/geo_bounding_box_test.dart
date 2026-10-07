@@ -1,6 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
 
 void main() {
   group('GeoBoundingBox Model & Antimeridian Support', () {

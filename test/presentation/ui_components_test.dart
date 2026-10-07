@@ -1,14 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/restroom.dart';
-import 'package:looradar/presentation/components/buttons/loo_primary_button.dart';
-import 'package:looradar/presentation/components/buttons/loo_secondary_button.dart';
-import 'package:looradar/presentation/components/cards/restroom_summary_card.dart';
-import 'package:looradar/presentation/components/chips/amenity_chip.dart';
-import 'package:looradar/presentation/components/chips/status_chip.dart';
-import 'package:looradar/presentation/components/map/permission_banner.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
+import 'package:flushcrowd/presentation/components/buttons/loo_secondary_button.dart';
+import 'package:flushcrowd/presentation/components/cards/restroom_summary_card.dart';
+import 'package:flushcrowd/presentation/components/chips/amenity_chip.dart';
+import 'package:flushcrowd/presentation/components/chips/status_chip.dart';
+import 'package:flushcrowd/presentation/components/map/permission_banner.dart';
 
 void main() {
   group('UI Design System Components', () {

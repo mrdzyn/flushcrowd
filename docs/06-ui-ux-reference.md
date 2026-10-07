@@ -1,16 +1,16 @@
-# LooRadar UI/UX Reference
+# FlushCrowd UI/UX Reference
 
 ## Purpose
 
-LooRadar is a **UI/UX-first project**. The mobile experience should be designed and validated before backend convenience is allowed to shape the product.
+FlushCrowd is a **UI/UX-first project**. The mobile experience should be designed and validated before backend convenience is allowed to shape the product.
 
 ## Canonical visual reference
 
-![LooRadar mobile UX reference](assets/looradar-mobile-ux-reference.png)
+![FlushCrowd mobile UX reference](assets/flushcrowd-mobile-ux-reference.png)
 
 The canonical build reference is:
 
-`docs/assets/looradar-mobile-ux-reference.png`
+`docs/assets/flushcrowd-mobile-ux-reference.png`
 
 The checked-in SVG is a secondary lightweight reference only. If the PNG and SVG differ, the PNG takes precedence.
 
@@ -31,11 +31,11 @@ The mockup is not a pixel-perfect final specification, but implementation should
 
 ### 1. Splash / value proposition
 
-Communicate what LooRadar does before requesting location permission.
+Communicate what FlushCrowd does before requesting location permission.
 
 Include:
 
-- LooRadar branding
+- FlushCrowd branding
 - concise value proposition
 - nearby restroom discovery
 - ratings and amenities
@@ -174,4 +174,4 @@ When implementation and this reference disagree:
 - intentional UX changes must be documented in the same PR;
 - accidental drift is a defect, not a design decision.
 
-The goal is to keep LooRadar **UI/UX first, architecture-supported**.
+The goal is to keep FlushCrowd **UI/UX first, architecture-supported**.

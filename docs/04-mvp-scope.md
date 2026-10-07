@@ -1,4 +1,4 @@
-# LooRadar MVP Scope
+# FlushCrowd MVP Scope
 
 ## MVP objective
 
@@ -73,7 +73,7 @@ Users can report:
 
 ### Navigation
 
-Open coordinates in an installed external navigation app rather than implementing routing in LooRadar.
+Open coordinates in an installed external navigation app rather than implementing routing in FlushCrowd.
 
 ### Privacy
 
@@ -146,7 +146,7 @@ The MVP is successful when a user can:
 6. add a missing restroom;
 7. rate an existing restroom;
 8. verify or report an existing listing;
-9. use the app without LooRadar persisting a history of their movements.
+9. use the app without FlushCrowd persisting a history of their movements.
 
 ## Success metrics
 

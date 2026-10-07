@@ -1,6 +1,6 @@
-# LooRadar
+# FlushCrowd
 
-LooRadar is a global, community-powered restroom finder focused on helping people quickly locate nearby toilets/comfort rooms, see practical details, contribute new locations, rate facilities, and verify whether listings are still usable.
+FlushCrowd is a global, community-powered restroom finder focused on helping people quickly locate nearby toilets/comfort rooms, see practical details, contribute new locations, rate facilities, and verify whether listings are still usable.
 
 ## Project goals
 

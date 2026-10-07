@@ -1,4 +1,4 @@
-package com.looradar.looradar
+package com.flushcrowd.flushcrowd
 
 import io.flutter.embedding.android.FlutterActivity
 

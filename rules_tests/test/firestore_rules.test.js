@@ -7,7 +7,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { test, before, after, beforeEach, describe } from 'node:test';
 
-const PROJECT_ID = 'looradar-rules-test';
+const PROJECT_ID = 'flushcrowd-rules-test';
 let testEnv;
 
 before(async () => {
@@ -52,7 +52,7 @@ function getValidRestroomData() {
   };
 }
 
-describe('Firestore Security Rules — LooRadar Phase 0', () => {
+describe('Firestore Security Rules — FlushCrowd Phase 0', () => {
   // ===============================================================
   // 1. PUBLIC READS
   // ===============================================================

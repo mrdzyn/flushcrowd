@@ -1,4 +1,4 @@
-# LooRadar Phase 0 Plan
+# FlushCrowd Phase 0 Plan
 
 ## Goal
 

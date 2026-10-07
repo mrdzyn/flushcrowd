@@ -1,20 +1,20 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/discovery_filters.dart';
-import 'package:looradar/domain/models/discovery_result.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/geo_bounding_box.dart';
-import 'package:looradar/domain/models/restroom.dart';
-import 'package:looradar/presentation/components/bottom_sheets/filter_bottom_sheet.dart';
-import 'package:looradar/presentation/components/bottom_sheets/nearby_restrooms_sheet.dart';
-import 'package:looradar/presentation/components/bottom_sheets/restroom_preview_sheet.dart';
-import 'package:looradar/presentation/components/cards/restroom_summary_card.dart';
-import 'package:looradar/presentation/components/map/map_discovery_bottom_bar.dart';
-import 'package:looradar/presentation/components/map/map_search_bar.dart';
-import 'package:looradar/presentation/components/map/map_status_overlay.dart';
-import 'package:looradar/presentation/state/map_discovery_notifier.dart';
-import 'package:looradar/presentation/utils/restroom_sorting.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/discovery_filters.dart';
+import 'package:flushcrowd/domain/models/discovery_result.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/filter_bottom_sheet.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/nearby_restrooms_sheet.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/restroom_preview_sheet.dart';
+import 'package:flushcrowd/presentation/components/cards/restroom_summary_card.dart';
+import 'package:flushcrowd/presentation/components/map/map_discovery_bottom_bar.dart';
+import 'package:flushcrowd/presentation/components/map/map_search_bar.dart';
+import 'package:flushcrowd/presentation/components/map/map_status_overlay.dart';
+import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
+import 'package:flushcrowd/presentation/utils/restroom_sorting.dart';
 
 import 'map_discovery_notifier_test.dart';
 

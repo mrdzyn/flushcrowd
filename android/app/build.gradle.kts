@@ -7,7 +7,7 @@ plugins {
 }
 
 android {
-    namespace = "com.looradar.looradar"
+    namespace = "com.flushcrowd.flushcrowd"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
@@ -30,7 +30,7 @@ android {
 
     defaultConfig {
         // TODO: Specify your own unique Application ID (https://developer.android.com/studio/build/application-id.html).
-        applicationId = "com.looradar.looradar"
+        applicationId = "com.flushcrowd.flushcrowd"
         // Google Maps & Firebase recommend minSdk 23+.
         minSdk = flutter.minSdkVersion.coerceAtLeast(23)
         targetSdk = flutter.targetSdkVersion

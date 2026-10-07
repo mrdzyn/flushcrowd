@@ -2,7 +2,7 @@
 class AppConstants {
   AppConstants._();
 
-  static const String appName = 'LooRadar';
+  static const String appName = 'FlushCrowd';
   static const String appTagline = 'Find a better loo, anywhere.';
 
   // Default coordinate fallback (e.g., when location is not yet granted or denied)
@@ -47,6 +47,6 @@ class AppConstants {
   static const String contributionOwnershipCollection = 'contributionOwnership';
 
   // Support links
-  static const String buyMeACoffeeUrl = 'https://buymeacoffee.com/looradar';
-  static const String privacyPolicyUrl = 'https://looradar.app/privacy';
+  static const String buyMeACoffeeUrl = 'https://buymeacoffee.com/flushcrowd';
+  static const String privacyPolicyUrl = 'https://flushcrowd.app/privacy';
 }

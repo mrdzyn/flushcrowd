@@ -1,10 +1,10 @@
 import 'package:flutter_test/flutter_test.dart';
-import 'package:looradar/domain/models/coordinates.dart';
-import 'package:looradar/domain/models/enums.dart';
-import 'package:looradar/domain/models/rating.dart';
-import 'package:looradar/domain/models/report.dart';
-import 'package:looradar/domain/models/restroom.dart';
-import 'package:looradar/domain/models/verification.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/rating.dart';
+import 'package:flushcrowd/domain/models/report.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/domain/models/verification.dart';
 
 void main() {
   group('Domain Models & Privacy Isolation', () {
