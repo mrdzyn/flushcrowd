@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 — Add Restroom
 - **Current milestone:** Product & Repository Rename (LooRadar → FlushCrowd)
 - **Current branch:** `chore/rename-flushcrowd`
-- **Current PR:** Pending creation
+- **Current PR:** [#5](https://github.com/mrdzyn/flushcrowd/pull/5) — `chore: rename LooRadar to FlushCrowd`
 - **Base:** `main` at `2b58a79c22182d8213b0c625b0de69b1daf623c5` (includes Phase 2 P2.2 squash merge)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [ACTIVE]; P2.3 [NOT STARTED — BLOCKED pending rename PR audit and staging setup].
 
