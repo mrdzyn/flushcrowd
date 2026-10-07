@@ -16,12 +16,34 @@ import '../components/buttons/loo_primary_button.dart';
 import '../components/map/map_recenter_button.dart';
 import '../state/location_notifier.dart';
 
+/// Controller abstraction for programmatic camera manipulation,
+/// allowing test doubles to verify camera animation and positioning.
+abstract class MapCameraController {
+  Future<void> animateCamera(CameraUpdate cameraUpdate);
+  Future<void> moveCamera(CameraUpdate cameraUpdate);
+}
+
+/// Production adapter wrapping Google Maps SDK [GoogleMapController].
+class GoogleMapCameraController implements MapCameraController {
+  final GoogleMapController _controller;
+
+  GoogleMapCameraController(this._controller);
+
+  @override
+  Future<void> animateCamera(CameraUpdate cameraUpdate) =>
+      _controller.animateCamera(cameraUpdate);
+
+  @override
+  Future<void> moveCamera(CameraUpdate cameraUpdate) =>
+      _controller.moveCamera(cameraUpdate);
+}
+
 /// Builder signature allowing test doubles to supply mock map widgets
 /// for deterministic testing without native Google Maps platform views.
 typedef MapWidgetBuilder = Widget Function({
   required BuildContext context,
   required CameraPosition initialCameraPosition,
-  required void Function(GoogleMapController controller)? onMapCreated,
+  required void Function(MapCameraController controller)? onMapCreated,
   required void Function(CameraPosition position)? onCameraMove,
   required VoidCallback? onCameraIdle,
   required VoidCallback? onCameraMoveStarted,
@@ -84,13 +106,15 @@ class AddRestroomLocationScreen extends StatefulWidget {
 }
 
 class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
-  GoogleMapController? _mapController;
+  MapCameraController? _mapController;
+  CameraUpdate? _pendingProgrammaticCameraIntent;
 
   late Coordinates _selectedCoordinates;
   late LatLng _currentCameraTarget;
   late double _currentZoom;
 
   bool _isCameraMoving = false;
+  bool _isProgrammaticMovePending = false;
   bool _isLocating = false;
   bool _isPermissionGranted = false;
 
@@ -122,9 +146,47 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
       return widget.locationRepository!;
     }
     try {
+      final notifier = Provider.of<LocationNotifier>(context, listen: false);
+      return notifier.locationRepository;
+    } catch (_) {}
+    try {
       return Provider.of<LocationRepository>(context, listen: false);
     } catch (_) {
       return _FallbackLocationRepository();
+    }
+  }
+
+  void _onControllerCreated(MapCameraController controller) {
+    _mapController = controller;
+    if (_pendingProgrammaticCameraIntent != null) {
+      final intent = _pendingProgrammaticCameraIntent!;
+      _pendingProgrammaticCameraIntent = null;
+      unawaited(_executeCameraMove(intent));
+    }
+  }
+
+  void _requestProgrammaticCameraMove(LatLng target, double zoom) {
+    final update = CameraUpdate.newLatLngZoom(target, zoom);
+    setState(() {
+      _isProgrammaticMovePending = true;
+      _currentCameraTarget = target;
+      _currentZoom = zoom;
+    });
+
+    if (_mapController != null) {
+      unawaited(_executeCameraMove(update));
+    } else {
+      _pendingProgrammaticCameraIntent = update;
+    }
+  }
+
+  Future<void> _executeCameraMove(CameraUpdate update) async {
+    try {
+      await _mapController?.animateCamera(update);
+    } catch (_) {
+      try {
+        await _mapController?.moveCamera(update);
+      } catch (_) {}
     }
   }
 
@@ -134,24 +196,18 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
       // 1. Check LocationNotifier if present in the tree
       try {
         final notifier = Provider.of<LocationNotifier>(context, listen: false);
-        if (notifier.hasLocation && notifier.currentCoordinates != null) {
+        if (notifier.isPermissionGranted &&
+            notifier.hasLocation &&
+            notifier.currentCoordinates != null) {
           final coords = notifier.currentCoordinates!;
           if (mounted) {
             setState(() {
-              _isPermissionGranted = notifier.isPermissionGranted;
-              _selectedCoordinates = coords;
-              _currentCameraTarget = LatLng(coords.latitude, coords.longitude);
+              _isPermissionGranted = true;
             });
-            if (_mapController != null) {
-              unawaited(
-                _mapController!.animateCamera(
-                  CameraUpdate.newLatLngZoom(
-                    _currentCameraTarget,
-                    _currentZoom,
-                  ),
-                ),
-              );
-            }
+            _requestProgrammaticCameraMove(
+              LatLng(coords.latitude, coords.longitude),
+              _currentZoom,
+            );
           }
           return;
         }
@@ -165,16 +221,11 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
         if (mounted) {
           setState(() {
             _isPermissionGranted = true;
-            _selectedCoordinates = coords;
-            _currentCameraTarget = LatLng(coords.latitude, coords.longitude);
           });
-          if (_mapController != null) {
-            unawaited(
-              _mapController!.animateCamera(
-                CameraUpdate.newLatLngZoom(_currentCameraTarget, _currentZoom),
-              ),
-            );
-          }
+          _requestProgrammaticCameraMove(
+            LatLng(coords.latitude, coords.longitude),
+            _currentZoom,
+          );
         }
       }
     } catch (_) {
@@ -213,6 +264,8 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
 
     setState(() {
       _isCameraMoving = false;
+      _isProgrammaticMovePending = false;
+      _pendingProgrammaticCameraIntent = null;
       _selectedCoordinates = Coordinates(latitude: lat, longitude: lng);
     });
   }
@@ -221,92 +274,45 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
     setState(() => _isLocating = true);
 
     try {
-      Coordinates? targetCoords;
-
-      if (widget.locationRepository != null) {
-        final repo = widget.locationRepository!;
-        final serviceEnabled = await repo.isLocationServiceEnabled();
-        if (!serviceEnabled) {
-          _showLocationNotice(
-            'Location services are disabled. Move the map manually.',
-          );
-          return;
-        }
-        var permission = await repo.checkPermission();
-        if (permission == LocationPermissionState.notRequested ||
-            permission == LocationPermissionState.denied) {
-          permission = await repo.requestPermission();
-        }
-        if (permission.isGranted) {
-          targetCoords = await repo.getCurrentLocation();
-          _isPermissionGranted = true;
-        } else {
-          _showLocationNotice(
-            'Location permission denied. Move the map manually.',
-          );
-          return;
-        }
-      } else {
-        // Fallback to LocationNotifier if present
-        try {
-          final notifier = Provider.of<LocationNotifier>(
-            context,
-            listen: false,
-          );
-          if (!notifier.isPermissionGranted) {
-            await notifier.requestLocationPermission();
-          } else {
-            await notifier.fetchCurrentLocation();
-          }
-          if (notifier.isPermissionGranted && notifier.hasLocation) {
-            targetCoords = notifier.currentCoordinates;
-            _isPermissionGranted = true;
-          } else {
-            _showLocationNotice(
-              'Location permission denied. Move the map manually.',
-            );
-            return;
-          }
-        } catch (_) {
-          if (!mounted) return;
-          final repo = _getLocationRepository(context);
-          final permission = await repo.requestPermission();
-          if (permission.isGranted) {
-            targetCoords = await repo.getCurrentLocation();
-            _isPermissionGranted = true;
-          } else {
-            _showLocationNotice(
-              'Location permission denied. Move the map manually.',
-            );
-            return;
-          }
-        }
+      final repo = _getLocationRepository(context);
+      final serviceEnabled = await repo.isLocationServiceEnabled();
+      if (!serviceEnabled) {
+        _showLocationNotice(
+          'Location services are disabled. Move the map manually.',
+        );
+        return;
       }
 
-      if (targetCoords != null && mounted) {
-        final zoom =
-            _currentZoom < AddRestroomLocationScreen.minConfirmationZoom
-            ? AddRestroomLocationScreen.minConfirmationZoom
-            : _currentZoom;
-
-        setState(() {
-          _currentCameraTarget = LatLng(
-            targetCoords!.latitude,
-            targetCoords.longitude,
-          );
-          _selectedCoordinates = targetCoords;
-          _currentZoom = zoom;
-        });
-
-        if (_mapController != null) {
-          await _mapController!.animateCamera(
-            CameraUpdate.newLatLngZoom(
-              LatLng(targetCoords.latitude, targetCoords.longitude),
-              zoom,
-            ),
-          );
-        }
+      var permission = await repo.checkPermission();
+      if (permission == LocationPermissionState.notRequested ||
+          permission == LocationPermissionState.denied) {
+        permission = await repo.requestPermission();
       }
+
+      if (!permission.isGranted) {
+        _showLocationNotice(
+          'Location permission denied. Move the map manually.',
+        );
+        return;
+      }
+
+      _isPermissionGranted = true;
+
+      // Fresh location attempt - never rely on stale cache
+      final freshCoords = await repo.getCurrentLocation();
+      if (!mounted) return;
+
+      final targetZoom =
+          _currentZoom < AddRestroomLocationScreen.minConfirmationZoom
+          ? AddRestroomLocationScreen.minConfirmationZoom
+          : _currentZoom;
+
+      _requestProgrammaticCameraMove(
+        LatLng(freshCoords.latitude, freshCoords.longitude),
+        targetZoom,
+      );
+    } on TimeoutException {
+      _showLocationNotice('Location request timed out. Move the map manually.');
     } catch (_) {
       _showLocationNotice(
         'Unable to determine current location. Move the map manually.',
@@ -333,7 +339,8 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
   bool get _isZoomSufficient =>
       _currentZoom >= AddRestroomLocationScreen.minConfirmationZoom;
 
-  bool get _canConfirm => _isZoomSufficient && !_isCameraMoving;
+  bool get _canConfirm =>
+      _isZoomSufficient && !_isCameraMoving && !_isProgrammaticMovePending;
 
   void _handleContinue() {
     if (!_canConfirm) return;
@@ -456,7 +463,7 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
       return widget.mapBuilder!(
         context: context,
         initialCameraPosition: initialCameraPosition,
-        onMapCreated: (controller) => _mapController = controller,
+        onMapCreated: _onControllerCreated,
         onCameraMove: _onCameraMove,
         onCameraIdle: _onCameraIdle,
         onCameraMoveStarted: _onCameraMoveStarted,
@@ -470,7 +477,8 @@ class _AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
       zoomControlsEnabled: false,
       mapToolbarEnabled: false,
       compassEnabled: false,
-      onMapCreated: (controller) => _mapController = controller,
+      onMapCreated: (controller) =>
+          _onControllerCreated(GoogleMapCameraController(controller)),
       onCameraMoveStarted: _onCameraMoveStarted,
       onCameraMove: _onCameraMove,
       onCameraIdle: _onCameraIdle,

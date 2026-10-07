@@ -7,27 +7,32 @@
 - **Repository:** `mrdzyn/looradar`
 - **Overall stage:** Application Implementation
 - **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX: implementation complete; independent exact-head audit pending
+- **Current milestone:** P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX: audit remediation complete; independent exact-head re-audit pending
 - **Current branch:** `phase-2/add-restroom`
 - **Current PR:** [#4](https://github.com/mrdzyn/looradar/pull/4) — `feat: implement LooRadar Phase 2 add restroom` (draft)
 - **Phase 2 base:** `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.2 [IMPLEMENTED — independent exact-head audit pending]; P2.3 [BLOCKED pending P2.2 audit].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED] (audit PASS 0/0/0, PR #3 squash-merged at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6`); Phase 2 [ACTIVE]; P2.0 specification [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.1 [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]; P2.2 [REMEDIATION COMPLETE — independent exact-head audit pending]; P2.3 [BLOCKED pending P2.2 audit].
 
 ## Current objective
 
-Independent exact-head audit of **Phase 2 Milestone P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX** (`docs/09-phase-2-add-restroom.md` §4.2):
+Independent exact-head re-audit of **Phase 2 Milestone P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX** (`docs/09-phase-2-add-restroom.md` §4.2):
 - Implemented `AddRestroomLocationScreen` in `lib/presentation/screens/add_restroom_location_screen.dart` with interactive Google Map and fixed center target pin overlay (`_buildCenterTargetIndicator`).
 - Selected facility coordinate represented strictly via canonical `Coordinates` value object (`lib/domain/models/coordinates.dart`).
-- Enforced minimum zoom floor (`zoom >= 15.0`, `minConfirmationZoom`) with precision guidance hint: `"Zoom in to place the restroom more precisely."` shown whenever zoom is below 15.0; confirmation is disabled until zoom floor is met and camera is idle.
+- Enforced minimum zoom floor (`zoom >= 15.0`, `minConfirmationZoom`) with precision guidance hint: `"Zoom in to place the restroom more precisely."` shown whenever zoom is below 15.0; confirmation is disabled until zoom floor is met, camera is idle, and no programmatic move is pending.
 - Live coordinate readout formatted to exactly 5 decimal places (~1.1m precision): `${lat.toStringAsFixed(5)}, ${lng.toStringAsFixed(5)}` (e.g. `14.58390, 121.06170`).
 - Camera movement updates lightweight visual state (`_isCameraMoving`) and animates target pin without triggering persistence, domain updates, or database reads/writes; camera idle (`onCameraIdle`) commits selected coordinate from camera target.
 - Initial location order: 1) explicit `initialCoordinates` if provided; 2) current foreground device location via `LocationRepository`/`LocationNotifier` if permission granted; 3) safe fallback (`AppConstants.defaultLatitude`, `AppConstants.defaultLongitude`).
 - Added "Use my location" action (`MapRecenterButton`) to center map on current device location with non-blocking error feedback if permission denied or location disabled; manual map exploration remains fully functional without GPS.
+- Remediated MAJOR-1: fresh foreground lookup strictly distinguishes services disabled, permission denied, and lookup failure; never consumes stale cached coordinates from `LocationNotifier`.
+- Remediated MAJOR-2: decoupled map controller via `MapCameraController`, introduced `_pendingProgrammaticCameraIntent` queue for controller startup synchronization, disabled Continue while move is pending, and committed selected coordinates strictly on `onCameraIdle`.
+- Remediated MINOR-1: fixed safe-area test assertion to dynamically derive bottom limit from `MediaQuery` (`screenSize.height - viewPadding.bottom`).
+- Remediated MINOR-2: provided `CountingRestroomRepository` in test widget Provider tree to ensure zero accidental repository operations are actively verified.
+- Remediated MINOR-3: synchronized `docs/STATUS.md` P2.1 approved status and P2.2 audit remediation tracking.
 - Clean navigation seam returning `Coordinates` via `onLocationConfirmed` callback and `Navigator.pop(selectedCoordinates)` via static `route()` factory; no premature P2.3 form created.
 - Zero Firestore reads, zero Firestore writes, zero Places API, zero Geocoding API, zero Directions/Routes APIs, zero background location, zero movement history.
 - Full accessibility: touch targets $\ge 48\times 48$, semantics on center target pin, coordinate readout, location button, and Continue button.
-- Authored 16 focused unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all 14 prompt criteria plus antimeridian normalization and route navigation.
-- Validated full Flutter test suite (248 total Flutter tests, all PASS: 232 prior + 16 new P2.2 tests).
+- Authored 24 unit & widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all criteria, edge cases, and remediation assertions.
+- Validated full Flutter test suite (256 total Flutter tests, all PASS).
 - Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
 The active specification is:
@@ -97,7 +102,7 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Updated project documentation index and tracking status.
 - Independent specification audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [FINAL DOCUMENTATION CLOSURE COMPLETE — INDEPENDENT EXACT-HEAD AUDIT PENDING]
+### P2.1 — Contribution Domain Model (`RestroomDraft`), Nullable Schema Migration, Repository Batch Write Contract, Firestore Rules & Emulator Tests [APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]
 - Reconciled canonical specification in `docs/09-phase-2-add-restroom.md` §8.3 to reflect the approved hardened ambiguous reconciliation contract (direct write without pre-reads, public-only initial read on ambiguous failure, conditional private read, permission-denied mapping to invariant failure, independent public/private field validation, stable ID retry invariant without same-call auto-retry, and preserved timestamp provenance note).
 - Implemented `RestroomDraft`, `TriStateAmenity`, normalization method (`draft.normalized()`), and domain validation.
 - Implemented `CreateRestroomCommand` in `lib/domain/commands/create_restroom_command.dart`.
@@ -117,15 +122,22 @@ Squash-merged into `main` at `11d3b6fcf8f22d3c2c6a91bcf8631198a6efa6a6` (PR #3).
 - Authored Firestore Security Rules emulator tests in `rules_tests/test/p2_add_restroom_rules.test.js` (49 total rules tests, all PASS).
 - Validated full Flutter test suite (232 total Flutter tests, all PASS).
 
-### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [IMPLEMENTED — INDEPENDENT EXACT-HEAD AUDIT PENDING]
+### P2.2 — Interactive Location Pinpoint & Map Pin Adjustment UX [REMEDIATION COMPLETE — INDEPENDENT EXACT-HEAD AUDIT PENDING]
 - Implemented `AddRestroomLocationScreen` with interactive Google Map and fixed center crosshair / target pin overlay (`_buildCenterTargetIndicator`).
 - Selected facility coordinate represented strictly via canonical `Coordinates` domain model (`lib/domain/models/coordinates.dart`).
-- Enforced zoom floor (`zoom >= 15.0`) with visual precision hint: `"Zoom in to place the restroom more precisely."` and disabled Continue action until zoom floor is met and camera is idle.
+- Enforced zoom floor (`zoom >= 15.0`) with visual precision hint: `"Zoom in to place the restroom more precisely."` and disabled Continue action until zoom floor is met, camera is idle, and no programmatic move is pending.
 - Displayed live formatted coordinate readouts (5 decimal places, e.g. `14.58390, 121.06170`) via `Coordinates`.
 - Camera movement updates lightweight visual state (`_isCameraMoving`) without triggering persistence or queries; camera idle commits target coordinates.
 - "Use my location" button moves camera and updates selection if available; manual map selection remains fully functional when GPS is unavailable.
+- Remediated MAJOR-1: Fresh foreground-location attempt directly queries `LocationRepository.getCurrentLocation()`, explicitly distinguishing location service disabled, permission denied/permanently denied, and retrieval failure/timeout without consuming stale cached coordinates from `LocationNotifier`. Manual map placement remains fully functional.
+- Remediated MAJOR-2: Introduced `MapCameraController` interface (`animateCamera`, `moveCamera`) and `GoogleMapCameraController` adapter. Implemented `_pendingProgrammaticCameraIntent` queue to solve startup race conditions when device GPS resolves before `onMapCreated`. Programmatic movements no longer eagerly mutate `_selectedCoordinates`; selection commits strictly in `_onCameraIdle()`. `_canConfirm` disables Continue while a programmatic move is pending (`_isProgrammaticMovePending`).
+- Remediated MINOR-1: Fixed test 13 safe-area assertion to derive boundary from `screenSize.height - viewPadding.bottom` rather than a magic number.
+- Remediated MINOR-2: Injected `CountingRestroomRepository` into Provider tree via `createTestWidget` so that accidental Firestore queries/submissions are observable by tests.
+- Remediated MINOR-3: Synchronized `docs/STATUS.md` line 100 P2.1 heading to `[APPROVED — PASS 0 BLOCKER / 0 MAJOR / 0 MINOR]`.
 - Clean navigation seam returning `Coordinates` via callback and `Navigator.pop`.
-- Authored 16 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all 14 prompt criteria plus antimeridian normalization and route navigation.
+- Authored 24 unit and widget tests in `test/presentation/add_restroom_location_screen_test.dart` covering all prompt criteria, edge cases, and remediation assertions.
+- Validated full Flutter test suite (256 total Flutter tests, all PASS).
+- Validated all 49 Firestore Security Rules tests under Firestore emulator.
 
 ### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [BLOCKED pending P2.2 audit]
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).

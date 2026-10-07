@@ -21,6 +21,7 @@ class LocationNotifier extends ChangeNotifier {
   Coordinates? get currentCoordinates => _currentCoordinates;
   bool get isLoading => _isLoading;
   String? get errorMessage => _errorMessage;
+  LocationRepository get locationRepository => _locationRepository;
 
   /// Returns user's location if available, or fallback default coordinates for manual exploration.
   Coordinates get effectiveCoordinates =>

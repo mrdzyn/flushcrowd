@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
 import 'package:looradar/data/repositories/location_repository_impl.dart';
 import 'package:looradar/domain/commands/create_restroom_command.dart';
 import 'package:looradar/domain/models/coordinates.dart';
@@ -8,10 +9,72 @@ import 'package:looradar/domain/models/discovery_result.dart';
 import 'package:looradar/domain/models/enums.dart';
 import 'package:looradar/domain/models/geo_bounding_box.dart';
 import 'package:looradar/domain/models/restroom.dart';
+import 'package:looradar/domain/repositories/location_repository.dart';
 import 'package:looradar/domain/repositories/restroom_repository.dart';
 import 'package:looradar/presentation/components/buttons/loo_primary_button.dart';
 import 'package:looradar/presentation/components/map/map_recenter_button.dart';
 import 'package:looradar/presentation/screens/add_restroom_location_screen.dart';
+import 'package:looradar/presentation/state/location_notifier.dart';
+
+/// Test helper implementing [MapCameraController] to record camera updates deterministically.
+class FakeMapCameraController implements MapCameraController {
+  final FakeMapState fakeMapState;
+  int animateCameraCalls = 0;
+  int moveCameraCalls = 0;
+  CameraUpdate? lastCameraUpdate;
+  bool autoSettle = true;
+
+  FakeMapCameraController(this.fakeMapState);
+
+  @override
+  Future<void> animateCamera(CameraUpdate cameraUpdate) async {
+    animateCameraCalls++;
+    lastCameraUpdate = cameraUpdate;
+    if (autoSettle) {
+      _applyUpdate(cameraUpdate);
+    }
+  }
+
+  @override
+  Future<void> moveCamera(CameraUpdate cameraUpdate) async {
+    moveCameraCalls++;
+    lastCameraUpdate = cameraUpdate;
+    if (autoSettle) {
+      _applyUpdate(cameraUpdate);
+    }
+  }
+
+  void _applyUpdate(CameraUpdate cameraUpdate) {
+    try {
+      final json = cameraUpdate.toJson();
+      if (json is List && json.isNotEmpty) {
+        if (json[0] == 'newLatLngZoom' && json.length >= 3) {
+          final targetList = json[1] as List;
+          final target = LatLng(
+            (targetList[0] as num).toDouble(),
+            (targetList[1] as num).toDouble(),
+          );
+          final zoom = (json[2] as num).toDouble();
+          fakeMapState.simulateMove(CameraPosition(target: target, zoom: zoom));
+          fakeMapState.simulateIdle();
+        } else if (json[0] == 'newLatLng' && json.length >= 2) {
+          final targetList = json[1] as List;
+          final target = LatLng(
+            (targetList[0] as num).toDouble(),
+            (targetList[1] as num).toDouble(),
+          );
+          fakeMapState.simulateMove(
+            CameraPosition(
+              target: target,
+              zoom: fakeMapState.currentCameraPosition.zoom,
+            ),
+          );
+          fakeMapState.simulateIdle();
+        }
+      }
+    } catch (_) {}
+  }
+}
 
 /// Test helper to capture map callbacks and simulate camera events deterministically.
 class FakeMapState {
@@ -19,6 +82,16 @@ class FakeMapState {
   void Function(CameraPosition position)? onCameraMove;
   VoidCallback? onCameraIdle;
   VoidCallback? onCameraMoveStarted;
+  void Function(MapCameraController controller)? onMapCreated;
+  late FakeMapCameraController controller;
+
+  FakeMapState() {
+    controller = FakeMapCameraController(this);
+  }
+
+  void simulateMapCreated() {
+    onMapCreated?.call(controller);
+  }
 
   void simulateMove(CameraPosition position) {
     currentCameraPosition = position;
@@ -67,15 +140,48 @@ class CountingRestroomRepository implements RestroomRepository {
   }
 }
 
+/// Test double that can simulate fresh location retrieval failure.
+class MockFailingLocationRepository extends InMemoryLocationRepository {
+  bool shouldThrowOnGetCurrentLocation = false;
+
+  MockFailingLocationRepository({
+    super.initialPermission,
+    super.initialCoordinates,
+    super.serviceEnabled,
+  });
+
+  @override
+  Future<Coordinates> getCurrentLocation() async {
+    if (shouldThrowOnGetCurrentLocation) {
+      throw Exception('Fresh GPS hardware lookup failed');
+    }
+    return super.getCurrentLocation();
+  }
+}
+
 Widget createTestWidget({
   required Widget child,
+  RestroomRepository? restroomRepository,
+  LocationRepository? locationRepository,
+  LocationNotifier? locationNotifier,
   Size screenSize = const Size(390, 844),
   EdgeInsets viewPadding = EdgeInsets.zero,
 }) {
-  return MaterialApp(
-    home: MediaQuery(
-      data: MediaQueryData(size: screenSize, viewPadding: viewPadding),
-      child: child,
+  return MultiProvider(
+    providers: [
+      Provider<RestroomRepository>.value(
+        value: restroomRepository ?? CountingRestroomRepository(),
+      ),
+      if (locationRepository != null)
+        Provider<LocationRepository>.value(value: locationRepository),
+      if (locationNotifier != null)
+        ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),
+    ],
+    child: MaterialApp(
+      home: MediaQuery(
+        data: MediaQueryData(size: screenSize, viewPadding: viewPadding),
+        child: child,
+      ),
     ),
   );
 }
@@ -95,19 +201,24 @@ void main() {
       restroomRepo = CountingRestroomRepository();
     });
 
-    MapWidgetBuilder createFakeMapBuilder() {
+    MapWidgetBuilder createFakeMapBuilder({bool autoConnectController = true}) {
       return ({
         required BuildContext context,
         required CameraPosition initialCameraPosition,
-        required void Function(GoogleMapController controller)? onMapCreated,
+        required void Function(MapCameraController controller)? onMapCreated,
         required void Function(CameraPosition position)? onCameraMove,
         required VoidCallback? onCameraIdle,
         required VoidCallback? onCameraMoveStarted,
       }) {
         fakeMap.currentCameraPosition = initialCameraPosition;
+        fakeMap.onMapCreated = onMapCreated;
         fakeMap.onCameraMove = onCameraMove;
         fakeMap.onCameraIdle = onCameraIdle;
         fakeMap.onCameraMoveStarted = onCameraMoveStarted;
+
+        if (autoConnectController) {
+          onMapCreated?.call(fakeMap.controller);
+        }
 
         return Container(
           key: const Key('fake_map_canvas'),
@@ -454,16 +565,18 @@ void main() {
               longitude: 121.0617,
             ),
             locationRepository: locationRepo,
-            onLocationConfirmed: (c) => confirmedCoordinates = c,
             mapBuilder: createFakeMapBuilder(),
+            onLocationConfirmed: (coords) {
+              confirmedCoordinates = coords;
+            },
           ),
         ),
       );
       await tester.pumpAndSettle();
 
-      // Pan to new coordinate
+      // Move camera
       fakeMap.simulateMove(
-        const CameraPosition(target: LatLng(14.5950, 121.0680), zoom: 16.5),
+        const CameraPosition(target: LatLng(14.6200, 121.0400), zoom: 16.0),
       );
       fakeMap.simulateIdle();
       await tester.pump();
@@ -473,15 +586,16 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(confirmedCoordinates, isNotNull);
-      expect(confirmedCoordinates!.latitude, 14.5950);
-      expect(confirmedCoordinates!.longitude, 121.0680);
+      expect(confirmedCoordinates!.latitude, 14.6200);
+      expect(confirmedCoordinates!.longitude, 121.0400);
     });
 
     testWidgets(
-      '11. no repository submission invoked during pinpoint interaction',
+      '11. no Firestore submission write invoked by pinpoint placement / continue',
       (tester) async {
         await tester.pumpWidget(
           createTestWidget(
+            restroomRepository: restroomRepo,
             child: AddRestroomLocationScreen(
               initialCoordinates: Coordinates(
                 latitude: 14.5839,
@@ -494,7 +608,7 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Pan multiple times
+        // Perform camera movements
         fakeMap.simulateMove(
           const CameraPosition(target: LatLng(14.6, 121.1), zoom: 16.0),
         );
@@ -521,6 +635,7 @@ void main() {
       (tester) async {
         await tester.pumpWidget(
           createTestWidget(
+            restroomRepository: restroomRepo,
             child: AddRestroomLocationScreen(
               initialCoordinates: Coordinates(
                 latitude: 14.5839,
@@ -553,9 +668,13 @@ void main() {
     testWidgets(
       '13. safe-area layout does not cover primary action where widget-testable',
       (tester) async {
+        const testScreenSize = Size(390, 844);
+        const testViewPadding = EdgeInsets.only(bottom: 34.0, top: 44.0);
+
         await tester.pumpWidget(
           createTestWidget(
-            viewPadding: const EdgeInsets.only(bottom: 34.0, top: 44.0),
+            screenSize: testScreenSize,
+            viewPadding: testViewPadding,
             child: AddRestroomLocationScreen(
               initialCoordinates: Coordinates(
                 latitude: 14.5839,
@@ -572,9 +691,10 @@ void main() {
         expect(buttonFinder, findsOneWidget);
 
         final buttonRect = tester.getRect(buttonFinder);
-        // Screen height is 844, bottom padding is 34
-        // The button bottom must sit above 844 - 34 (inside safe area)
-        expect(buttonRect.bottom, lessThanOrEqualTo(844.0));
+        // Safely inside safe area limit derived from MediaQuery
+        final safeAreaBottomLimit =
+            testScreenSize.height - testViewPadding.bottom;
+        expect(buttonRect.bottom, lessThanOrEqualTo(safeAreaBottomLimit));
         expect(buttonRect.height, greaterThanOrEqualTo(48.0));
       },
     );
@@ -705,5 +825,347 @@ void main() {
       expect(returnedCoordinates!.latitude, 14.6100);
       expect(returnedCoordinates!.longitude, 121.0900);
     });
+
+    testWidgets(
+      '17. Use my location when services disabled shows notice and does not change selection',
+      (tester) async {
+        locationRepo.setServiceEnabled(false);
+
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              initialCoordinates: Coordinates(
+                latitude: 14.5839,
+                longitude: 121.0617,
+              ),
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Location services are disabled. Move the map manually.'),
+          findsOneWidget,
+        );
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '18. Use my location when permission denied shows notice and does not change selection',
+      (tester) async {
+        locationRepo.setPermissionState(
+          LocationPermissionState.permanentlyDenied,
+        );
+
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              initialCoordinates: Coordinates(
+                latitude: 14.5839,
+                longitude: 121.0617,
+              ),
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Location permission denied. Move the map manually.'),
+          findsOneWidget,
+        );
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '19. fresh lookup failure does NOT consume stale cached coordinates from LocationNotifier',
+      (tester) async {
+        final mockRepo = MockFailingLocationRepository(
+          initialPermission: LocationPermissionState.granted,
+          initialCoordinates: Coordinates(
+            latitude: 14.5000,
+            longitude: 121.0000,
+          ),
+        );
+        final notifier = LocationNotifier(locationRepository: mockRepo);
+        // Pre-warm notifier to obtain cached coordinates
+        await notifier.fetchCurrentLocation();
+        expect(notifier.hasLocation, isTrue);
+        expect(notifier.currentCoordinates, isNotNull);
+        expect(notifier.currentCoordinates!.latitude, 14.5000);
+
+        // Now simulate GPS hardware / network failure on fresh attempt
+        mockRepo.shouldThrowOnGetCurrentLocation = true;
+
+        await tester.pumpWidget(
+          createTestWidget(
+            locationNotifier: notifier,
+            child: AddRestroomLocationScreen(
+              initialCoordinates: Coordinates(
+                latitude: 14.5839,
+                longitude: 121.0617,
+              ),
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Readout starts at explicit coordinates
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+
+        // Tap "Use my location"
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pumpAndSettle();
+
+        // Shows failure notice
+        expect(
+          find.text(
+            'Unable to determine current location. Move the map manually.',
+          ),
+          findsOneWidget,
+        );
+
+        // Stale coordinates (14.50000, 121.00000) MUST NOT be consumed
+        expect(find.text('14.50000, 121.00000'), findsNothing);
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '20. manual placement functions after failed fresh location attempt',
+      (tester) async {
+        final mockRepo = MockFailingLocationRepository(
+          initialPermission: LocationPermissionState.granted,
+          initialCoordinates: Coordinates(
+            latitude: 14.5000,
+            longitude: 121.0000,
+          ),
+        );
+        mockRepo.shouldThrowOnGetCurrentLocation = true;
+
+        await tester.pumpWidget(
+          createTestWidget(
+            locationRepository: mockRepo,
+            child: AddRestroomLocationScreen(
+              initialCoordinates: Coordinates(
+                latitude: 14.5839,
+                longitude: 121.0617,
+              ),
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'Unable to determine current location. Move the map manually.',
+          ),
+          findsOneWidget,
+        );
+
+        // Manually drag map
+        fakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.7500, 121.0500), zoom: 16.0),
+        );
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        expect(find.text('14.75000, 121.05000'), findsOneWidget);
+        final button = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(button.onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      '21. programmatic move does NOT commit coordinates until camera settles on idle, and Continue is disabled while pending',
+      (tester) async {
+        locationRepo.setPermissionState(LocationPermissionState.granted);
+        locationRepo.setCoordinates(
+          Coordinates(latitude: 14.6500, longitude: 121.0500),
+        );
+
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              initialCoordinates: Coordinates(
+                latitude: 14.5839,
+                longitude: 121.0617,
+              ),
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Disable autoSettle to observe intermediate programmatic moving state
+        fakeMap.controller.autoSettle = false;
+
+        // Initial resting state: Continue is enabled
+        final initialButton = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(initialButton.onPressed, isNotNull);
+
+        // Tap "Use my location"
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pump();
+
+        // Programmatic animateCamera was called
+        expect(fakeMap.controller.animateCameraCalls, 1);
+
+        // Readout has NOT yet updated because onCameraIdle has not fired
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+        expect(find.text('14.65000, 121.05000'), findsNothing);
+
+        // Continue button MUST be disabled while programmatic move is pending
+        final movingButton = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(movingButton.onPressed, isNull);
+
+        // Simulate camera reaching destination and settling
+        fakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.6500, 121.0500), zoom: 16.0),
+        );
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        // Now coordinates commit to the settled position and Continue is re-enabled
+        expect(find.text('14.65000, 121.05000'), findsOneWidget);
+        final settledButton = tester.widget<ElevatedButton>(
+          find.descendant(
+            of: find.byType(LooPrimaryButton),
+            matching: find.byType(ElevatedButton),
+          ),
+        );
+        expect(settledButton.onPressed, isNotNull);
+      },
+    );
+
+    testWidgets(
+      '22. device location resolved before onMapCreated queues camera intent and synchronizes on controller creation',
+      (tester) async {
+        locationRepo.setPermissionState(LocationPermissionState.granted);
+        locationRepo.setCoordinates(
+          Coordinates(latitude: 14.7000, longitude: 121.1000),
+        );
+
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(autoConnectController: false),
+            ),
+          ),
+        );
+        // Pump post-frame callback where _initializeFromDeviceLocationIfAvailable runs
+        await tester.pump();
+
+        // Controller is not connected yet, so animateCamera was not called yet
+        expect(fakeMap.controller.animateCameraCalls, 0);
+
+        // Now simulate controller creation (e.g. map platform view finishes loading)
+        fakeMap.simulateMapCreated();
+        await tester.pump();
+
+        // Queued intent executes immediately
+        expect(fakeMap.controller.animateCameraCalls, 1);
+
+        // Settle camera
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        expect(find.text('14.70000, 121.10000'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '23. Use my location tapped before onMapCreated queues camera intent and synchronizes on controller creation',
+      (tester) async {
+        locationRepo.setPermissionState(LocationPermissionState.granted);
+        locationRepo.setCoordinates(
+          Coordinates(latitude: 14.6800, longitude: 121.0800),
+        );
+
+        await tester.pumpWidget(
+          createTestWidget(
+            child: AddRestroomLocationScreen(
+              initialCoordinates: Coordinates(
+                latitude: 14.5839,
+                longitude: 121.0617,
+              ),
+              locationRepository: locationRepo,
+              mapBuilder: createFakeMapBuilder(autoConnectController: false),
+            ),
+          ),
+        );
+        await tester.pump();
+
+        // Tap "Use my location" before map is created
+        await tester.tap(find.byType(MapRecenterButton));
+        await tester.pump();
+
+        expect(fakeMap.controller.animateCameraCalls, 0);
+
+        // Map controller is created
+        fakeMap.simulateMapCreated();
+        await tester.pump();
+
+        // Queued intent immediately triggers animateCamera
+        expect(fakeMap.controller.animateCameraCalls, 1);
+
+        fakeMap.simulateIdle();
+        await tester.pump();
+
+        expect(find.text('14.68000, 121.08000'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '24. MapCameraController test double tracks animateCamera and moveCamera invocations',
+      (tester) async {
+        final controller = fakeMap.controller;
+        expect(controller.animateCameraCalls, 0);
+        expect(controller.moveCameraCalls, 0);
+
+        await controller.animateCamera(
+          CameraUpdate.newLatLngZoom(const LatLng(14.5, 121.0), 16.0),
+        );
+        expect(controller.animateCameraCalls, 1);
+
+        await controller.moveCamera(
+          CameraUpdate.newLatLngZoom(const LatLng(14.6, 121.1), 16.0),
+        );
+        expect(controller.moveCameraCalls, 1);
+      },
+    );
   });
 }
