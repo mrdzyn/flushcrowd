@@ -178,6 +178,7 @@ Widget createTestApp({
   required LocationNotifier locationNotifier,
   required MapDiscoveryNotifier discoveryNotifier,
   required FakeMapState fakeMap,
+  FakeMapState? discoveryFakeMap,
 }) {
   return MultiProvider(
     providers: [
@@ -191,6 +192,9 @@ Widget createTestApp({
     child: MaterialApp(
       home: MainShellScreen(
         addLocationMapBuilder: createFakeMapBuilder(fakeMap),
+        discoveryMapBuilder: discoveryFakeMap != null
+            ? createFakeMapBuilder(discoveryFakeMap)
+            : null,
       ),
     ),
   );
@@ -483,6 +487,89 @@ void main() {
         expect(
           find.widgetWithText(AppBar, 'Explore Restrooms'),
           findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      '9. Moving discovery map passes that camera target as initialCoordinates to AddRestroomLocationScreen',
+      (tester) async {
+        final discoveryFakeMap = FakeMapState();
+        final addFakeMap = FakeMapState();
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Simulate moving the discovery map to a remote coordinate
+        const remoteTarget = LatLng(35.6895, 139.6917);
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: remoteTarget, zoom: 15.0),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Add
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+        // Verify the AddRestroomLocationScreen started at the remote discovery target
+        expect(find.text('35.68950, 139.69170'), findsOneWidget);
+        expect(
+          addFakeMap.currentCameraPosition.target.latitude,
+          equals(35.6895),
+        );
+        expect(
+          addFakeMap.currentCameraPosition.target.longitude,
+          equals(139.6917),
+        );
+
+        // Did not jump back to GPS location (14.5839, 121.0617)
+        expect(find.text('14.58390, 121.06170'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '10. Fallback remains intact when no discovery camera target has been captured',
+      (tester) async {
+        final addFakeMap = FakeMapState();
+
+        // Pump without discoveryFakeMap, and without discovery camera target
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: addFakeMap,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Add immediately
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+        // Fallback centers on device location or default (14.5839, 121.0617)
+        expect(find.text('14.58390, 121.06170'), findsOneWidget);
+        expect(
+          addFakeMap.currentCameraPosition.target.latitude,
+          equals(14.5839),
+        );
+        expect(
+          addFakeMap.currentCameraPosition.target.longitude,
+          equals(121.0617),
         );
       },
     );

@@ -159,9 +159,10 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Preserved `MainShellScreen` architecture while treating Add as an action entry point pushing `AddRestroomLocationScreen.route()`.
 - Replaced `IndexedStack` placeholder at index 2 with non-placeholder `SizedBox.shrink()`.
 - Protected against rapid duplicate taps stacking routes (`_isOpeningAddLocation`).
+- Remediated MAJOR-1: Preserved discovery map camera target by capturing continuous camera movement in `MapDiscoveryScreen` without triggering rebuilds, and passing it as `initialCoordinates` to `AddRestroomLocationScreen.route()`. Preserved device GPS / default fallback when no discovery target has been captured.
 - Handled coordinate confirmation by returning `Coordinates` and displaying temporary floating notice: `'Restroom details form is coming in the next milestone.'` without pretending submission succeeded or writing to Firestore.
 - Cancel/back pops route and returns cleanly to prior shell tab preserving state.
-- Authored 8 focused widget tests in `test/presentation/main_shell_navigation_test.dart` verifying all behaviors and zero Firestore operations on entry/exit.
+- Authored 10 focused widget tests in `test/presentation/main_shell_navigation_test.dart` verifying all behaviors, camera target preservation, fallback intactness, and zero Firestore operations on entry/exit.
 
 ### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [NOT STARTED — blocked pending live staging verification]
 - Implement `AddRestroomFormScreen` with organized card sections (Basic Info, Indoor Directions, Accessibility, Amenities, Access Instructions & Fee).
@@ -223,29 +224,30 @@ Owner-confirmed staging infrastructure state:
   - Maps rendering — PASS
   - App Check Debug registration — PASS
   - Firestore backend reached — PASS
-  - Firestore read authorization — pending audited Rules deployment
-- iOS live staging QA — PENDING
-- Firestore Rules/index staging deployment — PENDING
+- iOS live staging QA:
+  - App launch — PASS
+  - Maps rendering — PASS
+  - App Check Debug registration — PASS
+- Backend:
+  - Firestore Rules/indexes deployment to `flushcrowd-staging` — PASS
+- Firestore authorized reads:
+  - Post-deployment runtime verification — PENDING
 
 ## Current owner actions / external dependencies
 
 Remaining human owner actions required for live staging QA and P2.3 acceptance gate:
 
-1. Deploy audited Firestore Rules and indexes to staging:
-   ```bash
-   firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes
-   ```
-2. Verify Firestore read connectivity under the deployed staging rules on Android.
-3. Run iOS staging build and perform live QA.
-4. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
-5. Configure GCP billing budget alerts.
-6. Production Android signing remains a later release-readiness action.
+1. Perform post-deployment runtime verification of Firestore authorized reads on live staging.
+2. Manually verify corrected Add-entry behavior (camera target preservation into AddRestroomLocationScreen).
+3. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
+4. Configure GCP billing budget alerts.
+5. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (268/268 passed)
+- `flutter test` — PASS (270/270 passed)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `flutter build apk --debug` without credentials — PASS
 - `git diff --check` — PASS
@@ -253,12 +255,9 @@ Remaining human owner actions required for live staging QA and P2.3 acceptance g
 
 ## Next recommended action
 
-1. Open PR `fix: restore Add Restroom navigation entry` against `main`.
-2. Deploy audited Firestore Rules and indexes to staging via:
-   ```bash
-   firebase deploy --project flushcrowd-staging --only firestore:rules,firestore:indexes
-   ```
-3. Complete Android and iOS live staging verification under deployed rules.
+1. Verify post-deployment Firestore authorized reads on live staging.
+2. Complete manual verification of corrected Add-entry camera preservation behavior.
+3. Review and merge PR #7 following independent audit pass.
 4. Once live staging verification criteria are satisfied, unblock Milestone P2.3.
 
 ## Handoff template

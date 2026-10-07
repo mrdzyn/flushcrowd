@@ -11,8 +11,13 @@ import 'map_discovery_screen.dart';
 /// Main application shell housing the bottom navigation bar and active tab screens.
 class MainShellScreen extends StatefulWidget {
   final MapWidgetBuilder? addLocationMapBuilder;
+  final MapWidgetBuilder? discoveryMapBuilder;
 
-  const MainShellScreen({super.key, this.addLocationMapBuilder});
+  const MainShellScreen({
+    super.key,
+    this.addLocationMapBuilder,
+    this.discoveryMapBuilder,
+  });
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
@@ -21,6 +26,11 @@ class MainShellScreen extends StatefulWidget {
 class _MainShellScreenState extends State<MainShellScreen> {
   int _currentTabIndex = 0;
   bool _isOpeningAddLocation = false;
+  Coordinates? _discoveryCameraTarget;
+
+  void _handleDiscoveryCameraTargetChanged(Coordinates target) {
+    _discoveryCameraTarget = target;
+  }
 
   Future<void> _openAddRestroom() async {
     if (_isOpeningAddLocation) return;
@@ -30,6 +40,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
       final Coordinates? confirmedCoordinates = await Navigator.of(context)
           .push<Coordinates>(
             AddRestroomLocationScreen.route(
+              initialCoordinates: _discoveryCameraTarget,
               mapBuilder: widget.addLocationMapBuilder,
             ),
           );
@@ -62,20 +73,23 @@ class _MainShellScreenState extends State<MainShellScreen> {
     return Scaffold(
       body: IndexedStack(
         index: _currentTabIndex,
-        children: const [
-          MapDiscoveryScreen(),
-          _PhasePlaceholderScreen(
+        children: [
+          MapDiscoveryScreen(
+            mapBuilder: widget.discoveryMapBuilder,
+            onCameraTargetChanged: _handleDiscoveryCameraTargetChanged,
+          ),
+          const _PhasePlaceholderScreen(
             icon: Icons.explore_rounded,
             title: 'Explore Restrooms',
             phaseDescription: 'Phase 1 will deliver the nearby list and categorized explore view.',
           ),
-          SizedBox.shrink(),
-          _PhasePlaceholderScreen(
+          const SizedBox.shrink(),
+          const _PhasePlaceholderScreen(
             icon: Icons.favorite_rounded,
             title: 'Saved Places',
             phaseDescription: 'Future phases will allow saving bookmarked restroom facilities.',
           ),
-          _PhasePlaceholderScreen(
+          const _PhasePlaceholderScreen(
             icon: Icons.settings_rounded,
             title: 'More & Support',
             phaseDescription:

@@ -22,10 +22,18 @@ import '../models/restroom_marker_item.dart';
 import '../state/location_notifier.dart';
 import '../utils/restroom_sorting.dart';
 import '../state/map_discovery_notifier.dart';
+import 'add_restroom_location_screen.dart';
 
 /// Primary map discovery screen matching canonical UX mockup Item 2.
 class MapDiscoveryScreen extends StatefulWidget {
-  const MapDiscoveryScreen({super.key});
+  final MapWidgetBuilder? mapBuilder;
+  final ValueChanged<Coordinates>? onCameraTargetChanged;
+
+  const MapDiscoveryScreen({
+    super.key,
+    this.mapBuilder,
+    this.onCameraTargetChanged,
+  });
 
   @override
   State<MapDiscoveryScreen> createState() => _MapDiscoveryScreenState();
@@ -41,13 +49,16 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     await locationNotifier.fetchCurrentLocation();
 
     final coords = locationNotifier.currentCoordinates;
-    if (coords != null && _mapController != null) {
-      await _mapController!.animateCamera(
-        CameraUpdate.newLatLngZoom(
-          LatLng(coords.latitude, coords.longitude),
-          AppConstants.defaultZoomLevel,
-        ),
-      );
+    if (coords != null) {
+      widget.onCameraTargetChanged?.call(coords);
+      if (_mapController != null) {
+        await _mapController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(coords.latitude, coords.longitude),
+            AppConstants.defaultZoomLevel,
+          ),
+        );
+      }
     }
     if (mounted) {
       setState(() => _isRecentering = false);
@@ -55,6 +66,12 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   }
 
   void _handleClusterTap(Cluster cluster) {
+    widget.onCameraTargetChanged?.call(
+      Coordinates(
+        latitude: cluster.position.latitude,
+        longitude: cluster.position.longitude,
+      ),
+    );
     if (_mapController == null) return;
     _mapController!.animateCamera(
       CameraUpdate.newLatLngZoom(
@@ -217,6 +234,32 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       },
     );
 
+    if (widget.mapBuilder != null) {
+      return widget.mapBuilder!(
+        context: context,
+        initialCameraPosition: CameraPosition(
+          target: LatLng(initialCoords.latitude, initialCoords.longitude),
+          zoom: AppConstants.defaultZoomLevel,
+        ),
+        onMapCreated: (controller) {
+          widget.onCameraTargetChanged?.call(initialCoords);
+        },
+        onCameraMove: (position) {
+          context.read<MapDiscoveryNotifier>().onCameraMove();
+          widget.onCameraTargetChanged?.call(
+            Coordinates(
+              latitude: position.target.latitude,
+              longitude: position.target.longitude,
+            ),
+          );
+        },
+        onCameraIdle: _handleCameraIdle,
+        onCameraMoveStarted: () {
+          context.read<MapDiscoveryNotifier>().onCameraMoveStarted();
+        },
+      );
+    }
+
     return GoogleMap(
       initialCameraPosition: CameraPosition(
         target: LatLng(initialCoords.latitude, initialCoords.longitude),
@@ -232,12 +275,19 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       onCameraMoveStarted: () {
         context.read<MapDiscoveryNotifier>().onCameraMoveStarted();
       },
-      onCameraMove: (_) {
+      onCameraMove: (position) {
         context.read<MapDiscoveryNotifier>().onCameraMove();
+        widget.onCameraTargetChanged?.call(
+          Coordinates(
+            latitude: position.target.latitude,
+            longitude: position.target.longitude,
+          ),
+        );
       },
       onCameraIdle: _handleCameraIdle,
       onMapCreated: (controller) {
         _mapController = controller;
+        widget.onCameraTargetChanged?.call(initialCoords);
       },
     );
   }
