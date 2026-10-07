@@ -63,9 +63,14 @@ app.*.map.json
 *service-account*.json
 *serviceAccount*.json
 *debug-token*
-android/app/google-services.json
-ios/Runner/GoogleService-Info.plist
+google-services.json
+**/google-services.json
+GoogleService-Info.plist
+**/GoogleService-Info.plist
 
-# Local development overrides
+# Local development overrides & signing keys
 local.properties
+**/local.properties
+key.properties
+**/key.properties
 
