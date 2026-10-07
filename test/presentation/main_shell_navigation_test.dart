@@ -1,0 +1,490 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
+import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
+import 'package:flushcrowd/domain/models/coordinates.dart';
+import 'package:flushcrowd/domain/models/discovery_result.dart';
+import 'package:flushcrowd/domain/models/enums.dart';
+import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
+import 'package:flushcrowd/domain/models/restroom.dart';
+import 'package:flushcrowd/domain/repositories/location_repository.dart';
+import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
+import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
+import 'package:flushcrowd/presentation/state/location_notifier.dart';
+import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
+
+class CountingRestroomRepository implements RestroomRepository {
+  int submitCount = 0;
+  int discoveryCount = 0;
+  int getRestroomCount = 0;
+
+  @override
+  Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
+    submitCount++;
+    throw UnimplementedError('Submission should never be called in P2.2');
+  }
+
+  @override
+  Future<DiscoveryResult<Restroom>> getNearbyRestrooms(
+    Coordinates center, {
+    double radiusMeters = 1500.0,
+  }) async {
+    discoveryCount++;
+    return DiscoveryResult.complete(items: const []);
+  }
+
+  @override
+  Future<DiscoveryResult<Restroom>> getViewportRestrooms(
+    GeoBoundingBox bounds,
+  ) async {
+    discoveryCount++;
+    return DiscoveryResult.complete(items: const []);
+  }
+
+  @override
+  Future<Restroom?> getRestroomById(String id) async {
+    getRestroomCount++;
+    return null;
+  }
+}
+
+class FakeMapCameraController implements MapCameraController {
+  final FakeMapState fakeMapState;
+  int animateCameraCalls = 0;
+  int moveCameraCalls = 0;
+  CameraUpdate? lastCameraUpdate;
+  bool autoSettle = true;
+  bool shouldThrow = false;
+
+  FakeMapCameraController(this.fakeMapState);
+
+  @override
+  Future<void> animateCamera(CameraUpdate cameraUpdate) async {
+    animateCameraCalls++;
+    lastCameraUpdate = cameraUpdate;
+    if (shouldThrow) {
+      throw Exception('Platform animateCamera failed');
+    }
+    if (autoSettle) {
+      _applyUpdate(cameraUpdate);
+    }
+  }
+
+  @override
+  Future<void> moveCamera(CameraUpdate cameraUpdate) async {
+    moveCameraCalls++;
+    lastCameraUpdate = cameraUpdate;
+    if (shouldThrow) {
+      throw Exception('Platform moveCamera failed');
+    }
+    if (autoSettle) {
+      _applyUpdate(cameraUpdate);
+    }
+  }
+
+  void _applyUpdate(CameraUpdate cameraUpdate) {
+    try {
+      final json = cameraUpdate.toJson();
+      if (json is List && json.isNotEmpty) {
+        if (json[0] == 'newLatLngZoom' && json.length >= 3) {
+          final targetList = json[1] as List;
+          final target = LatLng(
+            (targetList[0] as num).toDouble(),
+            (targetList[1] as num).toDouble(),
+          );
+          final zoom = (json[2] as num).toDouble();
+          fakeMapState.simulateMove(CameraPosition(target: target, zoom: zoom));
+          fakeMapState.simulateIdle();
+        } else if (json[0] == 'newLatLng' && json.length >= 2) {
+          final targetList = json[1] as List;
+          final target = LatLng(
+            (targetList[0] as num).toDouble(),
+            (targetList[1] as num).toDouble(),
+          );
+          fakeMapState.simulateMove(
+            CameraPosition(
+              target: target,
+              zoom: fakeMapState.currentCameraPosition.zoom,
+            ),
+          );
+          fakeMapState.simulateIdle();
+        }
+      }
+    } catch (_) {}
+  }
+}
+
+class FakeMapState {
+  bool isInitialized = false;
+  late CameraPosition currentCameraPosition;
+  void Function(CameraPosition position)? onCameraMove;
+  VoidCallback? onCameraIdle;
+  VoidCallback? onCameraMoveStarted;
+  void Function(MapCameraController controller)? onMapCreated;
+  late FakeMapCameraController controller;
+
+  FakeMapState() {
+    controller = FakeMapCameraController(this);
+  }
+
+  void simulateMapCreated() {
+    onMapCreated?.call(controller);
+  }
+
+  void simulateMove(CameraPosition position) {
+    currentCameraPosition = position;
+    onCameraMoveStarted?.call();
+    onCameraMove?.call(position);
+  }
+
+  void simulateIdle() {
+    onCameraIdle?.call();
+  }
+}
+
+MapWidgetBuilder createFakeMapBuilder(FakeMapState fakeMap) {
+  return ({
+    required BuildContext context,
+    required CameraPosition initialCameraPosition,
+    required void Function(MapCameraController controller)? onMapCreated,
+    required void Function(CameraPosition position)? onCameraMove,
+    required VoidCallback? onCameraIdle,
+    required VoidCallback? onCameraMoveStarted,
+  }) {
+    if (!fakeMap.isInitialized) {
+      fakeMap.currentCameraPosition = initialCameraPosition;
+      fakeMap.isInitialized = true;
+    }
+    fakeMap.onMapCreated = onMapCreated;
+    fakeMap.onCameraMove = onCameraMove;
+    fakeMap.onCameraIdle = onCameraIdle;
+    fakeMap.onCameraMoveStarted = onCameraMoveStarted;
+
+    onMapCreated?.call(fakeMap.controller);
+
+    return Container(
+      key: const ValueKey('fake_add_location_map'),
+      color: Colors.blueGrey,
+    );
+  };
+}
+
+Widget createTestApp({
+  required CountingRestroomRepository restroomRepo,
+  required LocationRepository locationRepo,
+  required LocationNotifier locationNotifier,
+  required MapDiscoveryNotifier discoveryNotifier,
+  required FakeMapState fakeMap,
+}) {
+  return MultiProvider(
+    providers: [
+      Provider<RestroomRepository>.value(value: restroomRepo),
+      Provider<LocationRepository>.value(value: locationRepo),
+      ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),
+      ChangeNotifierProvider<MapDiscoveryNotifier>.value(
+        value: discoveryNotifier,
+      ),
+    ],
+    child: MaterialApp(
+      home: MainShellScreen(
+        addLocationMapBuilder: createFakeMapBuilder(fakeMap),
+      ),
+    ),
+  );
+}
+
+void main() {
+  group('MainShellScreen — Add Restroom Navigation Entry & Restoration', () {
+    late CountingRestroomRepository restroomRepo;
+    late InMemoryLocationRepository locationRepo;
+    late LocationNotifier locationNotifier;
+    late MapDiscoveryNotifier discoveryNotifier;
+    late FakeMapState fakeMap;
+
+    setUp(() {
+      restroomRepo = CountingRestroomRepository();
+      locationRepo = InMemoryLocationRepository(
+        initialPermission: LocationPermissionState.granted,
+        initialCoordinates: Coordinates(latitude: 14.5839, longitude: 121.0617),
+      );
+      locationNotifier = LocationNotifier(locationRepository: locationRepo);
+      discoveryNotifier = MapDiscoveryNotifier(
+        restroomRepository: restroomRepo,
+      );
+      fakeMap = FakeMapState();
+    });
+
+    testWidgets('1. Tapping Add opens AddRestroomLocationScreen', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestApp(
+          restroomRepo: restroomRepo,
+          locationRepo: locationRepo,
+          locationNotifier: locationNotifier,
+          discoveryNotifier: discoveryNotifier,
+          fakeMap: fakeMap,
+        ),
+      );
+
+      expect(find.byType(AddRestroomLocationScreen), findsNothing);
+
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+      expect(find.text('Pinpoint the restroom'), findsOneWidget);
+    });
+
+    testWidgets(
+      '2. Old Phase 2 placeholder is no longer shown for Add action',
+      (tester) async {
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Verify old placeholder text is not present initially
+        expect(
+          find.text(
+            'Phase 2 will introduce the community contribution workflow.',
+          ),
+          findsNothing,
+        );
+
+        // Tap Add
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Verify old placeholder text is still not present
+        expect(
+          find.text(
+            'Phase 2 will introduce the community contribution workflow.',
+          ),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      '3. No Firestore reads or writes occur merely by entering the Add flow',
+      (tester) async {
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        final discoveryCountBeforeAdd = restroomRepo.discoveryCount;
+        final submitCountBeforeAdd = restroomRepo.submitCount;
+        final getRestroomCountBeforeAdd = restroomRepo.getRestroomCount;
+
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+        // Verify ZERO submission writes
+        expect(restroomRepo.submitCount, equals(submitCountBeforeAdd));
+        expect(restroomRepo.submitCount, equals(0));
+
+        // Verify ZERO single-document reads
+        expect(
+          restroomRepo.getRestroomCount,
+          equals(getRestroomCountBeforeAdd),
+        );
+        expect(restroomRepo.getRestroomCount, equals(0));
+
+        // Verify entering Add flow did NOT trigger any new discovery queries
+        expect(restroomRepo.discoveryCount, equals(discoveryCountBeforeAdd));
+      },
+    );
+
+    testWidgets('4. Cancel/back returns cleanly to the prior shell/map', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestApp(
+          restroomRepo: restroomRepo,
+          locationRepo: locationRepo,
+          locationNotifier: locationNotifier,
+          discoveryNotifier: discoveryNotifier,
+          fakeMap: fakeMap,
+        ),
+      );
+
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+      // Tap back button
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddRestroomLocationScreen), findsNothing);
+      expect(find.byType(MainShellScreen), findsOneWidget);
+      // No SnackBar should be displayed on cancel
+      expect(
+        find.text('Restroom details form is coming in the next milestone.'),
+        findsNothing,
+      );
+    });
+
+    testWidgets(
+      '5. Successful P2.2 coordinate confirmation does not pretend submission succeeded',
+      (tester) async {
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+        expect(find.text('Continue'), findsOneWidget);
+
+        // Tap Continue to confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Screen popped, back on shell
+        expect(find.byType(AddRestroomLocationScreen), findsNothing);
+        expect(find.byType(MainShellScreen), findsOneWidget);
+
+        // Shows the honest temporary coming-soon message
+        expect(
+          find.text('Restroom details form is coming in the next milestone.'),
+          findsOneWidget,
+        );
+
+        // Does NOT pretend submission or contribution succeeded
+        expect(find.text('Restroom added!'), findsNothing);
+        expect(find.text('Submission succeeded'), findsNothing);
+        expect(restroomRepo.submitCount, equals(0));
+      },
+    );
+
+    testWidgets('6. Navigation can be invoked again after returning', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestApp(
+          restroomRepo: restroomRepo,
+          locationRepo: locationRepo,
+          locationNotifier: locationNotifier,
+          discoveryNotifier: discoveryNotifier,
+          fakeMap: fakeMap,
+        ),
+      );
+
+      // First entry & back
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddRestroomLocationScreen), findsNothing);
+
+      // Second entry
+      await tester.tap(find.text('Add'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+      // Second exit
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+      expect(find.byType(AddRestroomLocationScreen), findsNothing);
+    });
+
+    testWidgets('7. Repeated rapid Add taps do not stack duplicate routes', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        createTestApp(
+          restroomRepo: restroomRepo,
+          locationRepo: locationRepo,
+          locationNotifier: locationNotifier,
+          discoveryNotifier: discoveryNotifier,
+          fakeMap: fakeMap,
+        ),
+      );
+
+      // Tap once, then tap again before route animation completes
+      await tester.tap(find.text('Add'));
+      await tester.pump(const Duration(milliseconds: 10));
+      // Second tap on the Add icon button or area
+      await tester.tap(
+        find.byIcon(Icons.add_circle_outline_rounded),
+        warnIfMissed: false,
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+      // Single back pop returns cleanly to MainShellScreen
+      await tester.tap(find.byTooltip('Back'));
+      await tester.pumpAndSettle();
+
+      expect(find.byType(AddRestroomLocationScreen), findsNothing);
+      expect(find.byType(MainShellScreen), findsOneWidget);
+    });
+
+    testWidgets(
+      '8. Non-Add tabs switch normally and preserve active tab after Add dismissal',
+      (tester) async {
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Switch to Explore (index 1)
+        await tester.tap(find.text('Explore'));
+        await tester.pumpAndSettle();
+        expect(
+          find.widgetWithText(AppBar, 'Explore Restrooms'),
+          findsOneWidget,
+        );
+
+        // Tap Add (index 2) -> pushes AddRestroomLocationScreen
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+        expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+        // Pop back
+        await tester.tap(find.byTooltip('Back'));
+        await tester.pumpAndSettle();
+
+        // Prior active tab (Explore) remains selected
+        expect(find.byType(AddRestroomLocationScreen), findsNothing);
+        expect(
+          find.widgetWithText(AppBar, 'Explore Restrooms'),
+          findsOneWidget,
+        );
+      },
+    );
+  });
+}

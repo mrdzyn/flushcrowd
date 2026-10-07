@@ -2,13 +2,17 @@ import 'package:flutter/material.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
+import '../../domain/models/coordinates.dart';
 import '../components/feedback/empty_state_view.dart';
 import '../components/navigation/loo_bottom_nav_bar.dart';
+import 'add_restroom_location_screen.dart';
 import 'map_discovery_screen.dart';
 
 /// Main application shell housing the bottom navigation bar and active tab screens.
 class MainShellScreen extends StatefulWidget {
-  const MainShellScreen({super.key});
+  final MapWidgetBuilder? addLocationMapBuilder;
+
+  const MainShellScreen({super.key, this.addLocationMapBuilder});
 
   @override
   State<MainShellScreen> createState() => _MainShellScreenState();
@@ -16,6 +20,42 @@ class MainShellScreen extends StatefulWidget {
 
 class _MainShellScreenState extends State<MainShellScreen> {
   int _currentTabIndex = 0;
+  bool _isOpeningAddLocation = false;
+
+  Future<void> _openAddRestroom() async {
+    if (_isOpeningAddLocation) return;
+    _isOpeningAddLocation = true;
+
+    try {
+      final Coordinates? confirmedCoordinates = await Navigator.of(context)
+          .push<Coordinates>(
+            AddRestroomLocationScreen.route(
+              mapBuilder: widget.addLocationMapBuilder,
+            ),
+          );
+
+      if (!mounted) return;
+
+      if (confirmedCoordinates != null) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              'Restroom details form is coming in the next milestone.',
+            ),
+            duration: Duration(seconds: 4),
+            behavior: SnackBarBehavior.floating,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isOpeningAddLocation = false;
+        });
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -29,12 +69,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             title: 'Explore Restrooms',
             phaseDescription: 'Phase 1 will deliver the nearby list and categorized explore view.',
           ),
-          _PhasePlaceholderScreen(
-            icon: Icons.add_location_alt_rounded,
-            title: 'Add a Restroom',
-            phaseDescription:
-                'Phase 2 will introduce the community contribution workflow.',
-          ),
+          SizedBox.shrink(),
           _PhasePlaceholderScreen(
             icon: Icons.favorite_rounded,
             title: 'Saved Places',
@@ -51,7 +86,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
       bottomNavigationBar: LooBottomNavBar(
         currentIndex: _currentTabIndex,
         onTabSelected: (index) {
-          setState(() => _currentTabIndex = index);
+          if (index == 2) {
+            _openAddRestroom();
+          } else {
+            setState(() => _currentTabIndex = index);
+          }
         },
       ),
     );
