@@ -5,30 +5,36 @@
 - **Last updated:** 2026-10-08
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
-- **Overall stage:** Phase 2 Add Restroom / Contribution Form Implementation
-- **Current phase:** Phase 2 — Add Restroom
-- **Current milestone:** P2.3 implementation complete, remediation active / pending independent re-audit
-- **Current branch:** `phase-2/p2.3-contribution-form`
-- **Current PR:** `#8 — feat: implement P2.3 contribution form and state`
-- **Base:** `main` at `ebb9c746e65cc9902a49cfaf96f9bc3e4ffcaf86` (includes PR #7 Add-entry hotfix squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [ACTIVE]; P2.4 [NOT STARTED].
+- **Overall stage:** Phase 1 Explore Tab Wiring Hotfix / Phase 2 Add Restroom
+- **Current phase:** Phase 1 (Post-P2.3 Regression / Navigation Seam Restoration)
+- **Current milestone:** Phase 1 Explore Tab Navigation Seam Restoration — remediation active / pending independent re-audit
+- **Current branch:** `fix/p1-explore-tab-wiring`
+- **Current PR:** #9 — `fix: restore Phase 1 Explore restroom discovery experience`
+- **Base:** `main` at `9cc4b9b779d510de7b73561804443cc21f6454f9` (includes PR #8 P2.3 squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix REMEDIATION ACTIVE / PENDING RE-AUDIT]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [NOT STARTED].
 
 ## Current objective
 
-Execute and remediate Phase 2 Milestone P2.3 — Contribution Form UI, Data-Truth Validation & State Management:
-- **Contribution Form UI:** Full scrollable contribution screen (`AddRestroomFormScreen`) with cards for Facility Identification (read-only coordinate summary), Indoor Context & Directions, Accessibility & Stalls, Hygiene & Amenities, and Access Instructions & Pricing (conditional fee inputs for paid access).
-- **Tri-State Truth-Preserving Controls:** Reusable accessible `TriStateAmenitySelector` supporting `TriStateAmenity` (`yes`, `no`, `unknown`) and nullable booleans (`bool?`), preserving data truth without default false fabrication.
-- **Normalized Validation & State Management:** `AddRestroomNotifier` managing draft inputs, real-time normalization (`draft.normalized()`), domain invariant validation (`RestroomDraft.validate()`), and field-level error mapping.
-- **Stable Restroom ID Preparation:** Cryptographically secure 20-character base62 ID allocation (`RestroomIdGenerator`) generated once upon successful validation and retained across session edits; zero IDs allocated for invalid drafts.
-- **Controller & Notifier Synchronization:** Guaranteed synchronization between screen text controllers and notifier state across access type switches (`Paid` → non-paid → `Paid`), preventing stale fee values from persisting or visually reappearing.
-- **P2.2 → P2.3 Flow Wiring:** Location pinpoint confirmation in `MainShellScreen` navigates to `AddRestroomFormScreen`; valid continuation prepares in-memory `CreateRestroomCommand` and displays truthful temporary milestone notice without claiming submission; cancel/back pops cleanly.
-- **Zero-Persistence Boundary Preserved:** 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding API calls; zero personal or contributor UID data collected.
-- **PR #8 Undergoing Audit/Remediation:** Remediate independent audit findings and maintain exact-head CI green.
-- **Manual Device QA:** Manual P2.3 Android/iOS QA remains PENDING until performed by the human owner.
+Restore the **Explore Restrooms** bottom-navigation experience in `MainShellScreen` (tab index 1) that was previously blocked by an unbuilt placeholder (`_PhasePlaceholderScreen`):
+- **Explore Tab Screen (`ExploreRestroomsScreen`):** Wire the Explore tab to present a rich, categorized list and search/filter experience built purely on top of Phase 1 discovery state.
+- **Zero Additional Network Reads:** Consumes existing in-memory `MapDiscoveryNotifier` and `LocationNotifier` state; 0 additional Firestore queries triggered solely by navigating to, searching within, or filtering on the Explore tab.
+- **Zero Architecture Duplication:** Zero parallel discovery repositories or duplicated GIS/geohash logic; full reuse of `RestroomSorting`, `MapSearchBar`, `FilterBottomSheet`, `RestroomSummaryCard`, and feedback components.
+- **Complete Lifecycle Feedback:** Transparently presents all discovery lifecycle states:
+  - *Loading:* Centered `LooLoadingIndicator` when visible results are empty.
+  - *Degraded warning:* Warning banner when results are capped due to safety limits (`isDegraded`).
+  - *Non-blocking error:* Error banner with retry action retaining prior results.
+  - *Full error:* Centered `ErrorStateView` with retry action when query fails without prior results.
+  - *Zoom-suppressed:* `EmptyStateView` with "Zoom In on Map to Explore" and "View Map" action.
+  - *Derived empty (filtered/search):* Differentiates search-only, filter-only, and search+filters with dedicated reset actions.
+  - *Geographic empty:* `EmptyStateView` with "No Restrooms Found Nearby" and "Explore on Map" action.
+  - *Loaded results:* Scrollable list with deterministic distance/name sorting (`RestroomSorting.sort`) and rich contextual details (indoor context, floor, landmarks, access type, amenities, verification).
+- **Selection & Map Synchronization:** Tapping a restroom card selects the facility in `MapDiscoveryNotifier`, switches active tab to Map (`_currentTabIndex = 0`), and renders the selected restroom card in `MapDiscoveryBottomBar`.
+- **Tab State Preservation:** `MainShellScreen` uses `IndexedStack`, preserving discovery map camera position, markers, and Explore screen state across tab switches.
 
 The active specification is:
 
-- `docs/09-phase-2-add-restroom.md`
+- `docs/08-phase-1-map-discovery.md` (active for Phase 1 Explore restoration)
+- `docs/09-phase-2-add-restroom.md` (continuing Phase 2 specification)
 
 ## Locked decisions
 
@@ -166,16 +172,36 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Authored 10 focused widget tests in `test/presentation/main_shell_navigation_test.dart` verifying all behaviors, camera target preservation, fallback intactness, and zero Firestore operations on entry/exit.
 - Manual human QA: PASS on Android, PASS on iOS.
 
-### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [ACTIVE — implementation complete, remediation active / pending independent re-audit]
+### P2.3 — Contribution Form UI, Data-Truth Validation & State Management [MERGED — PR #8]
+- Squash-merged into `main` at `9cc4b9b779d510de7b73561804443cc21f6454f9` (PR #8).
 - Implemented `AddRestroomFormScreen` (`lib/presentation/screens/add_restroom_form_screen.dart`) with organized card sections (Facility Identification with compact read-only coordinate display, Indoor Directions & Context, Accessibility & Stalls, Hygiene & Amenities, Access Instructions & Pricing).
 - Implemented accessible, reusable `TriStateAmenitySelector` (`lib/presentation/components/inputs/tri_state_amenity_selector.dart`) with min 48×48 touch targets, semantic labels, text scaling, checkmark visual indicators beyond color, and nullable boolean adapter.
 - Implemented `AddRestroomNotifier` (`lib/presentation/state/add_restroom_notifier.dart`) managing raw editable state, constructing `RestroomDraft`, validating via `draft.normalized().validate()`, and allocating stable restroom ID only upon valid preparation.
 - Implemented `RestroomIdGenerator` and `DefaultRestroomIdGenerator` (`lib/presentation/state/restroom_id_generator.dart`) producing 20-character alphanumeric IDs without network reads.
-- Synchronized fee controllers and notifier state across access type transitions (`Paid` → non-paid → `Paid`), ensuring controllers are cleared when hidden and genuinely empty when reappearing, with domain normalization clearing fee data for non-paid commands.
+- Remediated MAJOR-1: Synchronized fee controllers and notifier state across access type transitions (`Paid` → non-paid → `Paid`), ensuring controllers are cleared when hidden and genuinely empty when reappearing, with domain normalization clearing fee data for non-paid commands.
+- Remediated MAJOR-2: Preserved nullable data truth during command normalization: missing/unknown amenities normalize to null rather than being coerced to false.
 - Wired P2.2 → P2.3 navigation in `MainShellScreen`: location confirmation opens `AddRestroomFormScreen`, valid continue prepares `CreateRestroomCommand` in memory and displays honest temporary validation notice without claiming submission, and cancel/back pops cleanly with zero writes.
 - Zero-persistence milestone: 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding calls, no personal data or contributor UID collected.
-- Manual device QA for P2.3: PENDING.
-- Authored 28 unit and widget tests: 15 in `test/presentation/add_restroom_notifier_test.dart`, 13 in `test/presentation/add_restroom_form_screen_test.dart`, plus 10 navigation tests in `test/presentation/main_shell_navigation_test.dart` (298 total Flutter tests, all PASS).
+- Independent audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
+
+### Phase 1 — Explore Restrooms Experience Restoration [ACTIVE — remediation active / pending independent re-audit]
+- Resolved Phase 1 unfinished navigation seam: bottom-navigation **Explore** tab (index 1) previously mounted a placeholder claiming Phase 1 was unbuilt.
+- Implemented `ExploreRestroomsScreen` (`lib/presentation/screens/explore_restrooms_screen.dart`) providing rich list discovery, searching, and filtering on top of Phase 1 discovery state.
+- Zero new network queries: consumes `MapDiscoveryNotifier` and `LocationNotifier` with 0 Firestore reads triggered by tab navigation, searching, or filtering.
+- Extended `RestroomSummaryCard` with optional contextual parameters (`showFullContext`, `showAccessType`, `showAmenities`, `showVerification`, `onInfoTap`, `now`) while defaulting all to false/null for 100% backward compatibility.
+- Comprehensive lifecycle handling:
+  - Loading: Centered `LooLoadingIndicator` when results are empty during query.
+  - Degraded results: Non-blocking warning banner when safety caps are reached (`isDegraded`).
+  - Error with retained prior results: Non-blocking error banner with retry action (`retryLastViewportQuery()`).
+  - Error without prior results: Centered `ErrorStateView` with retry action.
+  - Zoom-in suppressed: `EmptyStateView` prompting zoom-in with "View Map" CTA (`onSwitchToMap`).
+  - Filter/search empty: `EmptyStateView` distinguishing search-only, filter-only, and search+filters with dedicated reset actions.
+  - Geographic empty: `EmptyStateView` when 0 facilities exist in area with "Explore on Map" CTA.
+  - Loaded results: Scrollable list sorted deterministically via `RestroomSorting.sort`, displaying full context (building name, floor, landmark, status chip, access type chip, amenity icons, verified badge).
+- Tap selection synchronization: Tapping a restroom card selects the facility in `MapDiscoveryNotifier`, switches active tab to Map (`_currentTabIndex = 0`), and displays the preview card on the map.
+- Remediated MAJOR-1: Replaced unconditional `Verified` badge in `RestroomSummaryCard` with truthful verification freshness semantics reusing canonical `DiscoveryFilters.recentVerificationThreshold` (90 days). Fresh verifications (`lastVerifiedAt` within 90 days, non-future) display green `Recently verified`. Older verifications (> 90 days) or count-only verifications (`verificationCount > 0` with null timestamp) display neutral `Previously verified`. Unverified facilities render no verification badge. Future timestamps are not treated as recent.
+- Remediated MINOR-1: Updated `RestroomSummaryCard` `onInfoTap` `IconButton` constraints from `minWidth: 40, minHeight: 40` to `minWidth: 48, minHeight: 48` satisfying the repository minimum interactive touch target accessibility rule.
+- Authored 18 unit and widget tests in `test/presentation/explore_restrooms_screen_test.dart` and 1 additional navigation/tab-switch test in `test/presentation/main_shell_navigation_test.dart` (317 total Flutter tests, all PASS).
 
 ### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
 - Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
@@ -242,7 +268,10 @@ Owner-confirmed staging infrastructure state:
 - Firestore authorized reads:
   - Post-deployment runtime verification — PASS (previous `PERMISSION_DENIED` no longer occurs)
 - Milestone P2.3 gate:
-  - UNBLOCKED / ACTIVE
+  - MERGED into main (`9cc4b9b779d510de7b73561804443cc21f6454f9`)
+  - Manual human QA: PASS on Android, PASS on iOS
+- Phase 1 Explore tab restoration:
+  - ACTIVE / REMEDIATION COMPLETE / PENDING INDEPENDENT RE-AUDIT
 
 ## Current owner actions / external dependencies
 
@@ -252,9 +281,9 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (86 files checked, 0 changed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (88 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (298/298 passed)
+- `flutter test` — PASS (317/317 passed: 18 tests in `explore_restrooms_screen_test.dart` + 11 tests in `main_shell_navigation_test.dart`)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `flutter build apk --debug` without credentials — PASS
 - `flutter build ios --debug --no-codesign` without credentials — PASS
@@ -263,11 +292,11 @@ Owner-confirmed staging infrastructure state:
 
 ## Next recommended action
 
-1. Complete PR #8 remediation.
-2. Conduct independent exact-head re-audit for PR #8.
-3. Perform manual Android/iOS P2.3 QA after audit-ready build if requested by human owner (currently PENDING).
-4. Squash merge PR #8 only after explicit human approval.
-5. P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX) remains NOT STARTED until PR #8 is accepted and merged.
+1. Complete PR #9 remediation handoff.
+2. Conduct independent PR #9 remediation exact-head re-audit.
+3. Conduct manual human QA if requested.
+4. Squash-merge PR #9 upon explicit human approval.
+5. Phase 2 Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX) remains NOT STARTED until PR #9 is merged.
 
 ## Handoff template
 

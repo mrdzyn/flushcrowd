@@ -14,6 +14,7 @@ import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
 import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_form_screen.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
+import 'package:flushcrowd/presentation/screens/explore_restrooms_screen.dart';
 import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
 import 'package:flushcrowd/presentation/state/location_notifier.dart';
 import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
@@ -38,12 +39,14 @@ class CountingRestroomRepository implements RestroomRepository {
     return DiscoveryResult.complete(items: const []);
   }
 
+  DiscoveryResult<Restroom>? viewportResultToReturn;
+
   @override
   Future<DiscoveryResult<Restroom>> getViewportRestrooms(
     GeoBoundingBox bounds,
   ) async {
     discoveryCount++;
-    return DiscoveryResult.complete(items: const []);
+    return viewportResultToReturn ?? DiscoveryResult.complete(items: const []);
   }
 
   @override
@@ -490,9 +493,16 @@ void main() {
         // Switch to Explore (index 1)
         await tester.tap(find.text('Explore'));
         await tester.pumpAndSettle();
+        expect(find.byType(ExploreRestroomsScreen), findsOneWidget);
         expect(
           find.widgetWithText(AppBar, 'Explore Restrooms'),
           findsOneWidget,
+        );
+        expect(
+          find.text(
+            'Phase 1 will deliver the nearby list and categorized explore view.',
+          ),
+          findsNothing,
         );
 
         // Tap Add (index 2) -> pushes AddRestroomLocationScreen
@@ -506,6 +516,7 @@ void main() {
 
         // Prior active tab (Explore) remains selected
         expect(find.byType(AddRestroomLocationScreen), findsNothing);
+        expect(find.byType(ExploreRestroomsScreen), findsOneWidget);
         expect(
           find.widgetWithText(AppBar, 'Explore Restrooms'),
           findsOneWidget,
@@ -592,6 +603,73 @@ void main() {
         expect(
           addFakeMap.currentCameraPosition.target.longitude,
           equals(121.0617),
+        );
+      },
+    );
+
+    testWidgets(
+      '11. Selecting a restroom on Explore tab switches back to Map tab and displays preview card',
+      (tester) async {
+        final r = Restroom(
+          id: 'test_r1',
+          name: 'Greenbelt Mall Restroom',
+          coordinates: Coordinates(latitude: 14.5510, longitude: 121.0200),
+          geohash: 'wdw4fq',
+          accessType: AccessType.free,
+          male: true,
+          female: true,
+          createdAt: DateTime.now(),
+          updatedAt: DateTime.now(),
+        );
+
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Perform discovery query on map
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.discoveryCount, equals(1));
+        final discoveryCallsBeforeExplore = restroomRepo.discoveryCount;
+
+        // Switch to Explore tab
+        await tester.tap(find.text('Explore'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ExploreRestroomsScreen), findsOneWidget);
+        expect(find.text('Greenbelt Mall Restroom'), findsOneWidget);
+
+        // Tap the restroom card
+        await tester.tap(find.text('Greenbelt Mall Restroom'));
+        await tester.pumpAndSettle();
+
+        // Should switch back to Map tab (tab index 0)
+        expect(discoveryNotifier.selectedRestroom?.id, equals('test_r1'));
+        expect(find.text('Greenbelt Mall Restroom'), findsOneWidget);
+
+        // Verify ZERO additional discovery queries were triggered
+        expect(
+          restroomRepo.discoveryCount,
+          equals(discoveryCallsBeforeExplore),
         );
       },
     );
