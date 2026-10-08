@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -49,6 +51,7 @@ class _ControllableMapCameraController implements MapCameraController {
   int animateCameraCalls = 0;
   int moveCameraCalls = 0;
   CameraUpdate? lastCameraUpdate;
+  Future<void> Function(CameraUpdate cameraUpdate)? onAnimateCamera;
 
   _ControllableMapCameraController(this.fakeMapState);
 
@@ -57,6 +60,9 @@ class _ControllableMapCameraController implements MapCameraController {
     animateCameraCalls++;
     lastCameraUpdate = cameraUpdate;
     _applyUpdate(cameraUpdate);
+    if (onAnimateCamera != null) {
+      await onAnimateCamera!(cameraUpdate);
+    }
   }
 
   @override
@@ -449,6 +455,70 @@ void main() {
         expect(find.text('North Gate Restroom'), findsOneWidget);
 
         // 3. Intent consumed
+        expect(discoveryNotifier.pendingFocusIntent, isNull);
+      },
+    );
+
+    testWidgets(
+      '6. Strict token ownership race: when newer focus completes and consumes intent before older animation resolves, older animation cannot open obsolete preview',
+      (tester) async {
+        final mapBuilder = _createControllableMapBuilder(
+          fakeMap: fakeMap,
+          autoCallOnMapCreated: true,
+        );
+
+        await tester.pumpWidget(
+          _createTestApp(
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+            mapBuilder: mapBuilder,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Controllable Completer for animation A
+        final animationACompleter = Completer<void>();
+        fakeMap.controller.onAnimateCamera = (update) =>
+            animationACompleter.future;
+
+        // Step 4: Start Focus A but leave animation A pending
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pump(); // starts _executeFocusIntent for restroom1, awaits animateCamera
+
+        // Preview sheet is NOT yet shown because animation A is pending
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+        expect(discoveryNotifier.pendingFocusIntent, isNotNull);
+        expect(
+          discoveryNotifier.pendingFocusIntent!.restroom.id,
+          equals(restroom1.id),
+        );
+
+        // Step 5: Start and complete Focus B, including consuming intent B
+        // Reset onAnimateCamera so animation B completes immediately
+        fakeMap.controller.onAnimateCamera = null;
+        discoveryNotifier.focusOnRestroom(restroom2);
+        await tester.pump(); // starts _executeFocusIntent for restroom2
+        await tester.pumpAndSettle(); // completes animation B, opens preview B, consumes intent B
+
+        // Assert Focus B's preview is open and intent B is consumed
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsNothing);
+        expect(discoveryNotifier.pendingFocusIntent, isNull);
+        expect(discoveryNotifier.selectedRestroom?.id, equals(restroom2.id));
+
+        // Step 6: Complete animation A afterward
+        animationACompleter.complete();
+        await tester
+            .pumpAndSettle(); // Animation A finishes and reaches Guard 4
+
+        // Step 7: Assert only Focus B's preview opens and no obsolete preview is presented
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsNothing);
+
+        // Step 8: Verify the selected restroom and pending focus state remain correct
+        expect(discoveryNotifier.selectedRestroom?.id, equals(restroom2.id));
         expect(discoveryNotifier.pendingFocusIntent, isNull);
       },
     );

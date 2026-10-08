@@ -31,11 +31,11 @@ Remediate independent exact-head audit on **PR #10 (Milestone P2.4 — Bounded D
   - Integrated pure Dart `unorm_dart: ^0.3.3` for deterministic Unicode Canonical Decomposition followed by Canonical Composition (NFC).
   - Applied NFC normalization prior to punctuation stripping and whitespace collapsing, guaranteeing that composed and decomposed Unicode representations (e.g. `café` vs `cafe\u0301`, `München` vs `Mu\u0308nchen`, `Ålesund` vs `A\u030环lesund`, Japanese, Korean Hangul, Cyrillic, Chinese, Arabic) normalize to identical tokens.
   - Added comprehensive canonical equivalence tests across Latin and non-Latin scripts.
-- **Map Focus Initialization Race Remediated (Re-Audit MAJOR-1):**
+- **Map Focus Initialization & Race Remediated (Re-Audit MAJOR-1):**
   - Enforced exact-once execution of `MapFocusIntent` in `MapDiscoveryScreen`.
   - When map controller is unavailable, camera animation and preview presentation are strictly deferred until `onMapCreated`, preventing premature intent consumption.
   - Prevents duplicate preview sheets: `onMapCreated` replays pending intents safely without re-opening on subsequent frames.
-  - Stale or superseded focus intents are discarded before and after asynchronous camera animations via token comparison against active notifier intent.
+  - Strict token-ownership check: Stale or superseded focus intents are discarded before and after asynchronous camera animations via `notifier.pendingFocusIntent?.token != intent.token`. A null pending intent strictly invalidates older executions, preventing obsolete preview presentation when a newer focus completes and consumes its intent before an older animation resolves.
   - Camera focus occurs before preview presentation.
   - Unified `_onDiscoveryMapCreated` handler across custom builder and GoogleMap implementations.
 - **MINOR-1 & MINOR-2 Remediated:**
@@ -299,7 +299,7 @@ Owner-confirmed staging infrastructure state:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (362/362 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 14 tests in `main_shell_navigation_test.dart` + 5 tests in `map_focus_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- `flutter test` — PASS (363/363 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 14 tests in `main_shell_navigation_test.dart` + 6 tests in `map_focus_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
 - Firestore Security Rules emulator tests — NOT RUN (Firestore emulator requires JDK >= 21 in host environment; rules unchanged in P2.4)
 - `flutter build apk --debug` without credentials — PASS (built in 12.2s)
 - `flutter build ios --debug --no-codesign` without credentials — PASS (built in 27.1s)

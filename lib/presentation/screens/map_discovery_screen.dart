@@ -123,10 +123,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       );
     } catch (_) {}
 
-    // Guard 4: After await, check mounted and ensure no newer intent superseded this one.
+    // Guard 4: After await, check mounted and ensure this intent still owns pending focus.
+    // A null pending intent or a different token strictly invalidates the older execution.
     if (!mounted) return;
-    if (notifier.pendingFocusIntent != null &&
-        notifier.pendingFocusIntent!.token != intent.token) {
+    if (notifier.pendingFocusIntent?.token != intent.token) {
       return;
     }
 
