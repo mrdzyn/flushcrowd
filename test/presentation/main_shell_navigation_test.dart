@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flushcrowd/core/constants/app_constants.dart';
 import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
 import 'package:flushcrowd/domain/models/coordinates.dart';
@@ -11,13 +12,16 @@ import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
 import 'package:flushcrowd/domain/models/restroom.dart';
 import 'package:flushcrowd/domain/repositories/location_repository.dart';
 import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/domain/models/discovery_filters.dart';
 import 'package:flushcrowd/presentation/components/bottom_sheets/duplicate_warning_sheet.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/restroom_preview_sheet.dart';
 import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
 import 'package:flushcrowd/presentation/components/buttons/loo_secondary_button.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_form_screen.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
 import 'package:flushcrowd/presentation/screens/explore_restrooms_screen.dart';
 import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
+import 'package:flushcrowd/presentation/screens/map_discovery_screen.dart';
 import 'package:flushcrowd/presentation/state/location_notifier.dart';
 import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
 
@@ -689,8 +693,11 @@ void main() {
     );
 
     testWidgets(
-      '11. Candidate duplicates show DuplicateWarningSheet and View Existing Restroom selects candidate on map',
+      '12. Candidate duplicates show DuplicateWarningSheet and View Existing Restroom centers camera and opens preview',
       (tester) async {
+        final discoveryFakeMap = FakeMapState();
+        final addFakeMap = FakeMapState();
+
         final existingRestroom = Restroom(
           id: 'existing_dup_1',
           name: 'Central Station Restroom',
@@ -713,9 +720,11 @@ void main() {
             locationRepo: locationRepo,
             locationNotifier: locationNotifier,
             discoveryNotifier: discoveryNotifier,
-            fakeMap: fakeMap,
+            fakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
           ),
         );
+        await tester.pumpAndSettle();
 
         // Open Add
         await tester.tap(find.text('Add'));
@@ -754,11 +763,25 @@ void main() {
           discoveryNotifier.selectedRestroom?.id,
           equals('existing_dup_1'),
         );
+        expect(
+          discoveryFakeMap.controller.animateCameraCalls,
+          greaterThanOrEqualTo(1),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.latitude,
+          closeTo(14.58390, 0.00001),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.longitude,
+          closeTo(121.06170, 0.00001),
+        );
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('Central Station Restroom'), findsOneWidget);
       },
     );
 
     testWidgets(
-      '12. DuplicateWarningSheet "No, It\'s a Different Restroom" acknowledges warning and continues flow',
+      '13. DuplicateWarningSheet "No, It\'s a Different Restroom" acknowledges warning and continues flow',
       (tester) async {
         final existingRestroom = Restroom(
           id: 'existing_dup_2',
@@ -820,6 +843,158 @@ void main() {
         expect(
           find.text(
             'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      '14. View Existing Restroom centers camera and opens preview sheet when candidate duplicate lies outside current map viewport',
+      (tester) async {
+        final discoveryFakeMap = FakeMapState();
+        final addFakeMap = FakeMapState();
+
+        // Set initial discovery viewport in South Manila
+        final localRestroom = Restroom(
+          id: 'local_r1',
+          name: 'South Bay Restroom',
+          coordinates: Coordinates(latitude: 14.5100, longitude: 121.0100),
+          geohash: 'wdw4d1',
+          accessType: AccessType.free,
+          male: true,
+          female: true,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [localRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Perform initial discovery query at south coordinates
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+            northEast: Coordinates(latitude: 14.52, longitude: 121.02),
+          ),
+          zoom: 15.0,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+
+        expect(
+          discoveryNotifier.visibleRestrooms.map((r) => r.id),
+          contains('local_r1'),
+        );
+
+        // Set active filter that would hide a non-matching facility
+        discoveryNotifier.setFilters(
+          const DiscoveryFilters(babyChangingOnly: true),
+        );
+        expect(discoveryNotifier.hasActiveFilters, isTrue);
+
+        // Candidate duplicate is far north outside the viewport and lacks baby changing
+        final remoteRestroom = Restroom(
+          id: 'remote_dup_1',
+          name: 'Far North Terminal Restroom',
+          coordinates: Coordinates(latitude: 14.6500, longitude: 121.1500),
+          geohash: 'w4rrw0',
+          accessType: AccessType.free,
+          babyChanging: false,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [remoteRestroom],
+        );
+
+        final initialAnimateCalls =
+            discoveryFakeMap.controller.animateCameraCalls;
+
+        // Open Add flow
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Move location map to remote coordinates outside initial discovery viewport
+        addFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.6500, 121.1500), zoom: 16.0),
+        );
+        addFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+
+        // Confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Far North Terminal Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+        expect(find.text('Far North Terminal Restroom'), findsOneWidget);
+
+        // Tap "View Existing Restroom"
+        await tester.tap(
+          find.widgetWithText(LooSecondaryButton, 'View Existing Restroom'),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. DuplicateWarningSheet is dismissed
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+
+        // 2. Switched back to Map tab
+        expect(find.byType(MapDiscoveryScreen), findsOneWidget);
+
+        // 3. Filters were reset to prevent hiding the candidate
+        expect(discoveryNotifier.hasActiveFilters, isFalse);
+
+        // 4. Candidate is selected in notifier
+        expect(discoveryNotifier.selectedRestroom?.id, equals('remote_dup_1'));
+
+        // 5. Camera animated to remote coordinates outside initial viewport
+        expect(
+          discoveryFakeMap.controller.animateCameraCalls,
+          greaterThan(initialAnimateCalls),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.latitude,
+          closeTo(14.6500, 0.0001),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.longitude,
+          closeTo(121.1500, 0.0001),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.zoom,
+          equals(AppConstants.defaultZoomLevel),
+        );
+
+        // 6. RestroomPreviewSheet is shown on screen for candidate
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(RestroomPreviewSheet),
+            matching: find.text('Far North Terminal Restroom'),
           ),
           findsOneWidget,
         );

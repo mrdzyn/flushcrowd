@@ -1,5 +1,8 @@
+import 'package:unorm_dart/unorm_dart.dart' as unorm;
+
 import '../../data/services/gis/haversine.dart';
 import '../models/duplicate_candidate.dart';
+import '../models/duplicate_scan_result.dart';
 import '../models/restroom.dart';
 import '../models/restroom_draft.dart';
 import '../repositories/restroom_repository.dart';
@@ -30,17 +33,24 @@ class DuplicateDetectionService {
   /// Algorithm:
   /// 1. Trim leading and trailing whitespace.
   /// 2. Lowercase / case-fold where supported.
-  /// 3. Strip Unicode punctuation and symbols `[\p{P}\p{S}]` while preserving `[\p{L}\p{N}]`.
-  /// 4. Collapse consecutive whitespace into a single space.
+  /// 3. Canonical Unicode normalization (NFC composed representation).
+  /// 4. Strip Unicode punctuation and symbols `[\p{P}\p{S}]` while preserving `[\p{L}\p{N}]`.
+  /// 5. Collapse consecutive whitespace into a single space.
   static String normalizeText(String? input) {
     if (input == null) return '';
-    final trimmed = input.trim().toLowerCase();
+    final trimmed = input.trim();
     if (trimmed.isEmpty) return '';
 
-    // Replace punctuation and symbols with space to preserve token boundaries
-    final stripped = trimmed.replaceAll(_punctuationAndSymbolsRegExp, ' ');
+    // 1. Lowercase / case-fold
+    final lower = trimmed.toLowerCase();
 
-    // Collapse consecutive whitespace
+    // 2. Canonical Unicode normalization (NFC)
+    final canonical = unorm.nfc(lower);
+
+    // 3. Strip Unicode punctuation and symbols while preserving letters and numbers across scripts
+    final stripped = canonical.replaceAll(_punctuationAndSymbolsRegExp, ' ');
+
+    // 4. Collapse consecutive whitespace into a single space
     final collapsed = stripped.replaceAll(_whitespaceRegExp, ' ').trim();
     return collapsed;
   }
@@ -299,11 +309,11 @@ class DuplicateDetectionService {
   }
 
   /// Queries nearby candidates using the bounded spatial query on [repository]
-  /// and returns evaluated top duplicate matches (score >= 0.50, max 3).
+  /// and returns a [DuplicateScanResult] preserving completeness metadata and evaluated candidates.
   ///
   /// Since duplicate detection is strictly advisory, any query failure fails open
-  /// and returns an empty list without blocking the contribution workflow.
-  Future<List<DuplicateCandidate>> findDuplicatesNearby({
+  /// returning [DuplicateScanResult.failedOpen] without blocking the contribution workflow.
+  Future<DuplicateScanResult> findDuplicatesNearby({
     required RestroomDraft draft,
     required RestroomRepository repository,
     double radiusMeters = 500.0,
@@ -313,10 +323,21 @@ class DuplicateDetectionService {
         draft.coordinates,
         radiusMeters: radiusMeters,
       );
-      return findDuplicates(draft: draft, candidates: discovery.items);
-    } catch (_) {
-      // Advisory scan: fail open so user is never blocked
-      return const [];
+      final evaluated = findDuplicates(
+        draft: draft,
+        candidates: discovery.items,
+      );
+      return DuplicateScanResult(
+        candidates: evaluated,
+        isComplete: discovery.isComplete,
+        completenessReason: discovery.completenessReason,
+        rangeCount: discovery.rangeCount,
+        candidateCount: discovery.candidateCount,
+      );
+    } catch (e) {
+      // Advisory scan: fail open so user is never blocked,
+      // but explicitly preserve query failure state.
+      return DuplicateScanResult.failedOpen(errorMessage: e.toString());
     }
   }
 }

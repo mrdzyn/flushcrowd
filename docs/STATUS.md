@@ -7,37 +7,33 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX
+- **Current milestone:** Milestone P2.4 Bounded Duplicate Detection Engine & Advisory Warning UX — remediation active / pending independent re-audit
 - **Current branch:** `phase-2/p2.4-duplicate-detection`
-- **Latest commit:** `2962991f891ebe7277c66bb441778c8c04e7f75c`
-- **Current PR:** Pending creation / audit
+- **Current PR:** #10 — `feat: implement P2.4 bounded duplicate detection engine and advisory warning UX`
 - **Base:** `main` at `ce04479bd3b69ca9b3bc342854583f8ff7544330` (includes PR #9 Explore tab squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [IMPLEMENTED & VALIDATED — READY FOR AUDIT]; P2.5 [NOT STARTED].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [AUDIT REMEDIATED — READY FOR RE-AUDIT]; P2.5 [NOT STARTED].
 
 ## Current objective
 
-Implement **Phase 2 Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX**:
-- **Bounded Duplicate Detection Engine (`DuplicateDetectionService`):**
-  - *Unicode-preserving text normalization:* Normalizes text across global scripts (Japanese, Arabic, Cyrillic, Korean, Chinese, accented Latin), preserving letters and numbers across scripts (`[\p{L}\p{N}]`) while stripping punctuation and symbols (`[\p{P}\p{S}]`), collapsing whitespace, and tokenizing into unique non-empty token sets.
-  - *Dice coefficient with zero-denominator guards:* $\frac{2 \times |T_D \cap T_C|}{|T_D| + |T_C|}$, returning `0.0` when either token set is empty or $|T_D| + |T_C| == 0$.
-  - *Deterministic multi-attribute scoring model:*
-    - $S_{\text{dist}}$: $<30\text{m} \to 1.0$; $30\text{m}\le D < 100\text{m} \to 0.7$; $100\text{m}\le D < 300\text{m} \to 0.3$; $300\text{m}\le D \le 500\text{m} \to 0.1$; $>500\text{m} \to 0.0$.
-    - $S_{\text{name}}$: Normalized Dice coefficient $\in [0.0, 1.0]$.
-    - $S_{\text{building}}$: Match $\to 1.0$; Conflict $\to 0.0$; Either unspecified $\to 0.5$.
-    - $S_{\text{section}}$: Match on section or unit $\to 1.0$; Either unspecified $\to 0.5$; Conflict $\to 0.0$.
-    - $S_{\text{landmark}}$: Match $\to 1.0$; Either unspecified $\to 0.5$; Conflict $\to 0.0$.
-    - $P_{\text{floor}}$: Both present and conflicting $\to 0.40$; Matching or either empty $\to 0.0$.
-    - $\text{rawScore} = (0.40 \times S_{\text{dist}}) + (0.30 \times S_{\text{name}}) + (0.15 \times S_{\text{building}}) + (0.10 \times S_{\text{section}}) + (0.05 \times S_{\text{landmark}}) - P_{\text{floor}}$.
-    - $\text{score} = \text{clamp}(\text{rawScore}, 0.0, 1.0)$.
-  - *Classification thresholds:* $\ge 0.75$ High, $\ge 0.50$ Moderate, $< 0.50$ Distinct (No Warning).
-  - *Deterministic tie-breaking:* Score descending, distance ascending, normalized name ascending, restroomId ascending. Caps candidate warnings to top 3.
-  - *Spatial search:* Reuses Phase 1 GIS candidate prefixes bounded to 500m, max 16 ranges, `.limit(20)` docs per range query (max 320 raw reads theoretical ceiling).
-- **Advisory Modal Warning UI (`DuplicateWarningSheet`):**
-  - Header: "Similar restrooms found nearby".
-  - Explanation: "We found an existing restroom near this location. Is this the same facility?".
-  - Up to 3 candidate cards showing name, formatted distance, floor, and access type badge.
-  - Actions:
-    - `View Existing Restroom`: Dismisses sheet, closes form, centers map on candidate, selects candidate in `MapDiscoveryNotifier`, and switches to Map tab.
+Remediate independent exact-head audit on **PR #10 (Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX)**:
+- **BLOCKER-1 Remediated (Map Focus & Navigation Intent):**
+  - Introduced explicit, testable `MapFocusIntent` model and `MapDiscoveryNotifier.focusOnRestroom(restroom, {zoom, openPreview})`.
+  - Resets active search query and filters upon focus, preventing active filters from hiding the candidate facility.
+  - Centers discovery map at `AppConstants.defaultZoomLevel` (15.0) via `animateCamera`.
+  - Handles camera initialization races cleanly with `_pendingFocusExecution` in `MapDiscoveryScreen`.
+  - Opens `RestroomPreviewSheet` directly on the focused facility without injecting synthetic entities into discovered results.
+  - Added focused widget integration test in `main_shell_navigation_test.dart` verifying camera centering, preview sheet opening, and filter resetting when candidate duplicate lies outside the current map viewport.
+- **MAJOR-1 Remediated (Preserve Duplicate Scan Completeness State):**
+  - Encapsulated scan results in typed `DuplicateScanResult` model capturing `candidates`, `isComplete`, `completenessReason`, `rangeCount`, `candidateCount`, `hasQueryError`, and `errorMessage`.
+  - Enforced `hasConcludedZeroDuplicates` invariant: incomplete or failed scans (e.g. `rangeCapExceeded`, `perRangeLimitExceeded`, `candidateLimitExceeded`, or query errors) never conclude zero duplicates.
+  - Added unit test coverage for all completeness reasons and fail-open behavior.
+- **MAJOR-2 Remediated (Unicode Canonical Normalization):**
+  - Integrated pure Dart `unorm_dart: ^0.3.3` for deterministic Unicode Canonical Decomposition followed by Canonical Composition (NFC).
+  - Applied NFC normalization prior to punctuation stripping and whitespace collapsing, guaranteeing that composed and decomposed Unicode representations (e.g. `café` vs `cafe\u0301`, `München` vs `Mu\u0308nchen`, `Ålesund` vs `A\u030环lesund`, Japanese, Korean Hangul, Cyrillic, Chinese, Arabic) normalize to identical tokens.
+  - Added comprehensive canonical equivalence tests across Latin and non-Latin scripts.
+- **MINOR-1 & MINOR-2 Remediated:**
+  - Updated PR #10 body and specification parameters on GitHub.
+  - Reconciled `docs/STATUS.md` coordination ledger.
     - `No, It's a Different Restroom`: Acknowledges warning and proceeds with submission workflow.
   - Meets minimum 48×48dp touch targets and semantic accessibility requirements.
 - **Workflow Integration (`MainShellScreen`):**
@@ -296,11 +292,11 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (93 files checked, 0 changed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (95 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (351/351 tests passed: 25 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 13 tests in `main_shell_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- `flutter test` — PASS (357/357 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 14 tests in `main_shell_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
 - Firestore Security Rules emulator tests — NOT RUN (Firestore emulator requires JDK >= 21 in host environment; rules unchanged in P2.4)
-- `flutter build apk --debug` without credentials — PASS (built in 29.1s)
+- `flutter build apk --debug` without credentials — PASS (built in 24.0s)
 - `flutter build ios --debug --no-codesign` without credentials — PASS (built in 27.1s)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)

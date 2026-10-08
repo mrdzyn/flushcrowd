@@ -5,7 +5,7 @@ import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../domain/commands/create_restroom_command.dart';
 import '../../domain/models/coordinates.dart';
-import '../../domain/models/duplicate_candidate.dart';
+import '../../domain/models/duplicate_scan_result.dart';
 import '../../domain/repositories/restroom_repository.dart';
 import '../../domain/services/duplicate_detection_service.dart';
 import '../components/bottom_sheets/duplicate_warning_sheet.dart';
@@ -77,34 +77,42 @@ class _MainShellScreenState extends State<MainShellScreen> {
               widget.duplicateDetectionService ??
               const DuplicateDetectionService();
 
-          List<DuplicateCandidate> duplicateCandidates = const [];
+          DuplicateScanResult scanResult = const DuplicateScanResult(
+            candidates: [],
+          );
           try {
             final repo = context.read<RestroomRepository>();
-            duplicateCandidates = await duplicateService.findDuplicatesNearby(
+            scanResult = await duplicateService.findDuplicatesNearby(
               draft: command.draft,
               repository: repo,
             );
-          } catch (_) {
+          } catch (e) {
             // Advisory scan: fail open so user is never blocked
-            duplicateCandidates = const [];
+            scanResult = DuplicateScanResult.failedOpen(
+              errorMessage: e.toString(),
+            );
           }
 
           if (!mounted) return;
 
-          if (duplicateCandidates.isNotEmpty) {
+          if (scanResult.hasDuplicates) {
             final action = await DuplicateWarningSheet.show(
               context,
-              candidates: duplicateCandidates,
+              candidates: scanResult.candidates,
             );
 
             if (!mounted) return;
 
             if (action is ViewExistingRestroomAction) {
+              setState(() => _currentTabIndex = 0);
               try {
                 final discoveryNotifier = context.read<MapDiscoveryNotifier>();
-                discoveryNotifier.selectRestroom(action.restroom);
+                discoveryNotifier.focusOnRestroom(
+                  action.restroom,
+                  zoom: AppConstants.defaultZoomLevel,
+                  openPreview: true,
+                );
               } catch (_) {}
-              setState(() => _currentTabIndex = 0);
               return;
             } else if (action is ProceedWithSubmissionAction) {
               ScaffoldMessenger.of(context).hideCurrentSnackBar();

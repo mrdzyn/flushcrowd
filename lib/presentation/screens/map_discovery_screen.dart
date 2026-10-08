@@ -18,6 +18,7 @@ import '../components/map/map_recenter_button.dart';
 import '../components/map/map_search_bar.dart';
 import '../components/map/map_status_overlay.dart';
 import '../components/map/permission_banner.dart';
+import '../models/map_focus_intent.dart';
 import '../models/restroom_marker_item.dart';
 import '../state/location_notifier.dart';
 import '../utils/restroom_sorting.dart';
@@ -40,8 +41,75 @@ class MapDiscoveryScreen extends StatefulWidget {
 }
 
 class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
-  GoogleMapController? _mapController;
+  GoogleMapController? _googleMapController;
+  MapCameraController? _mapCameraController;
   bool _isRecentering = false;
+  MapDiscoveryNotifier? _discoveryNotifier;
+  int _lastHandledFocusToken = 0;
+  MapFocusIntent? _pendingFocusExecution;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final notifier = context.read<MapDiscoveryNotifier>();
+    if (_discoveryNotifier != notifier) {
+      _discoveryNotifier?.removeListener(_onNotifierChanged);
+      _discoveryNotifier = notifier;
+      _discoveryNotifier?.addListener(_onNotifierChanged);
+    }
+    _onNotifierChanged();
+  }
+
+  @override
+  void dispose() {
+    _discoveryNotifier?.removeListener(_onNotifierChanged);
+    super.dispose();
+  }
+
+  void _onNotifierChanged() {
+    final notifier = _discoveryNotifier;
+    if (notifier == null || !mounted) return;
+    final intent = notifier.pendingFocusIntent;
+    if (intent == null || intent.token == _lastHandledFocusToken) return;
+
+    _lastHandledFocusToken = intent.token;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      _executeFocusIntent(intent, notifier);
+    });
+  }
+
+  Future<void> _executeFocusIntent(
+    MapFocusIntent intent,
+    MapDiscoveryNotifier notifier,
+  ) async {
+    final coords = intent.restroom.coordinates;
+    widget.onCameraTargetChanged?.call(coords);
+
+    if (_mapCameraController != null) {
+      try {
+        await _mapCameraController!.animateCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(coords.latitude, coords.longitude),
+            intent.zoom,
+          ),
+        );
+      } catch (_) {}
+    } else {
+      _pendingFocusExecution = intent;
+    }
+
+    if (intent.openPreview && mounted) {
+      final locationNotifier = context.read<LocationNotifier>();
+      _showRestroomPreviewSheet(
+        context,
+        intent.restroom,
+        locationNotifier.currentCoordinates,
+      );
+    }
+
+    notifier.consumeFocusIntent(intent.token);
+  }
 
   Future<void> _recenterOnUser() async {
     setState(() => _isRecentering = true);
@@ -51,8 +119,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     final coords = locationNotifier.currentCoordinates;
     if (coords != null) {
       widget.onCameraTargetChanged?.call(coords);
-      if (_mapController != null) {
-        await _mapController!.animateCamera(
+      if (_mapCameraController != null) {
+        await _mapCameraController!.animateCamera(
           CameraUpdate.newLatLngZoom(
             LatLng(coords.latitude, coords.longitude),
             AppConstants.defaultZoomLevel,
@@ -72,8 +140,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
         longitude: cluster.position.longitude,
       ),
     );
-    if (_mapController == null) return;
-    _mapController!.animateCamera(
+    if (_mapCameraController == null) return;
+    _mapCameraController!.animateCamera(
       CameraUpdate.newLatLngZoom(
         cluster.position,
         // Zoom in by 2 levels to expand the cluster
@@ -84,11 +152,11 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   }
 
   Future<void> _handleCameraIdle() async {
-    if (_mapController == null || !mounted) return;
+    if (_googleMapController == null || !mounted) return;
     final notifier = context.read<MapDiscoveryNotifier>();
     try {
-      final bounds = await _mapController!.getVisibleRegion();
-      final zoom = await _mapController!.getZoomLevel();
+      final bounds = await _googleMapController!.getVisibleRegion();
+      final zoom = await _googleMapController!.getZoomLevel();
       final geoBounds = GeoBoundingBox(
         southWest: Coordinates(
           latitude: bounds.southwest.latitude,
@@ -158,8 +226,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                       await locationNotifier.requestLocationPermission();
                       if (locationNotifier.hasLocation && mounted) {
                         final coords = locationNotifier.currentCoordinates;
-                        if (coords != null && _mapController != null) {
-                          await _mapController!.animateCamera(
+                        if (coords != null && _mapCameraController != null) {
+                          await _mapCameraController!.animateCamera(
                             CameraUpdate.newLatLngZoom(
                               LatLng(coords.latitude, coords.longitude),
                               AppConstants.defaultZoomLevel,
@@ -242,7 +310,14 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
           zoom: AppConstants.defaultZoomLevel,
         ),
         onMapCreated: (controller) {
+          _mapCameraController = controller;
           widget.onCameraTargetChanged?.call(initialCoords);
+          if (_pendingFocusExecution != null) {
+            final pending = _pendingFocusExecution!;
+            _pendingFocusExecution = null;
+            final notifier = context.read<MapDiscoveryNotifier>();
+            _executeFocusIntent(pending, notifier);
+          }
         },
         onCameraMove: (position) {
           context.read<MapDiscoveryNotifier>().onCameraMove();
@@ -286,8 +361,15 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       },
       onCameraIdle: _handleCameraIdle,
       onMapCreated: (controller) {
-        _mapController = controller;
+        _googleMapController = controller;
+        _mapCameraController = GoogleMapCameraController(controller);
         widget.onCameraTargetChanged?.call(initialCoords);
+        if (_pendingFocusExecution != null) {
+          final pending = _pendingFocusExecution!;
+          _pendingFocusExecution = null;
+          final notifier = context.read<MapDiscoveryNotifier>();
+          _executeFocusIntent(pending, notifier);
+        }
       },
     );
   }
@@ -326,8 +408,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       onResetSearchAndFilters: () => notifier.resetSearchAndFilters(),
       onSelectRestroom: (restroom) {
         notifier.selectRestroom(restroom);
-        if (_mapController != null) {
-          _mapController!.animateCamera(
+        if (_mapCameraController != null) {
+          _mapCameraController!.animateCamera(
             CameraUpdate.newLatLng(
               LatLng(
                 restroom.coordinates.latitude,

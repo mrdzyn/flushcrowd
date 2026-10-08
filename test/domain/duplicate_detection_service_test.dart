@@ -15,6 +15,11 @@ class MockDuplicateRestroomRepository implements RestroomRepository {
   bool shouldThrow = false;
   Coordinates? lastCenterQueried;
   double? lastRadiusQueried;
+  bool isComplete = true;
+  DiscoveryCompletenessReason completenessReason =
+      DiscoveryCompletenessReason.complete;
+  int rangeCount = 1;
+  int candidateCount = 1;
 
   @override
   Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
@@ -26,7 +31,13 @@ class MockDuplicateRestroomRepository implements RestroomRepository {
     if (shouldThrow) {
       throw Exception('Network error during candidate retrieval');
     }
-    return DiscoveryResult.complete(items: candidatesToReturn);
+    return DiscoveryResult(
+      items: candidatesToReturn,
+      isComplete: isComplete,
+      completenessReason: completenessReason,
+      rangeCount: rangeCount,
+      candidateCount: candidateCount,
+    );
   }
 
   @override
@@ -148,6 +159,81 @@ void main() {
 
         final tokens = DuplicateDetectionService.tokenize(text);
         expect(tokens, containsAll(['café', 'central', 'restroom', '2']));
+      });
+
+      test('5b. Composed and decomposed accented Latin strings produce equivalent normalized forms', () {
+        // Composed: \u00E9 (é)
+        const composedCafe = 'Caf\u00E9 Central';
+        // Decomposed: e + \u0301 (combining acute accent)
+        const decomposedCafe = 'Cafe\u0301 Central';
+        expect(
+          DuplicateDetectionService.normalizeText(composedCafe),
+          equals(DuplicateDetectionService.normalizeText(decomposedCafe)),
+        );
+        expect(
+          DuplicateDetectionService.tokenize(composedCafe),
+          equals(DuplicateDetectionService.tokenize(decomposedCafe)),
+        );
+
+        // German Umlaut: composed \u00FC (ü) vs decomposed u + \u0308
+        const composedMunchen = 'M\u00FCnchen Hbf Toilette';
+        const decomposedMunchen = 'Mu\u0308nchen Hbf Toilette';
+        expect(
+          DuplicateDetectionService.normalizeText(composedMunchen),
+          equals(DuplicateDetectionService.normalizeText(decomposedMunchen)),
+        );
+
+        // Norwegian: composed \u00C5 (Å) vs decomposed A + \u030A
+        const composedAlesund = '\u00C5lesund Toalett';
+        const decomposedAlesund = 'A\u030Alesund Toalett';
+        expect(
+          DuplicateDetectionService.normalizeText(composedAlesund),
+          equals(DuplicateDetectionService.normalizeText(decomposedAlesund)),
+        );
+      });
+
+      test('5c. Japanese, Arabic, Cyrillic, Chinese, and Korean scripts preserve canonical equivalence', () {
+        // Japanese: composed が (\u304C) vs decomposed か + \u3099 (\u304B\u3099)
+        const composedJp = '渋谷駅が近い トイレ';
+        const decomposedJp = '渋谷駅\u304B\u3099近い トイレ';
+        expect(
+          DuplicateDetectionService.normalizeText(composedJp),
+          equals(DuplicateDetectionService.normalizeText(decomposedJp)),
+        );
+
+        // Korean: composed 서울 (\uC11C\uC6B8) vs decomposed Jamo
+        const composedKr = '\uC11C\uC6B8\uC5ED 화장실';
+        const decomposedKr = '\u1109\u1165\u110B\u116E\u11AF\uC5ED 화장실';
+        expect(
+          DuplicateDetectionService.normalizeText(composedKr),
+          equals(DuplicateDetectionService.normalizeText(decomposedKr)),
+        );
+
+        // Cyrillic: composed й (\u0439) vs decomposed и + \u0306 (\u0438\u0306)
+        const composedRu = 'Туалет на вокзале, 1-й этаж';
+        const decomposedRu = 'Туалет на вокзале, 1-\u0438\u0306 этаж';
+        expect(
+          DuplicateDetectionService.normalizeText(composedRu),
+          equals(DuplicateDetectionService.normalizeText(decomposedRu)),
+        );
+
+        // Chinese: preserved accurately without losing Han characters
+        const zh = '中央车站 负一层 洗手间 (A区)';
+        expect(
+          DuplicateDetectionService.normalizeText(zh),
+          equals('中央车站 负一层 洗手间 a区'),
+        );
+        expect(
+          DuplicateDetectionService.tokenize(zh),
+          containsAll(['中央车站', '负一层', '洗手间', 'a区']),
+        );
+
+        // Arabic: preserved accurately without losing Arabic letters
+        const ar = 'دورة مياه المركز التجاري — الطابق الأول';
+        expect(
+          DuplicateDetectionService.normalizeText(ar),
+          equals('دورة مياه المركز التجاري الطابق الأول'),
+        );
       });
 
       test('6. Collapses multiple whitespace, tabs, and newlines', () {
@@ -603,55 +689,151 @@ void main() {
   );
 
   group('DuplicateDetectionService — Spatial Search with Repository', () {
-    test(
-      '24. Queries repository within 500m and evaluates candidates',
-      () async {
-        final repo = MockDuplicateRestroomRepository();
-        repo.candidatesToReturn = [
-          _createCandidate(
-            id: 'cand_1',
-            name: 'City Mall Restroom',
-            latitude: 14.58390,
-            longitude: 121.06170,
-          ),
-        ];
-
-        final draft = _createDraft(
+    test('24. Queries repository within 500m and evaluates candidates into complete DuplicateScanResult', () async {
+      final repo = MockDuplicateRestroomRepository();
+      repo.candidatesToReturn = [
+        _createCandidate(
+          id: 'cand_1',
           name: 'City Mall Restroom',
           latitude: 14.58390,
           longitude: 121.06170,
-        );
+        ),
+      ];
 
-        final duplicates = await service.findDuplicatesNearby(
-          draft: draft,
-          repository: repo,
-        );
+      final draft = _createDraft(
+        name: 'City Mall Restroom',
+        latitude: 14.58390,
+        longitude: 121.06170,
+      );
 
-        expect(repo.lastRadiusQueried, equals(500.0));
-        expect(repo.lastCenterQueried, equals(draft.coordinates));
-        expect(duplicates.length, equals(1));
-        expect(duplicates.first.restroom.id, equals('cand_1'));
-      },
-    );
+      final scanResult = await service.findDuplicatesNearby(
+        draft: draft,
+        repository: repo,
+      );
 
-    test(
-      '25. Fails open and returns empty list when repository throws',
-      () async {
-        final repo = MockDuplicateRestroomRepository()..shouldThrow = true;
-        final draft = _createDraft(
-          name: 'City Mall Restroom',
-          latitude: 14.58390,
-          longitude: 121.06170,
-        );
+      expect(repo.lastRadiusQueried, equals(500.0));
+      expect(repo.lastCenterQueried, equals(draft.coordinates));
+      expect(scanResult.isComplete, isTrue);
+      expect(
+        scanResult.completenessReason,
+        equals(DiscoveryCompletenessReason.complete),
+      );
+      expect(scanResult.hasQueryError, isFalse);
+      expect(scanResult.hasDuplicates, isTrue);
+      expect(scanResult.candidates.length, equals(1));
+      expect(scanResult.candidates.first.restroom.id, equals('cand_1'));
+    });
 
-        final duplicates = await service.findDuplicatesNearby(
-          draft: draft,
-          repository: repo,
-        );
+    test('25. Concludes zero duplicates only when scan is complete, error-free, and has zero matches', () async {
+      final repo = MockDuplicateRestroomRepository();
+      repo.candidatesToReturn = [];
 
-        // Advisory duplicate detection must never throw or block submission
-        expect(duplicates, isEmpty);
-      },
-    );
+      final draft = _createDraft(
+        name: 'Unique Restroom',
+        latitude: 14.58390,
+        longitude: 121.06170,
+      );
+
+      final scanResult = await service.findDuplicatesNearby(
+        draft: draft,
+        repository: repo,
+      );
+
+      expect(scanResult.isComplete, isTrue);
+      expect(scanResult.hasQueryError, isFalse);
+      expect(scanResult.hasDuplicates, isFalse);
+      expect(scanResult.hasConcludedZeroDuplicates, isTrue);
+      expect(scanResult.isPartial, isFalse);
+    });
+
+    test('26. Preserves partial scan status when rangeCapExceeded without concluding zero duplicates', () async {
+      final repo = MockDuplicateRestroomRepository();
+      repo.isComplete = false;
+      repo.completenessReason = DiscoveryCompletenessReason.rangeCapExceeded;
+      repo.candidatesToReturn = [];
+
+      final draft = _createDraft(
+        name: 'Downtown Restroom',
+        latitude: 14.58390,
+        longitude: 121.06170,
+      );
+
+      final scanResult = await service.findDuplicatesNearby(
+        draft: draft,
+        repository: repo,
+      );
+
+      expect(scanResult.isComplete, isFalse);
+      expect(
+        scanResult.completenessReason,
+        equals(DiscoveryCompletenessReason.rangeCapExceeded),
+      );
+      expect(scanResult.isPartial, isTrue);
+      // Truncated scan must NEVER imply that no duplicates exist!
+      expect(scanResult.hasConcludedZeroDuplicates, isFalse);
+      expect(scanResult.hasDuplicates, isFalse);
+    });
+
+    test('27. Preserves partial scan status when perRangeLimitExceeded or candidateLimitExceeded', () async {
+      final repo = MockDuplicateRestroomRepository();
+      repo.isComplete = false;
+      repo.completenessReason =
+          DiscoveryCompletenessReason.perRangeLimitExceeded;
+      repo.candidatesToReturn = [];
+
+      final draft = _createDraft(
+        name: 'Busy District Toilet',
+        latitude: 14.58390,
+        longitude: 121.06170,
+      );
+
+      final scanResult1 = await service.findDuplicatesNearby(
+        draft: draft,
+        repository: repo,
+      );
+
+      expect(scanResult1.isComplete, isFalse);
+      expect(
+        scanResult1.completenessReason,
+        equals(DiscoveryCompletenessReason.perRangeLimitExceeded),
+      );
+      expect(scanResult1.hasConcludedZeroDuplicates, isFalse);
+
+      repo.completenessReason =
+          DiscoveryCompletenessReason.candidateLimitExceeded;
+      final scanResult2 = await service.findDuplicatesNearby(
+        draft: draft,
+        repository: repo,
+      );
+
+      expect(scanResult2.isComplete, isFalse);
+      expect(
+        scanResult2.completenessReason,
+        equals(DiscoveryCompletenessReason.candidateLimitExceeded),
+      );
+      expect(scanResult2.hasConcludedZeroDuplicates, isFalse);
+    });
+
+    test('28. Fails open on repository query exception while marking scan as incomplete with query error', () async {
+      final repo = MockDuplicateRestroomRepository()..shouldThrow = true;
+      final draft = _createDraft(
+        name: 'City Mall Restroom',
+        latitude: 14.58390,
+        longitude: 121.06170,
+      );
+
+      final scanResult = await service.findDuplicatesNearby(
+        draft: draft,
+        repository: repo,
+      );
+
+      // Advisory duplicate detection must never throw or block submission
+      expect(scanResult.candidates, isEmpty);
+      expect(scanResult.hasQueryError, isTrue);
+      expect(scanResult.isComplete, isFalse);
+      expect(scanResult.isPartial, isTrue);
+      // A failed scan must NEVER imply that no duplicates exist!
+      expect(scanResult.hasConcludedZeroDuplicates, isFalse);
+    });
   });
 }
