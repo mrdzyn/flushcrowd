@@ -59,6 +59,12 @@ class FakeRestroomRepository implements RestroomRepository {
   Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
     throw UnimplementedError();
   }
+
+  @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) => getNearbyRestrooms(center, radiusMeters: radiusMeters);
 }
 
 Restroom _sampleRestroom(String id, {String name = 'Test Restroom'}) {

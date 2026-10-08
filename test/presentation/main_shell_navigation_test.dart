@@ -11,7 +11,9 @@ import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
 import 'package:flushcrowd/domain/models/restroom.dart';
 import 'package:flushcrowd/domain/repositories/location_repository.dart';
 import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/duplicate_warning_sheet.dart';
 import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
+import 'package:flushcrowd/presentation/components/buttons/loo_secondary_button.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_form_screen.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
 import 'package:flushcrowd/presentation/screens/explore_restrooms_screen.dart';
@@ -53,6 +55,18 @@ class CountingRestroomRepository implements RestroomRepository {
   Future<Restroom?> getRestroomById(String id) async {
     getRestroomCount++;
     return null;
+  }
+
+  DiscoveryResult<Restroom>? duplicateResultToReturn;
+  int duplicateCount = 0;
+
+  @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) async {
+    duplicateCount++;
+    return duplicateResultToReturn ?? DiscoveryResult.complete(items: const []);
   }
 }
 
@@ -399,7 +413,7 @@ void main() {
         // Shows honest temporary coming-soon message
         expect(
           find.text(
-            'Restroom details validated. Duplicate check comes in the next milestone.',
+            'Restroom details validated. Restroom submission comes in Milestone P2.5.',
           ),
           findsOneWidget,
         );
@@ -670,6 +684,144 @@ void main() {
         expect(
           restroomRepo.discoveryCount,
           equals(discoveryCallsBeforeExplore),
+        );
+      },
+    );
+
+    testWidgets(
+      '11. Candidate duplicates show DuplicateWarningSheet and View Existing Restroom selects candidate on map',
+      (tester) async {
+        final existingRestroom = Restroom(
+          id: 'existing_dup_1',
+          name: 'Central Station Restroom',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          buildingName: 'Central Station',
+          floor: '1F',
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Open Add
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form with identical name & coordinates
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Central Station Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue on form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // DuplicateWarningSheet should be displayed!
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+        expect(find.text('Similar restrooms found nearby'), findsOneWidget);
+        expect(find.text('Central Station Restroom'), findsOneWidget);
+        expect(find.text('View Existing Restroom'), findsOneWidget);
+
+        // Tap "View Existing Restroom"
+        await tester.tap(
+          find.widgetWithText(LooSecondaryButton, 'View Existing Restroom'),
+        );
+        await tester.pumpAndSettle();
+
+        // Sheet is dismissed, shell shows Map tab with candidate selected
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+        expect(
+          discoveryNotifier.selectedRestroom?.id,
+          equals('existing_dup_1'),
+        );
+      },
+    );
+
+    testWidgets(
+      '12. DuplicateWarningSheet "No, It\'s a Different Restroom" acknowledges warning and continues flow',
+      (tester) async {
+        final existingRestroom = Restroom(
+          id: 'existing_dup_2',
+          name: 'Plaza Public Toilet',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Open Add
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Plaza Public Toilet',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue on form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // DuplicateWarningSheet is displayed
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+
+        // Tap "No, It's a Different Restroom"
+        await tester.tap(
+          find.widgetWithText(
+            LooPrimaryButton,
+            "No, It's a Different Restroom",
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Sheet is dismissed
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+        expect(
+          find.text(
+            'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
+          ),
+          findsOneWidget,
         );
       },
     );

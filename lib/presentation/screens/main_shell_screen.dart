@@ -1,11 +1,17 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants/app_constants.dart';
 import '../../core/theme/app_colors.dart';
 import '../../domain/commands/create_restroom_command.dart';
 import '../../domain/models/coordinates.dart';
+import '../../domain/models/duplicate_candidate.dart';
+import '../../domain/repositories/restroom_repository.dart';
+import '../../domain/services/duplicate_detection_service.dart';
+import '../components/bottom_sheets/duplicate_warning_sheet.dart';
 import '../components/feedback/empty_state_view.dart';
 import '../components/navigation/loo_bottom_nav_bar.dart';
+import '../state/map_discovery_notifier.dart';
 import '../state/restroom_id_generator.dart';
 import 'add_restroom_form_screen.dart';
 import 'add_restroom_location_screen.dart';
@@ -17,12 +23,14 @@ class MainShellScreen extends StatefulWidget {
   final MapWidgetBuilder? addLocationMapBuilder;
   final MapWidgetBuilder? discoveryMapBuilder;
   final RestroomIdGenerator? formIdGenerator;
+  final DuplicateDetectionService? duplicateDetectionService;
 
   const MainShellScreen({
     super.key,
     this.addLocationMapBuilder,
     this.discoveryMapBuilder,
     this.formIdGenerator,
+    this.duplicateDetectionService,
   });
 
   @override
@@ -65,16 +73,64 @@ class _MainShellScreenState extends State<MainShellScreen> {
         if (!mounted) return;
 
         if (command != null) {
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Restroom details validated. Duplicate check comes in the next milestone.',
+          final duplicateService =
+              widget.duplicateDetectionService ??
+              const DuplicateDetectionService();
+
+          List<DuplicateCandidate> duplicateCandidates = const [];
+          try {
+            final repo = context.read<RestroomRepository>();
+            duplicateCandidates = await duplicateService.findDuplicatesNearby(
+              draft: command.draft,
+              repository: repo,
+            );
+          } catch (_) {
+            // Advisory scan: fail open so user is never blocked
+            duplicateCandidates = const [];
+          }
+
+          if (!mounted) return;
+
+          if (duplicateCandidates.isNotEmpty) {
+            final action = await DuplicateWarningSheet.show(
+              context,
+              candidates: duplicateCandidates,
+            );
+
+            if (!mounted) return;
+
+            if (action is ViewExistingRestroomAction) {
+              try {
+                final discoveryNotifier = context.read<MapDiscoveryNotifier>();
+                discoveryNotifier.selectRestroom(action.restroom);
+              } catch (_) {}
+              setState(() => _currentTabIndex = 0);
+              return;
+            } else if (action is ProceedWithSubmissionAction) {
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
+                  ),
+                  duration: Duration(seconds: 4),
+                  behavior: SnackBarBehavior.floating,
+                ),
+              );
+              return;
+            }
+          } else {
+            ScaffoldMessenger.of(context).hideCurrentSnackBar();
+            ScaffoldMessenger.of(context).showSnackBar(
+              const SnackBar(
+                content: Text(
+                  'Restroom details validated. Restroom submission comes in Milestone P2.5.',
+                ),
+                duration: Duration(seconds: 4),
+                behavior: SnackBarBehavior.floating,
               ),
-              duration: Duration(seconds: 4),
-              behavior: SnackBarBehavior.floating,
-            ),
-          );
+            );
+          }
         }
       }
     } finally {

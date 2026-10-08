@@ -5,36 +5,49 @@
 - **Last updated:** 2026-10-08
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
-- **Overall stage:** Phase 1 Explore Tab Wiring Hotfix / Phase 2 Add Restroom
-- **Current phase:** Phase 1 (Post-P2.3 Regression / Navigation Seam Restoration)
-- **Current milestone:** Phase 1 Explore Tab Navigation Seam Restoration — remediation active / pending independent re-audit
-- **Current branch:** `fix/p1-explore-tab-wiring`
-- **Current PR:** #9 — `fix: restore Phase 1 Explore restroom discovery experience`
-- **Base:** `main` at `9cc4b9b779d510de7b73561804443cc21f6454f9` (includes PR #8 P2.3 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix REMEDIATION ACTIVE / PENDING RE-AUDIT]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [NOT STARTED].
+- **Overall stage:** Phase 2 Add Restroom
+- **Current phase:** Phase 2 Add Restroom
+- **Current milestone:** Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX
+- **Current branch:** `phase-2/p2.4-duplicate-detection`
+- **Latest commit:** `2962991f891ebe7277c66bb441778c8c04e7f75c`
+- **Current PR:** Pending creation / audit
+- **Base:** `main` at `ce04479bd3b69ca9b3bc342854583f8ff7544330` (includes PR #9 Explore tab squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [IMPLEMENTED & VALIDATED — READY FOR AUDIT]; P2.5 [NOT STARTED].
 
 ## Current objective
 
-Restore the **Explore Restrooms** bottom-navigation experience in `MainShellScreen` (tab index 1) that was previously blocked by an unbuilt placeholder (`_PhasePlaceholderScreen`):
-- **Explore Tab Screen (`ExploreRestroomsScreen`):** Wire the Explore tab to present a rich, categorized list and search/filter experience built purely on top of Phase 1 discovery state.
-- **Zero Additional Network Reads:** Consumes existing in-memory `MapDiscoveryNotifier` and `LocationNotifier` state; 0 additional Firestore queries triggered solely by navigating to, searching within, or filtering on the Explore tab.
-- **Zero Architecture Duplication:** Zero parallel discovery repositories or duplicated GIS/geohash logic; full reuse of `RestroomSorting`, `MapSearchBar`, `FilterBottomSheet`, `RestroomSummaryCard`, and feedback components.
-- **Complete Lifecycle Feedback:** Transparently presents all discovery lifecycle states:
-  - *Loading:* Centered `LooLoadingIndicator` when visible results are empty.
-  - *Degraded warning:* Warning banner when results are capped due to safety limits (`isDegraded`).
-  - *Non-blocking error:* Error banner with retry action retaining prior results.
-  - *Full error:* Centered `ErrorStateView` with retry action when query fails without prior results.
-  - *Zoom-suppressed:* `EmptyStateView` with "Zoom In on Map to Explore" and "View Map" action.
-  - *Derived empty (filtered/search):* Differentiates search-only, filter-only, and search+filters with dedicated reset actions.
-  - *Geographic empty:* `EmptyStateView` with "No Restrooms Found Nearby" and "Explore on Map" action.
-  - *Loaded results:* Scrollable list with deterministic distance/name sorting (`RestroomSorting.sort`) and rich contextual details (indoor context, floor, landmarks, access type, amenities, verification).
-- **Selection & Map Synchronization:** Tapping a restroom card selects the facility in `MapDiscoveryNotifier`, switches active tab to Map (`_currentTabIndex = 0`), and renders the selected restroom card in `MapDiscoveryBottomBar`.
-- **Tab State Preservation:** `MainShellScreen` uses `IndexedStack`, preserving discovery map camera position, markers, and Explore screen state across tab switches.
+Implement **Phase 2 Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX**:
+- **Bounded Duplicate Detection Engine (`DuplicateDetectionService`):**
+  - *Unicode-preserving text normalization:* Normalizes text across global scripts (Japanese, Arabic, Cyrillic, Korean, Chinese, accented Latin), preserving letters and numbers across scripts (`[\p{L}\p{N}]`) while stripping punctuation and symbols (`[\p{P}\p{S}]`), collapsing whitespace, and tokenizing into unique non-empty token sets.
+  - *Dice coefficient with zero-denominator guards:* $\frac{2 \times |T_D \cap T_C|}{|T_D| + |T_C|}$, returning `0.0` when either token set is empty or $|T_D| + |T_C| == 0$.
+  - *Deterministic multi-attribute scoring model:*
+    - $S_{\text{dist}}$: $<30\text{m} \to 1.0$; $30\text{m}\le D < 100\text{m} \to 0.7$; $100\text{m}\le D < 300\text{m} \to 0.3$; $300\text{m}\le D \le 500\text{m} \to 0.1$; $>500\text{m} \to 0.0$.
+    - $S_{\text{name}}$: Normalized Dice coefficient $\in [0.0, 1.0]$.
+    - $S_{\text{building}}$: Match $\to 1.0$; Conflict $\to 0.0$; Either unspecified $\to 0.5$.
+    - $S_{\text{section}}$: Match on section or unit $\to 1.0$; Either unspecified $\to 0.5$; Conflict $\to 0.0$.
+    - $S_{\text{landmark}}$: Match $\to 1.0$; Either unspecified $\to 0.5$; Conflict $\to 0.0$.
+    - $P_{\text{floor}}$: Both present and conflicting $\to 0.40$; Matching or either empty $\to 0.0$.
+    - $\text{rawScore} = (0.40 \times S_{\text{dist}}) + (0.30 \times S_{\text{name}}) + (0.15 \times S_{\text{building}}) + (0.10 \times S_{\text{section}}) + (0.05 \times S_{\text{landmark}}) - P_{\text{floor}}$.
+    - $\text{score} = \text{clamp}(\text{rawScore}, 0.0, 1.0)$.
+  - *Classification thresholds:* $\ge 0.75$ High, $\ge 0.50$ Moderate, $< 0.50$ Distinct (No Warning).
+  - *Deterministic tie-breaking:* Score descending, distance ascending, normalized name ascending, restroomId ascending. Caps candidate warnings to top 3.
+  - *Spatial search:* Reuses Phase 1 GIS candidate prefixes bounded to 500m, max 16 ranges, `.limit(20)` docs per range query (max 320 raw reads theoretical ceiling).
+- **Advisory Modal Warning UI (`DuplicateWarningSheet`):**
+  - Header: "Similar restrooms found nearby".
+  - Explanation: "We found an existing restroom near this location. Is this the same facility?".
+  - Up to 3 candidate cards showing name, formatted distance, floor, and access type badge.
+  - Actions:
+    - `View Existing Restroom`: Dismisses sheet, closes form, centers map on candidate, selects candidate in `MapDiscoveryNotifier`, and switches to Map tab.
+    - `No, It's a Different Restroom`: Acknowledges warning and proceeds with submission workflow.
+  - Meets minimum 48×48dp touch targets and semantic accessibility requirements.
+- **Workflow Integration (`MainShellScreen`):**
+  - Evaluates candidate duplicates upon valid draft completion.
+  - If candidates score $\ge 0.50$, displays `DuplicateWarningSheet`.
+  - Advisory fail-open contract: Query errors never block submission.
 
 The active specification is:
 
-- `docs/08-phase-1-map-discovery.md` (active for Phase 1 Explore restoration)
-- `docs/09-phase-2-add-restroom.md` (continuing Phase 2 specification)
+- `docs/09-phase-2-add-restroom.md` (active Phase 2 specification)
 
 ## Locked decisions
 
@@ -271,7 +284,9 @@ Owner-confirmed staging infrastructure state:
   - MERGED into main (`9cc4b9b779d510de7b73561804443cc21f6454f9`)
   - Manual human QA: PASS on Android, PASS on iOS
 - Phase 1 Explore tab restoration:
-  - ACTIVE / REMEDIATION COMPLETE / PENDING INDEPENDENT RE-AUDIT
+  - MERGED into main (`ce04479bd3b69ca9b3bc342854583f8ff7544330`, PR #9)
+- Milestone P2.4 (Duplicate Detection):
+  - IMPLEMENTED & VALIDATED — READY FOR AUDIT
 
 ## Current owner actions / external dependencies
 
@@ -281,22 +296,22 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (88 files checked, 0 changed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (93 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (317/317 passed: 18 tests in `explore_restrooms_screen_test.dart` + 11 tests in `main_shell_navigation_test.dart`)
-- Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
-- `flutter build apk --debug` without credentials — PASS
-- `flutter build ios --debug --no-codesign` without credentials — PASS
+- `flutter test` — PASS (351/351 tests passed: 25 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 13 tests in `main_shell_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- Firestore Security Rules emulator tests — NOT RUN (Firestore emulator requires JDK >= 21 in host environment; rules unchanged in P2.4)
+- `flutter build apk --debug` without credentials — PASS (built in 29.1s)
+- `flutter build ios --debug --no-codesign` without credentials — PASS (built in 27.1s)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Complete PR #9 remediation handoff.
-2. Conduct independent PR #9 remediation exact-head re-audit.
-3. Conduct manual human QA if requested.
-4. Squash-merge PR #9 upon explicit human approval.
-5. Phase 2 Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX) remains NOT STARTED until PR #9 is merged.
+1. Submit PR for Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX).
+2. Conduct independent exact-head re-audit of P2.4 implementation.
+3. Conduct manual human QA on Android & iOS staging.
+4. Squash-merge P2.4 upon explicit human approval.
+5. Proceed to Milestone P2.5 (End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback).
 
 ## Handoff template
 

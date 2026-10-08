@@ -72,6 +72,36 @@ class FirestoreRestroomRepository implements RestroomRepository {
     Coordinates center, {
     double radiusMeters = AppConstants.defaultSearchRadiusMeters,
   }) async {
+    return _queryNearbyRestrooms(
+      center: center,
+      radiusMeters: radiusMeters,
+      maxDocsPerRange: AppConstants.maxDocumentsPerRangeQuery,
+      maxCandidates: AppConstants.maxCandidateDocuments,
+      maxResults: AppConstants.maxDiscoveryResults,
+    );
+  }
+
+  @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) async {
+    return _queryNearbyRestrooms(
+      center: center,
+      radiusMeters: radiusMeters,
+      maxDocsPerRange: 20,
+      maxCandidates: 320,
+      maxResults: 320,
+    );
+  }
+
+  Future<DiscoveryResult<Restroom>> _queryNearbyRestrooms({
+    required Coordinates center,
+    required double radiusMeters,
+    required int maxDocsPerRange,
+    required int maxCandidates,
+    required int maxResults,
+  }) async {
     // 1. Validate radius
     if (radiusMeters <= 0 ||
         radiusMeters.isNaN ||
@@ -106,7 +136,7 @@ class FirestoreRestroomRepository implements RestroomRepository {
       final Map<String, Restroom> candidateMap = {};
 
       for (final prefix in limitedPrefixes) {
-        if (candidateMap.length >= AppConstants.maxCandidateDocuments) {
+        if (candidateMap.length >= maxCandidates) {
           candidateCapHit = true;
           break;
         }
@@ -116,10 +146,10 @@ class FirestoreRestroomRepository implements RestroomRepository {
           field: 'geohash',
           startAt: prefix,
           endAt: '$prefix~',
-          limit: AppConstants.maxDocumentsPerRangeQuery,
+          limit: maxDocsPerRange,
         );
 
-        if (docs.length >= AppConstants.maxDocumentsPerRangeQuery) {
+        if (docs.length >= maxDocsPerRange) {
           perRangeDocLimitHit = true;
         }
 
@@ -139,7 +169,7 @@ class FirestoreRestroomRepository implements RestroomRepository {
             continue;
           }
 
-          if (candidateMap.length >= AppConstants.maxCandidateDocuments) {
+          if (candidateMap.length >= maxCandidates) {
             candidateCapHit = true;
             break;
           }
@@ -169,9 +199,9 @@ class FirestoreRestroomRepository implements RestroomRepository {
 
       List<Restroom> finalResults = inRadius;
       // 7. Enforce max discovery results limit
-      if (inRadius.length > AppConstants.maxDiscoveryResults) {
+      if (inRadius.length > maxResults) {
         resultCapHit = true;
-        finalResults = inRadius.sublist(0, AppConstants.maxDiscoveryResults);
+        finalResults = inRadius.sublist(0, maxResults);
       }
 
       // Determine completeness

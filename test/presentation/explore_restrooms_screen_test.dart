@@ -59,6 +59,12 @@ class CountingRestroomRepository implements RestroomRepository {
     submitCalls++;
     throw UnimplementedError();
   }
+
+  @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) => getNearbyRestrooms(center, radiusMeters: radiusMeters);
 }
 
 Restroom _createRestroom({
