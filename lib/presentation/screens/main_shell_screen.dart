@@ -9,6 +9,7 @@ import '../components/navigation/loo_bottom_nav_bar.dart';
 import '../state/restroom_id_generator.dart';
 import 'add_restroom_form_screen.dart';
 import 'add_restroom_location_screen.dart';
+import 'explore_restrooms_screen.dart';
 import 'map_discovery_screen.dart';
 
 /// Main application shell housing the bottom navigation bar and active tab screens.
@@ -95,10 +96,13 @@ class _MainShellScreenState extends State<MainShellScreen> {
             mapBuilder: widget.discoveryMapBuilder,
             onCameraTargetChanged: _handleDiscoveryCameraTargetChanged,
           ),
-          const _PhasePlaceholderScreen(
-            icon: Icons.explore_rounded,
-            title: 'Explore Restrooms',
-            phaseDescription: 'Phase 1 will deliver the nearby list and categorized explore view.',
+          ExploreRestroomsScreen(
+            onSelectRestroom: (restroom) {
+              setState(() => _currentTabIndex = 0);
+            },
+            onSwitchToMap: () {
+              setState(() => _currentTabIndex = 0);
+            },
           ),
           const SizedBox.shrink(),
           const _PhasePlaceholderScreen(
