@@ -5,6 +5,7 @@ import '../../../core/theme/app_radii.dart';
 import '../../../core/theme/app_typography.dart';
 import '../../../data/services/gis/haversine.dart';
 import '../../../domain/models/coordinates.dart';
+import '../../../domain/models/discovery_filters.dart';
 import '../../../domain/models/enums.dart';
 import '../../../domain/models/restroom.dart';
 import '../chips/status_chip.dart';
@@ -17,6 +18,7 @@ import '../chips/status_chip.dart';
 /// - [showAmenities]: Renders compact icon indicators for key facility amenities.
 /// - [showVerification]: Renders community verification signal.
 /// - [onInfoTap]: Optional secondary tap action (e.g. preview sheet).
+/// - [now]: Optional clock override for deterministic verification freshness evaluation.
 class RestroomSummaryCard extends StatelessWidget {
   final Restroom restroom;
   final Coordinates? userLocation;
@@ -26,6 +28,7 @@ class RestroomSummaryCard extends StatelessWidget {
   final bool showAccessType;
   final bool showFullContext;
   final bool showVerification;
+  final DateTime? now;
 
   const RestroomSummaryCard({
     super.key,
@@ -37,6 +40,7 @@ class RestroomSummaryCard extends StatelessWidget {
     this.showAccessType = false,
     this.showFullContext = false,
     this.showVerification = false,
+    this.now,
   });
 
   @override
@@ -119,6 +123,22 @@ class RestroomSummaryCard extends StatelessWidget {
           const _AmenityIconItem(Icons.air_rounded, 'Hand Dryer'),
         );
       }
+    }
+
+    final currentTime = now ?? DateTime.now();
+    bool isRecentlyVerified = false;
+    bool isPreviouslyVerified = false;
+
+    if (restroom.lastVerifiedAt != null) {
+      final diff = currentTime.difference(restroom.lastVerifiedAt!);
+      if (diff >= Duration.zero &&
+          diff <= DiscoveryFilters.recentVerificationThreshold) {
+        isRecentlyVerified = true;
+      } else if (diff > DiscoveryFilters.recentVerificationThreshold) {
+        isPreviouslyVerified = true;
+      }
+    } else if (restroom.verificationCount > 0) {
+      isPreviouslyVerified = true;
     }
 
     return Container(
@@ -218,9 +238,7 @@ class RestroomSummaryCard extends StatelessWidget {
                               style: AppTypography.bodySmall,
                             ),
                           ],
-                          if (showVerification &&
-                              (restroom.lastVerifiedAt != null ||
-                                  restroom.verificationCount > 0)) ...[
+                          if (showVerification && isRecentlyVerified) ...[
                             const SizedBox(width: 8),
                             const Icon(
                               Icons.verified_rounded,
@@ -229,10 +247,26 @@ class RestroomSummaryCard extends StatelessWidget {
                             ),
                             const SizedBox(width: 2),
                             Text(
-                              'Verified',
+                              'Recently verified',
                               style: AppTypography.labelSmall.copyWith(
                                 color: AppColors.success,
                                 fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ] else if (showVerification &&
+                              isPreviouslyVerified) ...[
+                            const SizedBox(width: 8),
+                            const Icon(
+                              Icons.history_rounded,
+                              size: 14,
+                              color: AppColors.textTertiary,
+                            ),
+                            const SizedBox(width: 2),
+                            Text(
+                              'Previously verified',
+                              style: AppTypography.labelSmall.copyWith(
+                                color: AppColors.textTertiary,
+                                fontWeight: FontWeight.w500,
                               ),
                             ),
                           ],
@@ -289,8 +323,8 @@ class RestroomSummaryCard extends StatelessWidget {
                         ),
                         onPressed: onInfoTap,
                         constraints: const BoxConstraints(
-                          minWidth: 40,
-                          minHeight: 40,
+                          minWidth: 48,
+                          minHeight: 48,
                         ),
                       ),
                   ],

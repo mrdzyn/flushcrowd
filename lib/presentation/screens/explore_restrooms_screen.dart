@@ -27,11 +27,13 @@ import '../utils/restroom_sorting.dart';
 class ExploreRestroomsScreen extends StatelessWidget {
   final ValueChanged<Restroom>? onSelectRestroom;
   final VoidCallback? onSwitchToMap;
+  final DateTime? now;
 
   const ExploreRestroomsScreen({
     super.key,
     this.onSelectRestroom,
     this.onSwitchToMap,
+    this.now,
   });
 
   @override
@@ -288,6 +290,7 @@ class ExploreRestroomsScreen extends StatelessWidget {
                   showAccessType: true,
                   showAmenities: true,
                   showVerification: true,
+                  now: now,
                   onTap: () {
                     discoveryNotifier.selectRestroom(restroom);
                     onSelectRestroom?.call(restroom);

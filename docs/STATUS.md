@@ -7,11 +7,11 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 1 Explore Tab Wiring Hotfix / Phase 2 Add Restroom
 - **Current phase:** Phase 1 (Post-P2.3 Regression / Navigation Seam Restoration)
-- **Current milestone:** Phase 1 Explore Tab Navigation Seam Restoration complete / ready for independent audit
+- **Current milestone:** Phase 1 Explore Tab Navigation Seam Restoration — remediation active / pending independent re-audit
 - **Current branch:** `fix/p1-explore-tab-wiring`
-- **Current PR:** `fix: restore Phase 1 Explore restroom experience`
+- **Current PR:** #9 — `fix: restore Phase 1 Explore restroom discovery experience`
 - **Base:** `main` at `9cc4b9b779d510de7b73561804443cc21f6454f9` (includes PR #8 P2.3 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix READY FOR AUDIT]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [NOT STARTED].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix REMEDIATION ACTIVE / PENDING RE-AUDIT]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [NOT STARTED].
 
 ## Current objective
 
@@ -33,7 +33,8 @@ Restore the **Explore Restrooms** bottom-navigation experience in `MainShellScre
 
 The active specification is:
 
-- `docs/09-phase-2-add-restroom.md`
+- `docs/08-phase-1-map-discovery.md` (active for Phase 1 Explore restoration)
+- `docs/09-phase-2-add-restroom.md` (continuing Phase 2 specification)
 
 ## Locked decisions
 
@@ -183,11 +184,11 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Zero-persistence milestone: 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding calls, no personal data or contributor UID collected.
 - Independent audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### Phase 1 — Explore Restrooms Experience Restoration [ACTIVE — ready for independent audit]
+### Phase 1 — Explore Restrooms Experience Restoration [ACTIVE — remediation active / pending independent re-audit]
 - Resolved Phase 1 unfinished navigation seam: bottom-navigation **Explore** tab (index 1) previously mounted a placeholder claiming Phase 1 was unbuilt.
 - Implemented `ExploreRestroomsScreen` (`lib/presentation/screens/explore_restrooms_screen.dart`) providing rich list discovery, searching, and filtering on top of Phase 1 discovery state.
 - Zero new network queries: consumes `MapDiscoveryNotifier` and `LocationNotifier` with 0 Firestore reads triggered by tab navigation, searching, or filtering.
-- Extended `RestroomSummaryCard` with optional contextual parameters (`showFullContext`, `showAccessType`, `showAmenities`, `showVerification`, `onInfoTap`) while defaulting all to false for 100% backward compatibility.
+- Extended `RestroomSummaryCard` with optional contextual parameters (`showFullContext`, `showAccessType`, `showAmenities`, `showVerification`, `onInfoTap`, `now`) while defaulting all to false/null for 100% backward compatibility.
 - Comprehensive lifecycle handling:
   - Loading: Centered `LooLoadingIndicator` when results are empty during query.
   - Degraded results: Non-blocking warning banner when safety caps are reached (`isDegraded`).
@@ -198,7 +199,9 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
   - Geographic empty: `EmptyStateView` when 0 facilities exist in area with "Explore on Map" CTA.
   - Loaded results: Scrollable list sorted deterministically via `RestroomSorting.sort`, displaying full context (building name, floor, landmark, status chip, access type chip, amenity icons, verified badge).
 - Tap selection synchronization: Tapping a restroom card selects the facility in `MapDiscoveryNotifier`, switches active tab to Map (`_currentTabIndex = 0`), and displays the preview card on the map.
-- Authored 12 unit and widget tests in `test/presentation/explore_restrooms_screen_test.dart` and 1 additional navigation/tab-switch test in `test/presentation/main_shell_navigation_test.dart` (311 total Flutter tests, all PASS).
+- Remediated MAJOR-1: Replaced unconditional `Verified` badge in `RestroomSummaryCard` with truthful verification freshness semantics reusing canonical `DiscoveryFilters.recentVerificationThreshold` (90 days). Fresh verifications (`lastVerifiedAt` within 90 days, non-future) display green `Recently verified`. Older verifications (> 90 days) or count-only verifications (`verificationCount > 0` with null timestamp) display neutral `Previously verified`. Unverified facilities render no verification badge. Future timestamps are not treated as recent.
+- Remediated MINOR-1: Updated `RestroomSummaryCard` `onInfoTap` `IconButton` constraints from `minWidth: 40, minHeight: 40` to `minWidth: 48, minHeight: 48` satisfying the repository minimum interactive touch target accessibility rule.
+- Authored 18 unit and widget tests in `test/presentation/explore_restrooms_screen_test.dart` and 1 additional navigation/tab-switch test in `test/presentation/main_shell_navigation_test.dart` (317 total Flutter tests, all PASS).
 
 ### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
 - Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
@@ -266,8 +269,9 @@ Owner-confirmed staging infrastructure state:
   - Post-deployment runtime verification — PASS (previous `PERMISSION_DENIED` no longer occurs)
 - Milestone P2.3 gate:
   - MERGED into main (`9cc4b9b779d510de7b73561804443cc21f6454f9`)
+  - Manual human QA: PASS on Android, PASS on iOS
 - Phase 1 Explore tab restoration:
-  - ACTIVE / READY FOR INDEPENDENT AUDIT
+  - ACTIVE / REMEDIATION COMPLETE / PENDING INDEPENDENT RE-AUDIT
 
 ## Current owner actions / external dependencies
 
@@ -279,7 +283,7 @@ Owner-confirmed staging infrastructure state:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (88 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (311/311 passed: 12 tests in `explore_restrooms_screen_test.dart` + 11 tests in `main_shell_navigation_test.dart`)
+- `flutter test` — PASS (317/317 passed: 18 tests in `explore_restrooms_screen_test.dart` + 11 tests in `main_shell_navigation_test.dart`)
 - Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
 - `flutter build apk --debug` without credentials — PASS
 - `flutter build ios --debug --no-codesign` without credentials — PASS
@@ -288,10 +292,11 @@ Owner-confirmed staging infrastructure state:
 
 ## Next recommended action
 
-1. Open PR `fix: restore Phase 1 Explore restroom experience` against `main`.
-2. Conduct independent exact-head audit for `fix/p1-explore-tab-wiring`.
-3. Squash merge upon explicit human approval.
-4. Proceed to Phase 2 Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX).
+1. Complete PR #9 remediation handoff.
+2. Conduct independent PR #9 remediation exact-head re-audit.
+3. Conduct manual human QA if requested.
+4. Squash-merge PR #9 upon explicit human approval.
+5. Phase 2 Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX) remains NOT STARTED until PR #9 is merged.
 
 ## Handoff template
 

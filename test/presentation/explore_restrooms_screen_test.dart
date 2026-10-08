@@ -245,7 +245,7 @@ void main() {
         expect(find.textContaining('Greenbelt Mall'), findsOneWidget);
         expect(find.textContaining('Level 2'), findsOneWidget);
         expect(find.text('Near Cinema wing'), findsOneWidget);
-        expect(find.text('Verified'), findsOneWidget);
+        expect(find.text('Recently verified'), findsOneWidget);
         expect(find.text('Paid'), findsOneWidget);
         expect(find.text('Free'), findsOneWidget);
       },
@@ -609,6 +609,234 @@ void main() {
 
         completer.complete(DiscoveryResult.complete(items: const []));
         await tester.pumpAndSettle();
+      },
+    );
+
+    testWidgets(
+      '13. Verification badge: lastVerifiedAt within 90 days renders recent verification badge',
+      (tester) async {
+        final fixedNow = DateTime(2026, 10, 8, 12, 0);
+        final r = _createRestroom(
+          id: 'r_recent',
+          name: 'Recent Restroom',
+          lastVerifiedAt: fixedNow.subtract(const Duration(days: 10)),
+          verificationCount: 1,
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          _wrapWithProviders(
+            child: ExploreRestroomsScreen(now: fixedNow),
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Recently verified'), findsOneWidget);
+        expect(find.text('Verified'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '14. Verification badge: lastVerifiedAt older than 90 days does NOT render current green Verified badge',
+      (tester) async {
+        final fixedNow = DateTime(2026, 10, 8, 12, 0);
+        final r = _createRestroom(
+          id: 'r_old',
+          name: 'Older Restroom',
+          lastVerifiedAt: fixedNow.subtract(const Duration(days: 95)),
+          verificationCount: 1,
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          _wrapWithProviders(
+            child: ExploreRestroomsScreen(now: fixedNow),
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Recently verified'), findsNothing);
+        expect(find.text('Verified'), findsNothing);
+        expect(find.text('Previously verified'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '15. Verification badge: verificationCount > 0 without lastVerifiedAt does NOT render current green Verified badge',
+      (tester) async {
+        final fixedNow = DateTime(2026, 10, 8, 12, 0);
+        final r = _createRestroom(
+          id: 'r_count_only',
+          name: 'Count Only Restroom',
+          lastVerifiedAt: null,
+          verificationCount: 3,
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          _wrapWithProviders(
+            child: ExploreRestroomsScreen(now: fixedNow),
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Recently verified'), findsNothing);
+        expect(find.text('Verified'), findsNothing);
+        expect(find.text('Previously verified'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '16. Verification badge: unverified restroom renders neither recent nor historical badge',
+      (tester) async {
+        final fixedNow = DateTime(2026, 10, 8, 12, 0);
+        final r = _createRestroom(
+          id: 'r_unverified',
+          name: 'Unverified Restroom',
+          lastVerifiedAt: null,
+          verificationCount: 0,
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          _wrapWithProviders(
+            child: ExploreRestroomsScreen(now: fixedNow),
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Recently verified'), findsNothing);
+        expect(find.text('Verified'), findsNothing);
+        expect(find.text('Previously verified'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '17. Verification badge: future verification timestamp is not treated as recent',
+      (tester) async {
+        final fixedNow = DateTime(2026, 10, 8, 12, 0);
+        final r = _createRestroom(
+          id: 'r_future',
+          name: 'Future Restroom',
+          lastVerifiedAt: fixedNow.add(const Duration(days: 3)),
+          verificationCount: 1,
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          _wrapWithProviders(
+            child: ExploreRestroomsScreen(now: fixedNow),
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('Recently verified'), findsNothing);
+        expect(find.text('Verified'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '18. Accessibility touch target: summary card info button meets minimum 48x48 interactive size',
+      (tester) async {
+        final r = _createRestroom(
+          id: 'r_target',
+          name: 'Touch Target Restroom',
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [r],
+        );
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.54, longitude: 121.01),
+            northEast: Coordinates(latitude: 14.56, longitude: 121.03),
+          ),
+          zoom: 16.0,
+        );
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 50));
+
+        await tester.pumpWidget(
+          _wrapWithProviders(
+            child: const ExploreRestroomsScreen(),
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        final buttonFinder = find.widgetWithIcon(
+          IconButton,
+          Icons.chevron_right_rounded,
+        );
+        expect(buttonFinder, findsOneWidget);
+        final size = tester.getSize(buttonFinder);
+        expect(size.width, greaterThanOrEqualTo(48.0));
+        expect(size.height, greaterThanOrEqualTo(48.0));
       },
     );
   });
