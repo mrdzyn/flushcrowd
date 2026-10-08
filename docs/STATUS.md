@@ -31,14 +31,19 @@ Remediate independent exact-head audit on **PR #10 (Milestone P2.4 — Bounded D
   - Integrated pure Dart `unorm_dart: ^0.3.3` for deterministic Unicode Canonical Decomposition followed by Canonical Composition (NFC).
   - Applied NFC normalization prior to punctuation stripping and whitespace collapsing, guaranteeing that composed and decomposed Unicode representations (e.g. `café` vs `cafe\u0301`, `München` vs `Mu\u0308nchen`, `Ålesund` vs `A\u030环lesund`, Japanese, Korean Hangul, Cyrillic, Chinese, Arabic) normalize to identical tokens.
   - Added comprehensive canonical equivalence tests across Latin and non-Latin scripts.
+- **Map Focus Initialization Race Remediated (Re-Audit MAJOR-1):**
+  - Enforced exact-once execution of `MapFocusIntent` in `MapDiscoveryScreen`.
+  - When map controller is unavailable, camera animation and preview presentation are strictly deferred until `onMapCreated`, preventing premature intent consumption.
+  - Prevents duplicate preview sheets: `onMapCreated` replays pending intents safely without re-opening on subsequent frames.
+  - Stale or superseded focus intents are discarded before and after asynchronous camera animations via token comparison against active notifier intent.
+  - Camera focus occurs before preview presentation.
+  - Unified `_onDiscoveryMapCreated` handler across custom builder and GoogleMap implementations.
 - **MINOR-1 & MINOR-2 Remediated:**
   - Updated PR #10 body and specification parameters on GitHub.
-  - Reconciled `docs/STATUS.md` coordination ledger.
-    - `No, It's a Different Restroom`: Acknowledges warning and proceeds with submission workflow.
-  - Meets minimum 48×48dp touch targets and semantic accessibility requirements.
+  - Cleaned up malformed bullets and reconciled `docs/STATUS.md` coordination ledger.
 - **Workflow Integration (`MainShellScreen`):**
   - Evaluates candidate duplicates upon valid draft completion.
-  - If candidates score $\ge 0.50$, displays `DuplicateWarningSheet`.
+  - If candidates score $\ge 0.50$, displays `DuplicateWarningSheet` with accessible 48×48dp touch targets and semantic labels.
   - Advisory fail-open contract: Query errors never block submission.
 
 The active specification is:
@@ -292,11 +297,11 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (95 files checked, 0 changed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (357/357 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 14 tests in `main_shell_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- `flutter test` — PASS (362/362 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 14 tests in `main_shell_navigation_test.dart` + 5 tests in `map_focus_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
 - Firestore Security Rules emulator tests — NOT RUN (Firestore emulator requires JDK >= 21 in host environment; rules unchanged in P2.4)
-- `flutter build apk --debug` without credentials — PASS (built in 24.0s)
+- `flutter build apk --debug` without credentials — PASS (built in 12.2s)
 - `flutter build ios --debug --no-codesign` without credentials — PASS (built in 27.1s)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)

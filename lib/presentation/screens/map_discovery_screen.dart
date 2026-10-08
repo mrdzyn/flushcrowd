@@ -45,7 +45,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   MapCameraController? _mapCameraController;
   bool _isRecentering = false;
   MapDiscoveryNotifier? _discoveryNotifier;
-  int _lastHandledFocusToken = 0;
+  int? _lastExecutedFocusToken;
   MapFocusIntent? _pendingFocusExecution;
 
   @override
@@ -70,9 +70,20 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     final notifier = _discoveryNotifier;
     if (notifier == null || !mounted) return;
     final intent = notifier.pendingFocusIntent;
-    if (intent == null || intent.token == _lastHandledFocusToken) return;
+    if (intent == null) {
+      _pendingFocusExecution = null;
+      return;
+    }
+    if (intent.token == _lastExecutedFocusToken) return;
 
-    _lastHandledFocusToken = intent.token;
+    if (_mapCameraController == null) {
+      // Defer focus execution until map controller is initialized.
+      // Do not consume intent and do not open preview prematurely.
+      _pendingFocusExecution = intent;
+      return;
+    }
+
+    _pendingFocusExecution = null;
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (!mounted) return;
       _executeFocusIntent(intent, notifier);
@@ -83,23 +94,44 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     MapFocusIntent intent,
     MapDiscoveryNotifier notifier,
   ) async {
+    // Guard 1: Never re-execute a token that has already been executed.
+    if (intent.token == _lastExecutedFocusToken) return;
+
+    // Guard 2: Ensure the intent is still the active pending intent in the notifier.
+    // Stale or superseded intents are safely discarded.
+    if (notifier.pendingFocusIntent?.token != intent.token) return;
+
+    // Guard 3: Map controller must be available.
+    if (_mapCameraController == null || !mounted) {
+      _pendingFocusExecution = intent;
+      return;
+    }
+
+    // Mark token as executed immediately so no subsequent frame or race can re-enter.
+    _lastExecutedFocusToken = intent.token;
+
     final coords = intent.restroom.coordinates;
     widget.onCameraTargetChanged?.call(coords);
 
-    if (_mapCameraController != null) {
-      try {
-        await _mapCameraController!.animateCamera(
-          CameraUpdate.newLatLngZoom(
-            LatLng(coords.latitude, coords.longitude),
-            intent.zoom,
-          ),
-        );
-      } catch (_) {}
-    } else {
-      _pendingFocusExecution = intent;
+    // 1. Camera focus occurs before preview presentation when possible.
+    try {
+      await _mapCameraController!.animateCamera(
+        CameraUpdate.newLatLngZoom(
+          LatLng(coords.latitude, coords.longitude),
+          intent.zoom,
+        ),
+      );
+    } catch (_) {}
+
+    // Guard 4: After await, check mounted and ensure no newer intent superseded this one.
+    if (!mounted) return;
+    if (notifier.pendingFocusIntent != null &&
+        notifier.pendingFocusIntent!.token != intent.token) {
+      return;
     }
 
-    if (intent.openPreview && mounted) {
+    // 2. Open preview sheet.
+    if (intent.openPreview) {
       final locationNotifier = context.read<LocationNotifier>();
       _showRestroomPreviewSheet(
         context,
@@ -108,6 +140,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       );
     }
 
+    // 3. Consume the intent in notifier.
     notifier.consumeFocusIntent(intent.token);
   }
 
@@ -281,6 +314,35 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     return MapStatusOverlay(notifier: notifier);
   }
 
+  void _onDiscoveryMapCreated({
+    required MapCameraController controller,
+    GoogleMapController? googleController,
+    required Coordinates initialCoords,
+  }) {
+    setState(() {
+      _mapCameraController = controller;
+      if (googleController != null) {
+        _googleMapController = googleController;
+      }
+    });
+    widget.onCameraTargetChanged?.call(initialCoords);
+
+    final intentToExecute =
+        _pendingFocusExecution ?? _discoveryNotifier?.pendingFocusIntent;
+    _pendingFocusExecution = null;
+
+    if (intentToExecute != null &&
+        intentToExecute.token != _lastExecutedFocusToken) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) return;
+        final notifier = _discoveryNotifier;
+        if (notifier != null) {
+          _executeFocusIntent(intentToExecute, notifier);
+        }
+      });
+    }
+  }
+
   Widget _buildMapLayer(
     Coordinates initialCoords,
     List<RestroomMarkerItem> markerItems,
@@ -310,14 +372,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
           zoom: AppConstants.defaultZoomLevel,
         ),
         onMapCreated: (controller) {
-          _mapCameraController = controller;
-          widget.onCameraTargetChanged?.call(initialCoords);
-          if (_pendingFocusExecution != null) {
-            final pending = _pendingFocusExecution!;
-            _pendingFocusExecution = null;
-            final notifier = context.read<MapDiscoveryNotifier>();
-            _executeFocusIntent(pending, notifier);
-          }
+          _onDiscoveryMapCreated(
+            controller: controller,
+            initialCoords: initialCoords,
+          );
         },
         onCameraMove: (position) {
           context.read<MapDiscoveryNotifier>().onCameraMove();
@@ -361,15 +419,11 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       },
       onCameraIdle: _handleCameraIdle,
       onMapCreated: (controller) {
-        _googleMapController = controller;
-        _mapCameraController = GoogleMapCameraController(controller);
-        widget.onCameraTargetChanged?.call(initialCoords);
-        if (_pendingFocusExecution != null) {
-          final pending = _pendingFocusExecution!;
-          _pendingFocusExecution = null;
-          final notifier = context.read<MapDiscoveryNotifier>();
-          _executeFocusIntent(pending, notifier);
-        }
+        _onDiscoveryMapCreated(
+          controller: GoogleMapCameraController(controller),
+          googleController: controller,
+          initialCoords: initialCoords,
+        );
       },
     );
   }
