@@ -111,9 +111,9 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     _lastExecutedFocusToken = intent.token;
 
     final coords = intent.restroom.coordinates;
-    widget.onCameraTargetChanged?.call(coords);
 
     // 1. Camera focus occurs before preview presentation when possible.
+    bool cameraMoved = false;
     try {
       await _mapCameraController!.animateCamera(
         CameraUpdate.newLatLngZoom(
@@ -121,13 +121,47 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
           intent.zoom,
         ),
       );
-    } catch (_) {}
+      cameraMoved = true;
+    } catch (e) {
+      // If intent was superseded during animation, discard immediately without moving camera.
+      if (!mounted || notifier.pendingFocusIntent?.token != intent.token) {
+        return;
+      }
+
+      // Recoverable failure behavior: attempt moveCamera fallback if animateCamera fails
+      try {
+        await _mapCameraController!.moveCamera(
+          CameraUpdate.newLatLngZoom(
+            LatLng(coords.latitude, coords.longitude),
+            intent.zoom,
+          ),
+        );
+        cameraMoved = true;
+      } catch (fallbackError) {
+        // Do not silently swallow camera errors: log failure details
+        debugPrint(
+          'MapDiscoveryScreen: Camera centering failed for restroom ${intent.restroom.id}: $e (fallback error: $fallbackError)',
+        );
+      }
+    }
 
     // Guard 4: After await, check mounted and ensure this intent still owns pending focus.
     // A null pending intent or a different token strictly invalidates the older execution.
     if (!mounted) return;
     if (notifier.pendingFocusIntent?.token != intent.token) {
       return;
+    }
+
+    // Never indicate successful centering when the camera did not move.
+    if (cameraMoved) {
+      widget.onCameraTargetChanged?.call(coords);
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text('Could not center map on ${intent.restroom.name}.'),
+          duration: const Duration(seconds: 3),
+        ),
+      );
     }
 
     // 2. Open preview sheet.

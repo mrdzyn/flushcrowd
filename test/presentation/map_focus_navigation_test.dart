@@ -52,6 +52,7 @@ class _ControllableMapCameraController implements MapCameraController {
   int moveCameraCalls = 0;
   CameraUpdate? lastCameraUpdate;
   Future<void> Function(CameraUpdate cameraUpdate)? onAnimateCamera;
+  Future<void> Function(CameraUpdate cameraUpdate)? onMoveCamera;
 
   _ControllableMapCameraController(this.fakeMapState);
 
@@ -59,16 +60,19 @@ class _ControllableMapCameraController implements MapCameraController {
   Future<void> animateCamera(CameraUpdate cameraUpdate) async {
     animateCameraCalls++;
     lastCameraUpdate = cameraUpdate;
-    _applyUpdate(cameraUpdate);
     if (onAnimateCamera != null) {
       await onAnimateCamera!(cameraUpdate);
     }
+    _applyUpdate(cameraUpdate);
   }
 
   @override
   Future<void> moveCamera(CameraUpdate cameraUpdate) async {
     moveCameraCalls++;
     lastCameraUpdate = cameraUpdate;
+    if (onMoveCamera != null) {
+      await onMoveCamera!(cameraUpdate);
+    }
     _applyUpdate(cameraUpdate);
   }
 
@@ -106,6 +110,7 @@ class _ControllableMapCameraController implements MapCameraController {
 
 class _ControllableMapState {
   bool isInitialized = false;
+  bool isCreated = false;
   late CameraPosition currentCameraPosition;
   void Function(CameraPosition position)? onCameraMove;
   VoidCallback? onCameraIdle;
@@ -118,6 +123,7 @@ class _ControllableMapState {
   }
 
   void simulateMapCreated() {
+    isCreated = true;
     onMapCreated?.call(controller);
   }
 
@@ -153,7 +159,8 @@ MapWidgetBuilder _createControllableMapBuilder({
     fakeMap.onCameraIdle = onCameraIdle;
     fakeMap.onCameraMoveStarted = onCameraMoveStarted;
 
-    if (autoCallOnMapCreated) {
+    if (autoCallOnMapCreated && !fakeMap.isCreated) {
+      fakeMap.isCreated = true;
       onMapCreated?.call(fakeMap.controller);
     }
 
@@ -168,6 +175,7 @@ Widget _createTestApp({
   required MapDiscoveryNotifier discoveryNotifier,
   required LocationNotifier locationNotifier,
   required MapWidgetBuilder mapBuilder,
+  ValueChanged<Coordinates>? onCameraTargetChanged,
 }) {
   return MultiProvider(
     providers: [
@@ -176,7 +184,12 @@ Widget _createTestApp({
       ),
       ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),
     ],
-    child: MaterialApp(home: MapDiscoveryScreen(mapBuilder: mapBuilder)),
+    child: MaterialApp(
+      home: MapDiscoveryScreen(
+        mapBuilder: mapBuilder,
+        onCameraTargetChanged: onCameraTargetChanged,
+      ),
+    ),
   );
 }
 
@@ -520,6 +533,159 @@ void main() {
         // Step 8: Verify the selected restroom and pending focus state remain correct
         expect(discoveryNotifier.selectedRestroom?.id, equals(restroom2.id));
         expect(discoveryNotifier.pendingFocusIntent, isNull);
+      },
+    );
+
+    testWidgets(
+      '7. Recoverable fallback: when animateCamera fails but moveCamera succeeds, camera moves, onCameraTargetChanged is invoked, and preview opens',
+      (tester) async {
+        final mapBuilder = _createControllableMapBuilder(
+          fakeMap: fakeMap,
+          autoCallOnMapCreated: true,
+        );
+
+        Coordinates? targetChangedCoord;
+
+        await tester.pumpWidget(
+          _createTestApp(
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+            mapBuilder: mapBuilder,
+            onCameraTargetChanged: (coords) => targetChangedCoord = coords,
+          ),
+        );
+        await tester.pumpAndSettle();
+        targetChangedCoord = null;
+
+        // animateCamera throws, moveCamera succeeds
+        fakeMap.controller.onAnimateCamera = (update) async {
+          throw Exception('Platform animation error');
+        };
+
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pumpAndSettle();
+
+        // 1. Fallback moveCamera was called
+        expect(fakeMap.controller.moveCameraCalls, greaterThanOrEqualTo(1));
+
+        // 2. onCameraTargetChanged was invoked with candidate coordinates
+        expect(targetChangedCoord, equals(restroom1.coordinates));
+
+        // 3. Preview sheet opened
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsOneWidget);
+
+        // 4. No failure snackbar
+        expect(
+          find.text('Could not center map on North Gate Restroom.'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      '8. Total camera failure: when both animateCamera and moveCamera fail, onCameraTargetChanged is never invoked and failure feedback is surfaced',
+      (tester) async {
+        final mapBuilder = _createControllableMapBuilder(
+          fakeMap: fakeMap,
+          autoCallOnMapCreated: true,
+        );
+
+        Coordinates? targetChangedCoord;
+
+        await tester.pumpWidget(
+          _createTestApp(
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+            mapBuilder: mapBuilder,
+            onCameraTargetChanged: (coords) => targetChangedCoord = coords,
+          ),
+        );
+        await tester.pumpAndSettle();
+        targetChangedCoord = null;
+
+        // Both animateCamera and moveCamera throw
+        fakeMap.controller.onAnimateCamera = (update) async {
+          throw Exception('Platform animation error');
+        };
+        fakeMap.controller.onMoveCamera = (update) async {
+          throw Exception('Platform moveCamera error');
+        };
+
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pumpAndSettle();
+
+        // 1. Never indicate successful centering when camera did not move
+        expect(targetChangedCoord, isNull);
+
+        // 2. Failure snackbar surfaced to user
+        expect(
+          find.text('Could not center map on North Gate Restroom.'),
+          findsOneWidget,
+        );
+
+        // 3. Preview sheet still opens to provide facility details
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsOneWidget);
+
+        // 4. Intent is consumed
+        expect(discoveryNotifier.pendingFocusIntent, isNull);
+      },
+    );
+
+    testWidgets(
+      '9. Failed animation on superseded focus intent does not invoke target callback, does not show failure snackbar, and does not open obsolete preview',
+      (tester) async {
+        final mapBuilder = _createControllableMapBuilder(
+          fakeMap: fakeMap,
+          autoCallOnMapCreated: true,
+        );
+
+        final recordedTargets = <Coordinates>[];
+
+        await tester.pumpWidget(
+          _createTestApp(
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+            mapBuilder: mapBuilder,
+            onCameraTargetChanged: (coords) => recordedTargets.add(coords),
+          ),
+        );
+        await tester.pumpAndSettle();
+        recordedTargets.clear();
+
+        // Focus A has pending animation that fails
+        final animACompleter = Completer<void>();
+        fakeMap.controller.onAnimateCamera = (update) => animACompleter.future;
+
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pump(); // Focus A pauses in animateCamera
+
+        // Focus B supersedes Focus A before anim A resolves
+        fakeMap.controller.onAnimateCamera = null;
+        discoveryNotifier.focusOnRestroom(restroom2);
+        await tester.pump();
+        await tester.pumpAndSettle(); // Focus B completes, previews restroom2, consumes intent B
+
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
+        expect(recordedTargets.contains(restroom2.coordinates), isTrue);
+
+        // Now fail animation A
+        animACompleter.completeError(Exception('Animation A cancelled/failed'));
+        await tester.pumpAndSettle();
+
+        // Target for restroom1 was NEVER recorded
+        expect(recordedTargets.contains(restroom1.coordinates), isFalse);
+
+        // No failure snackbar for obsolete restroom1
+        expect(
+          find.text('Could not center map on North Gate Restroom.'),
+          findsNothing,
+        );
+
+        // No obsolete preview for restroom1
+        expect(find.text('North Gate Restroom'), findsNothing);
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
       },
     );
   });
