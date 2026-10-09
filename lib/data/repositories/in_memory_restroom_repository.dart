@@ -140,6 +140,12 @@ class InMemoryRestroomRepository implements RestroomRepository {
   }
 
   @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) => getNearbyRestrooms(center, radiusMeters: radiusMeters);
+
+  @override
   Future<DiscoveryResult<Restroom>> getNearbyRestrooms(
     Coordinates center, {
     double radiusMeters = AppConstants.defaultSearchRadiusMeters,

@@ -27,4 +27,13 @@ abstract class RestroomRepository {
 
   /// Submits a new community restroom atomically using an explicit stable ID.
   Future<Restroom> submitRestroom(CreateRestroomCommand command);
+
+  /// Fetches candidate restrooms within [radiusMeters] of [center] for duplicate detection.
+  ///
+  /// Reuses Phase 1 GIS candidate prefixes, bounded to a maximum of 16 geohash ranges
+  /// and 20 documents per range query (maximum 320 raw reads ceiling).
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) => getNearbyRestrooms(center, radiusMeters: radiusMeters);
 }

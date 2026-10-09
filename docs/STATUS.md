@@ -2,39 +2,76 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-08
+- **Last updated:** 2026-10-09
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
-- **Overall stage:** Phase 1 Explore Tab Wiring Hotfix / Phase 2 Add Restroom
-- **Current phase:** Phase 1 (Post-P2.3 Regression / Navigation Seam Restoration)
-- **Current milestone:** Phase 1 Explore Tab Navigation Seam Restoration — remediation active / pending independent re-audit
-- **Current branch:** `fix/p1-explore-tab-wiring`
-- **Current PR:** #9 — `fix: restore Phase 1 Explore restroom discovery experience`
-- **Base:** `main` at `9cc4b9b779d510de7b73561804443cc21f6454f9` (includes PR #8 P2.3 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix REMEDIATION ACTIVE / PENDING RE-AUDIT]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [NOT STARTED].
+- **Overall stage:** Phase 2 Add Restroom
+- **Current phase:** Phase 2 Add Restroom
+- **Current milestone:** Milestone P2.4 Bounded Duplicate Detection Engine & Advisory Warning UX — ACTIVE
+- **Current branch:** `phase-2/p2.4-duplicate-detection`
+- **Current PR:** #10 — `feat: implement P2.4 bounded duplicate detection engine and advisory warning UX`
+- **Base:** `main` at `ce04479bd3b69ca9b3bc342854583f8ff7544330` (includes PR #9 Explore tab squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [ACTIVE]; P2.5 [NOT STARTED].
 
 ## Current objective
 
-Restore the **Explore Restrooms** bottom-navigation experience in `MainShellScreen` (tab index 1) that was previously blocked by an unbuilt placeholder (`_PhasePlaceholderScreen`):
-- **Explore Tab Screen (`ExploreRestroomsScreen`):** Wire the Explore tab to present a rich, categorized list and search/filter experience built purely on top of Phase 1 discovery state.
-- **Zero Additional Network Reads:** Consumes existing in-memory `MapDiscoveryNotifier` and `LocationNotifier` state; 0 additional Firestore queries triggered solely by navigating to, searching within, or filtering on the Explore tab.
-- **Zero Architecture Duplication:** Zero parallel discovery repositories or duplicated GIS/geohash logic; full reuse of `RestroomSorting`, `MapSearchBar`, `FilterBottomSheet`, `RestroomSummaryCard`, and feedback components.
-- **Complete Lifecycle Feedback:** Transparently presents all discovery lifecycle states:
-  - *Loading:* Centered `LooLoadingIndicator` when visible results are empty.
-  - *Degraded warning:* Warning banner when results are capped due to safety limits (`isDegraded`).
-  - *Non-blocking error:* Error banner with retry action retaining prior results.
-  - *Full error:* Centered `ErrorStateView` with retry action when query fails without prior results.
-  - *Zoom-suppressed:* `EmptyStateView` with "Zoom In on Map to Explore" and "View Map" action.
-  - *Derived empty (filtered/search):* Differentiates search-only, filter-only, and search+filters with dedicated reset actions.
-  - *Geographic empty:* `EmptyStateView` with "No Restrooms Found Nearby" and "Explore on Map" action.
-  - *Loaded results:* Scrollable list with deterministic distance/name sorting (`RestroomSorting.sort`) and rich contextual details (indoor context, floor, landmarks, access type, amenities, verification).
-- **Selection & Map Synchronization:** Tapping a restroom card selects the facility in `MapDiscoveryNotifier`, switches active tab to Map (`_currentTabIndex = 0`), and renders the selected restroom card in `MapDiscoveryBottomBar`.
-- **Tab State Preservation:** `MainShellScreen` uses `IndexedStack`, preserving discovery map camera position, markers, and Explore screen state across tab switches.
+Remediate independent exact-head audit on **PR #10 (Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX)**:
+- **BLOCKER-1 Remediated (Map Focus & Navigation Intent):**
+  - Introduced explicit, testable `MapFocusIntent` model and `MapDiscoveryNotifier.focusOnRestroom(restroom, {zoom, openPreview})`.
+  - Resets active search query and filters upon focus, preventing active filters from hiding the candidate facility.
+  - Centers discovery map at `AppConstants.defaultZoomLevel` (15.0) via `animateCamera`.
+  - Handles camera initialization races cleanly with `_pendingFocusExecution` in `MapDiscoveryScreen`.
+  - Opens `RestroomPreviewSheet` directly on the focused facility without injecting synthetic entities into discovered results.
+  - Added focused widget integration test in `main_shell_navigation_test.dart` verifying camera centering, preview sheet opening, and filter resetting when candidate duplicate lies outside the current map viewport.
+- **MAJOR-1 Remediated (Preserve Duplicate Scan Completeness State):**
+  - Encapsulated scan results in typed `DuplicateScanResult` model capturing `candidates`, `isComplete`, `completenessReason`, `rangeCount`, `candidateCount`, `hasQueryError`, and `errorMessage`.
+  - Enforced `hasConcludedZeroDuplicates` invariant: incomplete or failed scans (e.g. `rangeCapExceeded`, `perRangeLimitExceeded`, `candidateLimitExceeded`, or query errors) never conclude zero duplicates.
+  - Added unit test coverage for all completeness reasons and fail-open behavior.
+- **MAJOR-2 Remediated (Unicode Canonical Normalization):**
+  - Integrated pure Dart `unorm_dart: ^0.3.3` for deterministic Unicode Canonical Decomposition followed by Canonical Composition (NFC).
+  - Applied NFC normalization prior to punctuation stripping and whitespace collapsing, guaranteeing that composed and decomposed Unicode representations (e.g. `café` vs `cafe\u0301`, `München` vs `Mu\u0308nchen`, `Ålesund` vs `A\u030环lesund`, Japanese, Korean Hangul, Cyrillic, Chinese, Arabic) normalize to identical tokens.
+  - Added comprehensive canonical equivalence tests across Latin and non-Latin scripts.
+- **Map Focus Initialization & Race Remediated (Re-Audit MAJOR-1):**
+  - Enforced exact-once execution of `MapFocusIntent` in `MapDiscoveryScreen`.
+  - When map controller is unavailable, camera animation and preview presentation are strictly deferred until `onMapCreated`, preventing premature intent consumption.
+  - Prevents duplicate preview sheets: `onMapCreated` replays pending intents safely without re-opening on subsequent frames.
+  - Strict token-ownership check: Stale or superseded focus intents are discarded before and after asynchronous camera animations via `notifier.pendingFocusIntent?.token != intent.token`. A null pending intent strictly invalidates older executions, preventing obsolete preview presentation when a newer focus completes and consumes its intent before an older animation resolves.
+  - Camera focus occurs before preview presentation.
+  - Unified `_onDiscoveryMapCreated` handler across custom builder and GoogleMap implementations.
+- **MINOR-1 & MINOR-2 Remediated:**
+  - Updated PR #10 body and specification parameters on GitHub.
+  - Cleaned up malformed bullets and reconciled `docs/STATUS.md` coordination ledger.
+- **MAJOR-1 Remediated (Camera Animation Failure & Recoverable Navigation):**
+  - Errors in `animateCamera` are caught and logged with `debugPrint`, not silently swallowed.
+  - Implemented recoverable fallback to `moveCamera` if `animateCamera` fails.
+  - Guarded `onCameraTargetChanged`: only invoked if camera actually moved (`cameraMoved == true`), never falsely indicating successful centering on failure.
+  - Re-evaluates focus intent token ownership before fallback and post-await; discards superseded intents.
+  - When both camera operations fail, `RestroomPreviewSheet` is NOT opened automatically as though navigation succeeded.
+  - Surfaces floating failure SnackBar: `'Could not center map on ${intent.restroom.name}.'` with safe manual recovery options:
+    - `'View Details'`: manually opens facility preview sheet without moving the camera or invoking `onCameraTargetChanged`. Touch target increased to min 48×48dp (`MaterialTapTargetSize.padded`, `Size(48, 48)`), preventing disposed context invocations via `mounted` guard.
+    - `'Retry'`: dispatches a fresh focus intent via `notifier.focusOnRestroom(intent.restroom, zoom: intent.zoom, openPreview: intent.openPreview)`.
+  - Stale failure recovery controls guarded: Retry and View Details are valid only while their failed focus remains the relevant user selection (`latestFocusToken == intent.token && selectedRestroom?.id == intent.restroom.id`). A newer focus or explicit selection invalidates and dismisses older recovery controls.
+  - Automatic retry loops are strictly prevented; retry requires explicit user tap.
+  - Preserves stale/superseded token protections.
+  - Added regression tests in `test/presentation/map_focus_navigation_test.dart` (Tests 7, 8, 8b, 8c, 9).
+- **MAJOR-2 Remediated (Draft Preservation & Stable Identifier Across Warning Dismissal):**
+  - When user dismisses `DuplicateWarningSheet` (`action == null`), draft is preserved with its stable `CreateRestroomCommand` and `restroomId`.
+  - Floating SnackBar surfaced with `'Review'` action button to re-open duplicate warning sheet.
+  - Tapping `'Add'` while draft is preserved prompts user via `AlertDialog` with `'Resume Draft'` or `'Discard & Start New'`.
+  - Resuming pre-populates all form fields in `AddRestroomFormScreen` and guarantees the allocated `restroomId` is retained across validations.
+  - Added unit test in `test/presentation/add_restroom_notifier_test.dart` (Test 16) and widget integration tests in `test/presentation/main_shell_navigation_test.dart` (Tests 15, 16, 17).
+- **MINOR-1 Remediated (Nuanced Duplicate Scan Feedback):**
+  - Distinguishes complete no-match (`'No likely duplicates found nearby...'`), partial scan hitting safety limit (`'No likely duplicates found in the results checked, but the duplicate scan was incomplete...'`), and query error fail-open (`'Duplicate check could not be completed, but contribution proceeds (advisory fail-open)...'`).
+  - Never implies exhaustive duplicate checking when scan completeness is false.
+  - Added widget integration test in `test/presentation/main_shell_navigation_test.dart` (Test 18).
+- **Workflow Integration (`MainShellScreen`):**
+  - Evaluates candidate duplicates upon valid draft completion.
+  - If candidates score $\ge 0.50$, displays `DuplicateWarningSheet` with accessible 48×48dp touch targets and semantic labels.
+  - Advisory fail-open contract: Query errors never block submission.
 
 The active specification is:
 
-- `docs/08-phase-1-map-discovery.md` (active for Phase 1 Explore restoration)
-- `docs/09-phase-2-add-restroom.md` (continuing Phase 2 specification)
+- `docs/09-phase-2-add-restroom.md` (active Phase 2 specification)
 
 ## Locked decisions
 
@@ -271,7 +308,12 @@ Owner-confirmed staging infrastructure state:
   - MERGED into main (`9cc4b9b779d510de7b73561804443cc21f6454f9`)
   - Manual human QA: PASS on Android, PASS on iOS
 - Phase 1 Explore tab restoration:
-  - ACTIVE / REMEDIATION COMPLETE / PENDING INDEPENDENT RE-AUDIT
+  - MERGED into main (`ce04479bd3b69ca9b3bc342854583f8ff7544330`, PR #9)
+  - Manual human QA: PASS on Android, PASS on iOS
+- Milestone P2.4 (Duplicate Detection):
+  - ACTIVE
+- Milestone P2.5:
+  - NOT STARTED
 
 ## Current owner actions / external dependencies
 
@@ -281,22 +323,22 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (88 files checked, 0 changed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (317/317 passed: 18 tests in `explore_restrooms_screen_test.dart` + 11 tests in `main_shell_navigation_test.dart`)
-- Firestore Security Rules emulator tests — PASS (49/49 passed: 29 Phase 2 tests + 20 Phase 0 legacy tests)
-- `flutter build apk --debug` without credentials — PASS
-- `flutter build ios --debug --no-codesign` without credentials — PASS
+- `flutter test` — PASS (373/373 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
+- `flutter build apk --debug` without credentials — PASS (built in 25.5s)
+- `flutter build ios --debug --no-codesign` without credentials — PASS (built in 52.7s)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Complete PR #9 remediation handoff.
-2. Conduct independent PR #9 remediation exact-head re-audit.
-3. Conduct manual human QA if requested.
-4. Squash-merge PR #9 upon explicit human approval.
-5. Phase 2 Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX) remains NOT STARTED until PR #9 is merged.
+1. Submit PR for Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX).
+2. Conduct independent exact-head re-audit of P2.4 implementation.
+3. Conduct manual human QA on Android & iOS staging.
+4. Squash-merge P2.4 upon explicit human approval.
+5. Proceed to Milestone P2.5 (End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback).
 
 ## Handoff template
 

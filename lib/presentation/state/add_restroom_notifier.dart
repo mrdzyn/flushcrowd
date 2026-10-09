@@ -63,7 +63,40 @@ class AddRestroomNotifier extends ChangeNotifier {
   AddRestroomNotifier({
     required this.coordinates,
     RestroomIdGenerator? idGenerator,
-  }) : _idGenerator = idGenerator ?? DefaultRestroomIdGenerator();
+    CreateRestroomCommand? initialCommand,
+  }) : _idGenerator = idGenerator ?? DefaultRestroomIdGenerator() {
+    if (initialCommand != null) {
+      final draft = initialCommand.draft;
+      _name = draft.name;
+      _accessType = draft.accessType;
+      _buildingName = draft.buildingName ?? '';
+      _floor = draft.floor ?? '';
+      _buildingSection = draft.buildingSection ?? '';
+      _unitOrArea = draft.unitOrArea ?? '';
+      _landmark = draft.landmark ?? '';
+      _directionsNote = draft.directionsNote ?? '';
+      _countryCode = draft.countryCode ?? '';
+      _region = draft.region ?? '';
+      _city = draft.city ?? '';
+      _accessInstructions = draft.accessInstructions ?? '';
+      _feeAmountText = draft.feeAmount != null
+          ? draft.feeAmount!.toString()
+          : '';
+      _feeCurrency = draft.feeCurrency ?? '';
+      _male = draft.male;
+      _female = draft.female;
+      _allGender = draft.allGender;
+      _pwdAccessible = draft.pwdAccessible;
+      _babyChanging = draft.babyChanging;
+      _hasBidet = draft.hasBidet;
+      _hasToiletPaper = draft.hasToiletPaper;
+      _hasSoap = draft.hasSoap;
+      _hasHandDryer = draft.hasHandDryer;
+      _allocatedRestroomId = initialCommand.restroomId;
+      _preparedCommand = initialCommand;
+      _isValidated = true;
+    }
+  }
 
   // Getters for form state
   String get name => _name;

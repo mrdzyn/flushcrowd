@@ -146,6 +146,15 @@ class CountingRestroomRepository implements RestroomRepository {
     getRestroomCount++;
     return null;
   }
+
+  @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) async {
+    discoveryCount++;
+    return DiscoveryResult.complete(items: const []);
+  }
 }
 
 /// Test double that can simulate fresh location retrieval failure.

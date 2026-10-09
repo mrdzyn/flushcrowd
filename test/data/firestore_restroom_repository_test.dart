@@ -21,6 +21,7 @@ class FakeFirestoreQueryExecutor implements FirestoreQueryExecutor {
   final bool throwFirebaseException;
   int recordedQueryCount = 0;
   final List<int> returnedBatchSizes = [];
+  final List<int> recordedLimits = [];
 
   FakeFirestoreQueryExecutor({
     List<Map<String, dynamic>>? documents,
@@ -36,6 +37,7 @@ class FakeFirestoreQueryExecutor implements FirestoreQueryExecutor {
     required int limit,
   }) async {
     recordedQueryCount++;
+    recordedLimits.add(limit);
     if (throwFirebaseException) {
       throw FirebaseException(
         plugin: 'cloud_firestore',
@@ -852,6 +854,31 @@ void main() {
       final distLast = Haversine.distanceInMeters(center, lastCenter);
 
       expect(distFirst, lessThanOrEqualTo(distLast));
+    });
+
+    test('getDuplicateCandidates queries prefixes with bounded limit of 20 documents per range', () async {
+      final center = Coordinates(latitude: 14.5839, longitude: 121.0617);
+      final doc = _makeRestroomDoc(
+        id: 'rr_dup_cand',
+        name: 'Nearby Restroom',
+        latitude: 14.5841,
+        longitude: 121.0619,
+      );
+
+      final executor = FakeFirestoreQueryExecutor(documents: [doc]);
+      final repo = FirestoreRestroomRepository(queryExecutor: executor);
+
+      final result = await repo.getDuplicateCandidates(
+        center,
+        radiusMeters: 500.0,
+      );
+
+      expect(result.items.map((r) => r.id), contains('rr_dup_cand'));
+      expect(executor.recordedLimits, isNotEmpty);
+      // Verify limit is strictly bounded to 20 (max 320 raw reads ceiling for 16 ranges)
+      for (final lim in executor.recordedLimits) {
+        expect(lim, equals(20));
+      }
     });
   });
 

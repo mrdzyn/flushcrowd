@@ -10,6 +10,7 @@ import '../../domain/models/discovery_result.dart';
 import '../../domain/models/geo_bounding_box.dart';
 import '../../domain/models/restroom.dart';
 import '../../domain/repositories/restroom_repository.dart';
+import '../models/map_focus_intent.dart';
 import '../models/restroom_marker_item.dart';
 import 'viewport_query_descriptor.dart';
 
@@ -130,6 +131,8 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   _LastCommittedViewportState? _lastCommittedViewportState;
   bool _isDisposed = false;
   SelectionOrigin _selectionOrigin = SelectionOrigin.none;
+  MapFocusIntent? _pendingFocusIntent;
+  int _focusIntentCounter = 0;
 
   MapDiscoveryNotifier({
     required this.restroomRepository,
@@ -142,6 +145,8 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   String? get errorMessage => _errorMessage;
   String get searchQuery => _searchQuery;
   DiscoveryFilters get filters => _filters;
+  MapFocusIntent? get pendingFocusIntent => _pendingFocusIntent;
+  int get latestFocusToken => _focusIntentCounter;
 
   bool get isComplete => _isComplete;
   DiscoveryCompletenessReason get completenessReason => _completenessReason;
@@ -305,6 +310,43 @@ class MapDiscoveryNotifier extends ChangeNotifier {
         ? SelectionOrigin.automatic
         : SelectionOrigin.none;
     notifyListeners();
+  }
+
+  /// Sets an explicit focus intent for [restroom], centering the discovery map
+  /// and optionally opening its preview sheet.
+  ///
+  /// Resets search and filters to prevent active filters from hiding the facility.
+  /// Sets [selectedRestroom] as user selection and invalidates in-flight requests.
+  void focusOnRestroom(
+    Restroom restroom, {
+    double zoom = AppConstants.defaultZoomLevel,
+    bool openPreview = true,
+  }) {
+    _cancelDebounce();
+    _invalidateActiveRequest();
+
+    _searchQuery = '';
+    _filters = DiscoveryFilters.empty;
+
+    _selectedRestroom = restroom;
+    _selectionOrigin = SelectionOrigin.user;
+
+    _focusIntentCounter++;
+    _pendingFocusIntent = MapFocusIntent(
+      restroom: restroom,
+      zoom: zoom,
+      openPreview: openPreview,
+      token: _focusIntentCounter,
+    );
+
+    notifyListeners();
+  }
+
+  /// Consumes the pending focus intent with matching [token].
+  void consumeFocusIntent(int token) {
+    if (_pendingFocusIntent?.token == token) {
+      _pendingFocusIntent = null;
+    }
   }
 
   /// Explicitly invalidates any in-flight asynchronous query generation.

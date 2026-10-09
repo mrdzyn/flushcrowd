@@ -25,22 +25,26 @@ import '../state/restroom_id_generator.dart';
 class AddRestroomFormScreen extends StatefulWidget {
   final Coordinates coordinates;
   final RestroomIdGenerator? idGenerator;
+  final CreateRestroomCommand? initialCommand;
 
   const AddRestroomFormScreen({
     super.key,
     required this.coordinates,
     this.idGenerator,
+    this.initialCommand,
   });
 
   /// Factory helper creating a typed route returning [CreateRestroomCommand] on valid continuation.
   static MaterialPageRoute<CreateRestroomCommand> route({
     required Coordinates coordinates,
     RestroomIdGenerator? idGenerator,
+    CreateRestroomCommand? initialCommand,
   }) {
     return MaterialPageRoute<CreateRestroomCommand>(
       builder: (context) => AddRestroomFormScreen(
         coordinates: coordinates,
         idGenerator: idGenerator,
+        initialCommand: initialCommand,
       ),
     );
   }
@@ -71,18 +75,34 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
     _notifier = AddRestroomNotifier(
       coordinates: widget.coordinates,
       idGenerator: widget.idGenerator,
+      initialCommand: widget.initialCommand,
     );
 
-    _nameController = TextEditingController();
-    _buildingNameController = TextEditingController();
-    _floorController = TextEditingController();
-    _buildingSectionController = TextEditingController();
-    _unitOrAreaController = TextEditingController();
-    _landmarkController = TextEditingController();
-    _directionsNoteController = TextEditingController();
-    _accessInstructionsController = TextEditingController();
-    _feeAmountController = TextEditingController();
-    _feeCurrencyController = TextEditingController();
+    final draft = widget.initialCommand?.draft;
+    _nameController = TextEditingController(text: draft?.name ?? '');
+    _buildingNameController = TextEditingController(
+      text: draft?.buildingName ?? '',
+    );
+    _floorController = TextEditingController(text: draft?.floor ?? '');
+    _buildingSectionController = TextEditingController(
+      text: draft?.buildingSection ?? '',
+    );
+    _unitOrAreaController = TextEditingController(
+      text: draft?.unitOrArea ?? '',
+    );
+    _landmarkController = TextEditingController(text: draft?.landmark ?? '');
+    _directionsNoteController = TextEditingController(
+      text: draft?.directionsNote ?? '',
+    );
+    _accessInstructionsController = TextEditingController(
+      text: draft?.accessInstructions ?? '',
+    );
+    _feeAmountController = TextEditingController(
+      text: draft?.feeAmount != null ? draft!.feeAmount!.toString() : '',
+    );
+    _feeCurrencyController = TextEditingController(
+      text: draft?.feeCurrency ?? '',
+    );
 
     _nameController.addListener(() => _notifier.setName(_nameController.text));
     _buildingNameController.addListener(

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flushcrowd/core/constants/app_constants.dart';
 import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
 import 'package:flushcrowd/domain/models/coordinates.dart';
@@ -11,11 +12,16 @@ import 'package:flushcrowd/domain/models/geo_bounding_box.dart';
 import 'package:flushcrowd/domain/models/restroom.dart';
 import 'package:flushcrowd/domain/repositories/location_repository.dart';
 import 'package:flushcrowd/domain/repositories/restroom_repository.dart';
+import 'package:flushcrowd/domain/models/discovery_filters.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/duplicate_warning_sheet.dart';
+import 'package:flushcrowd/presentation/components/bottom_sheets/restroom_preview_sheet.dart';
 import 'package:flushcrowd/presentation/components/buttons/loo_primary_button.dart';
+import 'package:flushcrowd/presentation/components/buttons/loo_secondary_button.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_form_screen.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
 import 'package:flushcrowd/presentation/screens/explore_restrooms_screen.dart';
 import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
+import 'package:flushcrowd/presentation/screens/map_discovery_screen.dart';
 import 'package:flushcrowd/presentation/state/location_notifier.dart';
 import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
 
@@ -53,6 +59,22 @@ class CountingRestroomRepository implements RestroomRepository {
   Future<Restroom?> getRestroomById(String id) async {
     getRestroomCount++;
     return null;
+  }
+
+  DiscoveryResult<Restroom>? duplicateResultToReturn;
+  bool duplicateShouldThrow = false;
+  int duplicateCount = 0;
+
+  @override
+  Future<DiscoveryResult<Restroom>> getDuplicateCandidates(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) async {
+    duplicateCount++;
+    if (duplicateShouldThrow) {
+      throw Exception('Simulated network timeout');
+    }
+    return duplicateResultToReturn ?? DiscoveryResult.complete(items: const []);
   }
 }
 
@@ -399,7 +421,7 @@ void main() {
         // Shows honest temporary coming-soon message
         expect(
           find.text(
-            'Restroom details validated. Duplicate check comes in the next milestone.',
+            'No likely duplicates found nearby. Restroom submission comes in Milestone P2.5.',
           ),
           findsOneWidget,
         );
@@ -670,6 +692,641 @@ void main() {
         expect(
           restroomRepo.discoveryCount,
           equals(discoveryCallsBeforeExplore),
+        );
+      },
+    );
+
+    testWidgets(
+      '12. Candidate duplicates show DuplicateWarningSheet and View Existing Restroom centers camera and opens preview',
+      (tester) async {
+        final discoveryFakeMap = FakeMapState();
+        final addFakeMap = FakeMapState();
+
+        final existingRestroom = Restroom(
+          id: 'existing_dup_1',
+          name: 'Central Station Restroom',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          buildingName: 'Central Station',
+          floor: '1F',
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Open Add
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form with identical name & coordinates
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Central Station Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue on form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // DuplicateWarningSheet should be displayed!
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+        expect(find.text('Similar restrooms found nearby'), findsOneWidget);
+        expect(find.text('Central Station Restroom'), findsOneWidget);
+        expect(find.text('View Existing Restroom'), findsOneWidget);
+
+        // Tap "View Existing Restroom"
+        await tester.tap(
+          find.widgetWithText(LooSecondaryButton, 'View Existing Restroom'),
+        );
+        await tester.pumpAndSettle();
+
+        // Sheet is dismissed, shell shows Map tab with candidate selected
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+        expect(
+          discoveryNotifier.selectedRestroom?.id,
+          equals('existing_dup_1'),
+        );
+        expect(
+          discoveryFakeMap.controller.animateCameraCalls,
+          greaterThanOrEqualTo(1),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.latitude,
+          closeTo(14.58390, 0.00001),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.longitude,
+          closeTo(121.06170, 0.00001),
+        );
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('Central Station Restroom'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '13. DuplicateWarningSheet "No, It\'s a Different Restroom" acknowledges warning and continues flow',
+      (tester) async {
+        final existingRestroom = Restroom(
+          id: 'existing_dup_2',
+          name: 'Plaza Public Toilet',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Open Add
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Plaza Public Toilet',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue on form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // DuplicateWarningSheet is displayed
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+
+        // Tap "No, It's a Different Restroom"
+        await tester.tap(
+          find.widgetWithText(
+            LooPrimaryButton,
+            "No, It's a Different Restroom",
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Sheet is dismissed
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+        expect(
+          find.text(
+            'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      '14. View Existing Restroom centers camera and opens preview sheet when candidate duplicate lies outside current map viewport',
+      (tester) async {
+        final discoveryFakeMap = FakeMapState();
+        final addFakeMap = FakeMapState();
+
+        // Set initial discovery viewport in South Manila
+        final localRestroom = Restroom(
+          id: 'local_r1',
+          name: 'South Bay Restroom',
+          coordinates: Coordinates(latitude: 14.5100, longitude: 121.0100),
+          geohash: 'wdw4d1',
+          accessType: AccessType.free,
+          male: true,
+          female: true,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [localRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // Perform initial discovery query at south coordinates
+        discoveryNotifier.onCameraIdle(
+          bounds: GeoBoundingBox(
+            southWest: Coordinates(latitude: 14.50, longitude: 121.00),
+            northEast: Coordinates(latitude: 14.52, longitude: 121.02),
+          ),
+          zoom: 15.0,
+        );
+        await tester.pump(const Duration(milliseconds: 500));
+        await tester.pumpAndSettle();
+
+        expect(
+          discoveryNotifier.visibleRestrooms.map((r) => r.id),
+          contains('local_r1'),
+        );
+
+        // Set active filter that would hide a non-matching facility
+        discoveryNotifier.setFilters(
+          const DiscoveryFilters(babyChangingOnly: true),
+        );
+        expect(discoveryNotifier.hasActiveFilters, isTrue);
+
+        // Candidate duplicate is far north outside the viewport and lacks baby changing
+        final remoteRestroom = Restroom(
+          id: 'remote_dup_1',
+          name: 'Far North Terminal Restroom',
+          coordinates: Coordinates(latitude: 14.6500, longitude: 121.1500),
+          geohash: 'w4rrw0',
+          accessType: AccessType.free,
+          babyChanging: false,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [remoteRestroom],
+        );
+
+        final initialAnimateCalls =
+            discoveryFakeMap.controller.animateCameraCalls;
+
+        // Open Add flow
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Move location map to remote coordinates outside initial discovery viewport
+        addFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.6500, 121.1500), zoom: 16.0),
+        );
+        addFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+
+        // Confirm location
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Far North Terminal Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Tap Continue
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+        expect(find.text('Far North Terminal Restroom'), findsOneWidget);
+
+        // Tap "View Existing Restroom"
+        await tester.tap(
+          find.widgetWithText(LooSecondaryButton, 'View Existing Restroom'),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. DuplicateWarningSheet is dismissed
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+
+        // 2. Switched back to Map tab
+        expect(find.byType(MapDiscoveryScreen), findsOneWidget);
+
+        // 3. Filters were reset to prevent hiding the candidate
+        expect(discoveryNotifier.hasActiveFilters, isFalse);
+
+        // 4. Candidate is selected in notifier
+        expect(discoveryNotifier.selectedRestroom?.id, equals('remote_dup_1'));
+
+        // 5. Camera animated to remote coordinates outside initial viewport
+        expect(
+          discoveryFakeMap.controller.animateCameraCalls,
+          greaterThan(initialAnimateCalls),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.latitude,
+          closeTo(14.6500, 0.0001),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.target.longitude,
+          closeTo(121.1500, 0.0001),
+        );
+        expect(
+          discoveryFakeMap.currentCameraPosition.zoom,
+          equals(AppConstants.defaultZoomLevel),
+        );
+
+        // 6. RestroomPreviewSheet is shown on screen for candidate
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(RestroomPreviewSheet),
+            matching: find.text('Far North Terminal Restroom'),
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      '15. Dismissing DuplicateWarningSheet preserves draft and displays Review SnackBar; tapping Review re-opens warning sheet',
+      (tester) async {
+        final existingRestroom = Restroom(
+          id: 'existing_dup_review',
+          name: 'Review Candidate Restroom',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Open Add and advance to form
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Review Candidate Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Submit form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+
+        // Dismiss the sheet without choosing either button (e.g. tap outside or pop)
+        Navigator.of(tester.element(find.byType(DuplicateWarningSheet))).pop();
+        await tester.pumpAndSettle();
+
+        // Sheet is dismissed
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+
+        // Draft preservation SnackBar is surfaced with "Review" action
+        expect(
+          find.text(
+            'Draft for "Review Candidate Restroom" preserved. Tap Review to re-check duplicates or resume.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Review'), findsOneWidget);
+
+        // Tap "Review" action
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Review'));
+        await tester.pumpAndSettle();
+
+        // DuplicateWarningSheet re-opens with the same candidate
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+        expect(find.text('Review Candidate Restroom'), findsAtLeastNWidgets(1));
+
+        // User can now proceed with submission
+        await tester.tap(
+          find.widgetWithText(
+            LooPrimaryButton,
+            "No, It's a Different Restroom",
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+        expect(
+          find.text(
+            'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      '16. Preserved draft can be resumed with stable restroomId and fields preserved across navigation',
+      (tester) async {
+        final existingRestroom = Restroom(
+          id: 'existing_dup_resume',
+          name: 'Draft Resume Restroom',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Open Add flow
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        // Fill form name
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Draft Resume Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        // Submit to trigger duplicate warning
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+
+        // Dismiss sheet
+        Navigator.of(tester.element(find.byType(DuplicateWarningSheet))).pop();
+        await tester.pumpAndSettle();
+
+        expect(find.byType(DuplicateWarningSheet), findsNothing);
+        expect(
+          find.text(
+            'Draft for "Draft Resume Restroom" preserved. Tap Review to re-check duplicates or resume.',
+          ),
+          findsOneWidget,
+        );
+
+        // Hide snackbar to avoid obscuring form action buttons
+        ScaffoldMessenger.of(tester.element(find.byType(MainShellScreen)))
+            .hideCurrentSnackBar();
+        await tester.pumpAndSettle();
+
+        // User taps Add tab again
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        // Resume dialog appears
+        expect(find.text('Resume Contribution?'), findsOneWidget);
+        expect(
+          find.descendant(
+            of: find.byType(AlertDialog),
+            matching: find.textContaining('Draft Resume Restroom'),
+          ),
+          findsOneWidget,
+        );
+
+        // Tap "Resume Draft"
+        await tester.tap(find.text('Resume Draft'));
+        await tester.pumpAndSettle();
+
+        // AddRestroomFormScreen is open with preserved data!
+        expect(find.byType(AddRestroomFormScreen), findsOneWidget);
+        expect(find.text('Draft Resume Restroom'), findsOneWidget);
+
+        // Submit form again to verify flow continues smoothly
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // Duplicate warning sheet is shown again
+        expect(find.byType(DuplicateWarningSheet), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      '17. Preserved draft can be explicitly discarded to start a fresh draft',
+      (tester) async {
+        final existingRestroom = Restroom(
+          id: 'existing_dup_discard',
+          name: 'Draft Discard Restroom',
+          coordinates: Coordinates(latitude: 14.58390, longitude: 121.06170),
+          geohash: 'w4rr7x',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.complete(
+          items: [existingRestroom],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        // Open Add and dismiss warning to create draft
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Draft Discard Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        Navigator.of(tester.element(find.byType(DuplicateWarningSheet))).pop();
+        await tester.pumpAndSettle();
+
+        // Hide snackbar to avoid obscuring controls on subsequent screens
+        ScaffoldMessenger.of(tester.element(find.byType(MainShellScreen)))
+            .hideCurrentSnackBar();
+        await tester.pumpAndSettle();
+
+        // Tap Add again
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Resume Contribution?'), findsOneWidget);
+
+        // Tap "Discard & Start New"
+        await tester.tap(find.text('Discard & Start New'));
+        await tester.pumpAndSettle();
+
+        // Opens fresh AddRestroomLocationScreen
+        expect(find.byType(AddRestroomLocationScreen), findsOneWidget);
+
+        // Tapping Continue opens fresh form with empty name field
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AddRestroomFormScreen), findsOneWidget);
+        expect(find.text('Draft Discard Restroom'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      '18. Nuanced scan feedback: distinguishes complete no-match, partial scan, and query error',
+      (tester) async {
+        // Part 1: Partial scan
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.partial(
+          items: const [],
+          reason: DiscoveryCompletenessReason.rangeCapExceeded,
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            fakeMap: fakeMap,
+          ),
+        );
+
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Partial Scan Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'No likely duplicates found in the results checked, but the duplicate scan was incomplete. Restroom submission comes in Milestone P2.5.',
+          ),
+          findsOneWidget,
+        );
+
+        // Settle snackbar before Part 2
+        await tester.pump(const Duration(seconds: 5));
+        await tester.pumpAndSettle();
+
+        // Part 2: Query error
+        restroomRepo.duplicateResultToReturn = null;
+        restroomRepo.duplicateShouldThrow = true;
+
+        await tester.tap(find.text('Add'));
+        await tester.pumpAndSettle();
+        await tester.tap(find.text('Continue'));
+        await tester.pumpAndSettle();
+
+        await tester.enterText(
+          find.byType(TextFormField).first,
+          'Query Error Restroom',
+        );
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'Duplicate check could not be completed, but contribution proceeds (advisory fail-open). Restroom submission comes in Milestone P2.5.',
+          ),
+          findsOneWidget,
         );
       },
     );

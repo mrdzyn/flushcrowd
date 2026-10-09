@@ -297,5 +297,76 @@ void main() {
       // Notifier has no dependency on RestroomRepository or persistence
       expect(notifier.preparedCommand, isNotNull);
     });
+
+    test('16. when initialized with initialCommand, pre-populates all fields and preserves stable restroomId across validation', () {
+      final idGen = DeterministicRestroomIdGenerator(prefix: 'unused_gen_');
+      final originalDraft = RestroomDraft(
+        coordinates: testCoords,
+        name: 'Preserved Draft Restroom',
+        accessType: AccessType.customerOnly,
+        buildingName: 'Tower A',
+        floor: '3F',
+        buildingSection: 'North Hall',
+        unitOrArea: 'Unit 301',
+        landmark: 'By the stairs',
+        directionsNote: 'Walk past lobby',
+        accessInstructions: 'Key with manager',
+        male: true,
+        female: true,
+        allGender: false,
+        pwdAccessible: TriStateAmenity.yes,
+        babyChanging: TriStateAmenity.no,
+        hasBidet: TriStateAmenity.yes,
+        hasToiletPaper: TriStateAmenity.yes,
+        hasSoap: TriStateAmenity.yes,
+        hasHandDryer: TriStateAmenity.no,
+        feeAmount: 50.0,
+        feeCurrency: 'PHP',
+      );
+      final initialCommand = CreateRestroomCommand(
+        restroomId: 'stable_preserved_id_99',
+        draft: originalDraft,
+      );
+
+      final notifier = AddRestroomNotifier(
+        coordinates: testCoords,
+        initialCommand: initialCommand,
+        idGenerator: idGen,
+      );
+
+      // Verify all fields are pre-populated from initialCommand
+      expect(notifier.name, equals('Preserved Draft Restroom'));
+      expect(notifier.accessType, equals(AccessType.customerOnly));
+      expect(notifier.buildingName, equals('Tower A'));
+      expect(notifier.floor, equals('3F'));
+      expect(notifier.buildingSection, equals('North Hall'));
+      expect(notifier.unitOrArea, equals('Unit 301'));
+      expect(notifier.landmark, equals('By the stairs'));
+      expect(notifier.directionsNote, equals('Walk past lobby'));
+      expect(notifier.accessInstructions, equals('Key with manager'));
+      expect(notifier.male, isTrue);
+      expect(notifier.female, isTrue);
+      expect(notifier.allGender, isFalse);
+      expect(notifier.pwdAccessible, equals(TriStateAmenity.yes));
+      expect(notifier.babyChanging, equals(TriStateAmenity.no));
+      expect(notifier.hasBidet, equals(TriStateAmenity.yes));
+      expect(notifier.hasToiletPaper, equals(TriStateAmenity.yes));
+      expect(notifier.hasSoap, equals(TriStateAmenity.yes));
+      expect(notifier.hasHandDryer, equals(TriStateAmenity.no));
+      expect(notifier.feeAmountText, equals('50.0'));
+      expect(notifier.feeCurrency, equals('PHP'));
+
+      // Validate and prepare
+      final success = notifier.validateAndPrepare();
+      expect(success, isTrue);
+
+      final prepared = notifier.preparedCommand;
+      expect(prepared, isNotNull);
+      // Crucial invariant: ID is exactly the original ID, generator was never touched
+      expect(prepared!.restroomId, equals('stable_preserved_id_99'));
+      expect(idGen.calls, equals(0));
+      expect(prepared.draft.name, equals('Preserved Draft Restroom'));
+      expect(prepared.draft.buildingName, equals('Tower A'));
+    });
   });
 }
