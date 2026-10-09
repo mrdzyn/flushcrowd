@@ -7,67 +7,22 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.4 Bounded Duplicate Detection Engine & Advisory Warning UX — ACTIVE
-- **Current branch:** `phase-2/p2.4-duplicate-detection`
-- **Current PR:** #10 — `feat: implement P2.4 bounded duplicate detection engine and advisory warning UX`
-- **Base:** `main` at `ce04479bd3b69ca9b3bc342854583f8ff7544330` (includes PR #9 Explore tab squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [ACTIVE]; P2.5 [NOT STARTED].
+- **Current milestone:** Milestone P2.5 End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback — KICKOFF / IMPLEMENTATION PENDING
+- **Current branch:** `phase-2/p2.5-submission-map-sync`
+- **Current PR:** #11 — DRAFT, P2.5 implementation task contract only; app code pending
+- **Base:** `main` at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee` (PR #10 P2.4 squash merge)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [KICKOFF SPEC ONLY, PR #11 DRAFT].
 
 ## Current objective
 
-Remediate independent exact-head audit on **PR #10 (Milestone P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX)**:
-- **BLOCKER-1 Remediated (Map Focus & Navigation Intent):**
-  - Introduced explicit, testable `MapFocusIntent` model and `MapDiscoveryNotifier.focusOnRestroom(restroom, {zoom, openPreview})`.
-  - Resets active search query and filters upon focus, preventing active filters from hiding the candidate facility.
-  - Centers discovery map at `AppConstants.defaultZoomLevel` (15.0) via `animateCamera`.
-  - Handles camera initialization races cleanly with `_pendingFocusExecution` in `MapDiscoveryScreen`.
-  - Opens `RestroomPreviewSheet` directly on the focused facility without injecting synthetic entities into discovered results.
-  - Added focused widget integration test in `main_shell_navigation_test.dart` verifying camera centering, preview sheet opening, and filter resetting when candidate duplicate lies outside the current map viewport.
-- **MAJOR-1 Remediated (Preserve Duplicate Scan Completeness State):**
-  - Encapsulated scan results in typed `DuplicateScanResult` model capturing `candidates`, `isComplete`, `completenessReason`, `rangeCount`, `candidateCount`, `hasQueryError`, and `errorMessage`.
-  - Enforced `hasConcludedZeroDuplicates` invariant: incomplete or failed scans (e.g. `rangeCapExceeded`, `perRangeLimitExceeded`, `candidateLimitExceeded`, or query errors) never conclude zero duplicates.
-  - Added unit test coverage for all completeness reasons and fail-open behavior.
-- **MAJOR-2 Remediated (Unicode Canonical Normalization):**
-  - Integrated pure Dart `unorm_dart: ^0.3.3` for deterministic Unicode Canonical Decomposition followed by Canonical Composition (NFC).
-  - Applied NFC normalization prior to punctuation stripping and whitespace collapsing, guaranteeing that composed and decomposed Unicode representations (e.g. `café` vs `cafe\u0301`, `München` vs `Mu\u0308nchen`, `Ålesund` vs `A\u030环lesund`, Japanese, Korean Hangul, Cyrillic, Chinese, Arabic) normalize to identical tokens.
-  - Added comprehensive canonical equivalence tests across Latin and non-Latin scripts.
-- **Map Focus Initialization & Race Remediated (Re-Audit MAJOR-1):**
-  - Enforced exact-once execution of `MapFocusIntent` in `MapDiscoveryScreen`.
-  - When map controller is unavailable, camera animation and preview presentation are strictly deferred until `onMapCreated`, preventing premature intent consumption.
-  - Prevents duplicate preview sheets: `onMapCreated` replays pending intents safely without re-opening on subsequent frames.
-  - Strict token-ownership check: Stale or superseded focus intents are discarded before and after asynchronous camera animations via `notifier.pendingFocusIntent?.token != intent.token`. A null pending intent strictly invalidates older executions, preventing obsolete preview presentation when a newer focus completes and consumes its intent before an older animation resolves.
-  - Camera focus occurs before preview presentation.
-  - Unified `_onDiscoveryMapCreated` handler across custom builder and GoogleMap implementations.
-- **MINOR-1 & MINOR-2 Remediated:**
-  - Updated PR #10 body and specification parameters on GitHub.
-  - Cleaned up malformed bullets and reconciled `docs/STATUS.md` coordination ledger.
-- **MAJOR-1 Remediated (Camera Animation Failure & Recoverable Navigation):**
-  - Errors in `animateCamera` are caught and logged with `debugPrint`, not silently swallowed.
-  - Implemented recoverable fallback to `moveCamera` if `animateCamera` fails.
-  - Guarded `onCameraTargetChanged`: only invoked if camera actually moved (`cameraMoved == true`), never falsely indicating successful centering on failure.
-  - Re-evaluates focus intent token ownership before fallback and post-await; discards superseded intents.
-  - When both camera operations fail, `RestroomPreviewSheet` is NOT opened automatically as though navigation succeeded.
-  - Surfaces floating failure SnackBar: `'Could not center map on ${intent.restroom.name}.'` with safe manual recovery options:
-    - `'View Details'`: manually opens facility preview sheet without moving the camera or invoking `onCameraTargetChanged`. Touch target increased to min 48×48dp (`MaterialTapTargetSize.padded`, `Size(48, 48)`), preventing disposed context invocations via `mounted` guard.
-    - `'Retry'`: dispatches a fresh focus intent via `notifier.focusOnRestroom(intent.restroom, zoom: intent.zoom, openPreview: intent.openPreview)`.
-  - Stale failure recovery controls guarded: Retry and View Details are valid only while their failed focus remains the relevant user selection (`latestFocusToken == intent.token && selectedRestroom?.id == intent.restroom.id`). A newer focus or explicit selection invalidates and dismisses older recovery controls.
-  - Automatic retry loops are strictly prevented; retry requires explicit user tap.
-  - Preserves stale/superseded token protections.
-  - Added regression tests in `test/presentation/map_focus_navigation_test.dart` (Tests 7, 8, 8b, 8c, 9).
-- **MAJOR-2 Remediated (Draft Preservation & Stable Identifier Across Warning Dismissal):**
-  - When user dismisses `DuplicateWarningSheet` (`action == null`), draft is preserved with its stable `CreateRestroomCommand` and `restroomId`.
-  - Floating SnackBar surfaced with `'Review'` action button to re-open duplicate warning sheet.
-  - Tapping `'Add'` while draft is preserved prompts user via `AlertDialog` with `'Resume Draft'` or `'Discard & Start New'`.
-  - Resuming pre-populates all form fields in `AddRestroomFormScreen` and guarantees the allocated `restroomId` is retained across validations.
-  - Added unit test in `test/presentation/add_restroom_notifier_test.dart` (Test 16) and widget integration tests in `test/presentation/main_shell_navigation_test.dart` (Tests 15, 16, 17).
-- **MINOR-1 Remediated (Nuanced Duplicate Scan Feedback):**
-  - Distinguishes complete no-match (`'No likely duplicates found nearby...'`), partial scan hitting safety limit (`'No likely duplicates found in the results checked, but the duplicate scan was incomplete...'`), and query error fail-open (`'Duplicate check could not be completed, but contribution proceeds (advisory fail-open)...'`).
-  - Never implies exhaustive duplicate checking when scan completeness is false.
-  - Added widget integration test in `test/presentation/main_shell_navigation_test.dart` (Test 18).
-- **Workflow Integration (`MainShellScreen`):**
-  - Evaluates candidate duplicates upon valid draft completion.
-  - If candidates score $\ge 0.50$, displays `DuplicateWarningSheet` with accessible 48×48dp touch targets and semantic labels.
-  - Advisory fail-open contract: Query errors never block submission.
+Implement **P2.5** on draft PR #11, using the checked-in task contract `docs/tasks/P2.5-submission-map-sync.md` and canonical `docs/09-phase-2-add-restroom.md`.
+
+- Wire existing P2.4 validated `CreateRestroomCommand` + advisory duplicate flow to the already implemented P2.1 `FirestoreRestroomRepository.submitRestroom()` atomic public/private batch.
+- Authenticate anonymously before submitting; avoid any false successful remote saves when staging Firebase fails initialization and app uses offline fallback.
+- Keep one exact command/restroom ID through recoverable failures, retries, and reconciliation; give clear disabled/loading/success/error UI. Continue remains advisory fail-open.
+- After confirmed remote success, navigate to map at zoom 16.5, force canonical viewport refresh, select by authoritative discovered `restroomId`, show one `Unverified` preview; no optimistic insertion.
+- Add targeted automated tests; physical-device staging QA to follow independently audited code and owner authorization. P2.4 QA Test 2 remains BLOCKED for lack of seeded records.
+- **No P2.5 runtime implementation has been made in this kickoff; no Firestore writes or Firebase deployment have occurred.** Production contribution writes require P2.6 enforceable per-UID rate limiting.
 
 The active specification is:
 
@@ -311,9 +266,13 @@ Owner-confirmed staging infrastructure state:
   - MERGED into main (`ce04479bd3b69ca9b3bc342854583f8ff7544330`, PR #9)
   - Manual human QA: PASS on Android, PASS on iOS
 - Milestone P2.4 (Duplicate Detection):
-  - ACTIVE
+  - SQUASH-MERGED — PR #10, `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`
+  - Owner physical-device QA Test 1 PASS on Samsung SM G998B Android and iPhone 12 Pro Max iOS.
+  - QA Test 2 BLOCKED on both: no preexisting restroom records in staging for duplicate comparison; repeat during P2.5 after an authorized staging contribution.
 - Milestone P2.5:
-  - NOT STARTED
+  - ACTIVE KICKOFF / SPEC ONLY — draft PR #11, branch `phase-2/p2.5-submission-map-sync`
+  - Task contract: `docs/tasks/P2.5-submission-map-sync.md`
+  - No P2.5 application implementation, build, or staging write performed yet.
 
 ## Current owner actions / external dependencies
 
@@ -322,6 +281,8 @@ Owner-confirmed staging infrastructure state:
 3. Production Android signing remains a later release-readiness action.
 
 ## Current validation status
+
+P2.4 baseline validation below (from prior audited PR #10, **not** P2.5 implementation validation). P2.5 has not yet run tests because this kickoff changes documentation only.
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
@@ -334,11 +295,11 @@ Owner-confirmed staging infrastructure state:
 
 ## Next recommended action
 
-1. Submit PR for Milestone P2.4 (Bounded Duplicate Detection Engine & Advisory Warning UX).
-2. Conduct independent exact-head re-audit of P2.4 implementation.
-3. Conduct manual human QA on Android & iOS staging.
-4. Squash-merge P2.4 upon explicit human approval.
-5. Proceed to Milestone P2.5 (End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback).
+1. Implement P2.5 against `docs/tasks/P2.5-submission-map-sync.md` on the open draft PR #11; preserve staging-only writes and P2.6 production rate-limit gate.
+2. Add targeted integration/widget tests for auth, single-flight save, stable-ID retry/reconciliation, error recovery, and authoritative map refresh.
+3. Run required Flutter and Firestore rules tests; update PR and `docs/STATUS.md` with exact-head evidence.
+4. Request an independent exact-head audit. Only after approval perform authorized staging saves and Android/iOS cross-device QA, including previously BLOCKED P2.4 QA Test 2.
+5. Do not merge, deploy, or enable production writes without explicit human approval.
 
 ## Handoff template
 
