@@ -152,30 +152,71 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       return;
     }
 
-    // Never indicate successful centering when the camera did not move.
+    // Consume the intent in notifier now that execution (or failure) is complete.
+    notifier.consumeFocusIntent(intent.token);
+
     if (cameraMoved) {
+      // Camera moved successfully: notify target change and open preview if requested.
       widget.onCameraTargetChanged?.call(coords);
+      if (intent.openPreview) {
+        final locationNotifier = context.read<LocationNotifier>();
+        _showRestroomPreviewSheet(
+          context,
+          intent.restroom,
+          locationNotifier.currentCoordinates,
+        );
+      }
     } else {
+      // Camera operation failed: do not automatically open preview as though map navigation succeeded.
+      // Provide an explicit, safe Retry action and allow user to intentionally view facility details.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Could not center map on ${intent.restroom.name}.'),
-          duration: const Duration(seconds: 3),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('Could not center map on ${intent.restroom.name}.'),
+              if (intent.openPreview) ...[
+                const SizedBox(height: 4),
+                TextButton(
+                  style: TextButton.styleFrom(
+                    padding: EdgeInsets.zero,
+                    minimumSize: const Size(48, 32),
+                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    foregroundColor: Theme.of(context)
+                        .colorScheme
+                        .inversePrimary,
+                  ),
+                  onPressed: () {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    final locationNotifier = context.read<LocationNotifier>();
+                    _showRestroomPreviewSheet(
+                      context,
+                      intent.restroom,
+                      locationNotifier.currentCoordinates,
+                    );
+                  },
+                  child: const Text('View Details'),
+                ),
+              ],
+            ],
+          ),
+          duration: const Duration(seconds: 5),
+          behavior: SnackBarBehavior.floating,
+          action: SnackBarAction(
+            label: 'Retry',
+            onPressed: () {
+              if (!mounted) return;
+              notifier.focusOnRestroom(
+                intent.restroom,
+                zoom: intent.zoom,
+                openPreview: intent.openPreview,
+              );
+            },
+          ),
         ),
       );
     }
-
-    // 2. Open preview sheet.
-    if (intent.openPreview) {
-      final locationNotifier = context.read<LocationNotifier>();
-      _showRestroomPreviewSheet(
-        context,
-        intent.restroom,
-        locationNotifier.currentCoordinates,
-      );
-    }
-
-    // 3. Consume the intent in notifier.
-    notifier.consumeFocusIntent(intent.token);
   }
 
   Future<void> _recenterOnUser() async {

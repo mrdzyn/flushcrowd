@@ -584,7 +584,7 @@ void main() {
     );
 
     testWidgets(
-      '8. Total camera failure: when both animateCamera and moveCamera fail, onCameraTargetChanged is never invoked and failure feedback is surfaced',
+      '8. Total camera failure: when both animateCamera and moveCamera fail, preview does not open automatically, failure messaging with Retry and View Details is surfaced, and intentional details view does not claim map centering',
       (tester) async {
         final mapBuilder = _createControllableMapBuilder(
           fakeMap: fakeMap,
@@ -618,17 +618,80 @@ void main() {
         // 1. Never indicate successful centering when camera did not move
         expect(targetChangedCoord, isNull);
 
-        // 2. Failure snackbar surfaced to user
+        // 2. Preview sheet does NOT automatically open when navigation fails
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // 3. Failure snackbar surfaced to user with Retry action and View Details button
         expect(
           find.text('Could not center map on North Gate Restroom.'),
           findsOneWidget,
         );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(find.text('View Details'), findsOneWidget);
 
-        // 3. Preview sheet still opens to provide facility details
+        // 4. Failed intent is consumed from notifier to prevent stale re-execution
+        expect(discoveryNotifier.pendingFocusIntent, isNull);
+
+        // 5. User can intentionally view facility details without implying successful map centering
+        await tester.tap(find.text('View Details'));
+        await tester.pumpAndSettle();
+
+        // Preview sheet is now visible
         expect(find.byType(RestroomPreviewSheet), findsOneWidget);
         expect(find.text('North Gate Restroom'), findsOneWidget);
 
-        // 4. Intent is consumed
+        // Map centering was STILL never claimed
+        expect(targetChangedCoord, isNull);
+      },
+    );
+
+    testWidgets(
+      '8b. Safe Retry: tapping Retry on failure snackbar dispatches fresh focus intent and, upon camera recovery, centers map and opens preview',
+      (tester) async {
+        final mapBuilder = _createControllableMapBuilder(
+          fakeMap: fakeMap,
+          autoCallOnMapCreated: true,
+        );
+
+        Coordinates? targetChangedCoord;
+
+        await tester.pumpWidget(
+          _createTestApp(
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+            mapBuilder: mapBuilder,
+            onCameraTargetChanged: (coords) => targetChangedCoord = coords,
+          ),
+        );
+        await tester.pumpAndSettle();
+        targetChangedCoord = null;
+
+        // Initially both camera calls fail
+        fakeMap.controller.onAnimateCamera = (update) async {
+          throw Exception('Platform animation error');
+        };
+        fakeMap.controller.onMoveCamera = (update) async {
+          throw Exception('Platform moveCamera error');
+        };
+
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pumpAndSettle();
+
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+
+        // Camera recovers
+        fakeMap.controller.onAnimateCamera = null;
+        fakeMap.controller.onMoveCamera = null;
+
+        // User taps Retry: dispatches fresh intent
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pumpAndSettle();
+
+        // Fresh intent executed successfully: camera moved, target recorded, preview opened
+        expect(targetChangedCoord, equals(restroom1.coordinates));
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsOneWidget);
         expect(discoveryNotifier.pendingFocusIntent, isNull);
       },
     );
