@@ -627,7 +627,16 @@ void main() {
           findsOneWidget,
         );
         expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
-        expect(find.text('View Details'), findsOneWidget);
+        final viewDetailsFinder = find.widgetWithText(
+          TextButton,
+          'View Details',
+        );
+        expect(viewDetailsFinder, findsOneWidget);
+
+        // Accessible touch target: View Details must be at least 48x48dp
+        final viewDetailsSize = tester.getSize(viewDetailsFinder);
+        expect(viewDetailsSize.width, greaterThanOrEqualTo(48.0));
+        expect(viewDetailsSize.height, greaterThanOrEqualTo(48.0));
 
         // 4. Failed intent is consumed from notifier to prevent stale re-execution
         expect(discoveryNotifier.pendingFocusIntent, isNull);
@@ -693,6 +702,130 @@ void main() {
         expect(find.byType(RestroomPreviewSheet), findsOneWidget);
         expect(find.text('North Gate Restroom'), findsOneWidget);
         expect(discoveryNotifier.pendingFocusIntent, isNull);
+      },
+    );
+
+    testWidgets(
+      '8c. Stale failure recovery controls: newer focus B supersedes failure A, older Retry/View Details cannot override B, and valid current Retry succeeds',
+      (tester) async {
+        final mapBuilder = _createControllableMapBuilder(
+          fakeMap: fakeMap,
+          autoCallOnMapCreated: true,
+        );
+
+        Coordinates? targetChangedCoord;
+
+        await tester.pumpWidget(
+          _createTestApp(
+            discoveryNotifier: discoveryNotifier,
+            locationNotifier: locationNotifier,
+            mapBuilder: mapBuilder,
+            onCameraTargetChanged: (coords) => targetChangedCoord = coords,
+          ),
+        );
+        await tester.pumpAndSettle();
+        targetChangedCoord = null;
+
+        // Step 1: Fail both camera operations for focus A (restroom1)
+        fakeMap.controller.onAnimateCamera = (update) async {
+          throw Exception('Platform animation error A');
+        };
+        fakeMap.controller.onMoveCamera = (update) async {
+          throw Exception('Platform moveCamera error A');
+        };
+
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pumpAndSettle();
+
+        // Verify failure A surfaced
+        expect(
+          find.text('Could not center map on North Gate Restroom.'),
+          findsOneWidget,
+        );
+        final oldRetryAction = tester.widget<SnackBarAction>(
+          find.widgetWithText(SnackBarAction, 'Retry'),
+        );
+        final oldViewDetailsButton = tester.widget<TextButton>(
+          find.widgetWithText(TextButton, 'View Details'),
+        );
+
+        // Step 2: Establish a newer successful focus on B (restroom2)
+        fakeMap.controller.onAnimateCamera = null;
+        fakeMap.controller.onMoveCamera = null;
+
+        discoveryNotifier.focusOnRestroom(restroom2);
+        await tester.pumpAndSettle();
+
+        // Focus B succeeded: camera centered on B, B is selected, preview sheet for B is open
+        expect(targetChangedCoord, equals(restroom2.coordinates));
+        expect(discoveryNotifier.selectedRestroom, equals(restroom2));
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
+
+        // A's failure snackbar was dismissed
+        expect(
+          find.text('Could not center map on North Gate Restroom.'),
+          findsNothing,
+        );
+
+        // Step 3: Verify A's old Retry/View Details controls cannot override B
+        targetChangedCoord = null;
+
+        // Attempting to invoke old Retry for A
+        oldRetryAction.onPressed();
+        await tester.pumpAndSettle();
+
+        // B remains intact: target not changed to A, selected remains B, preview remains B
+        expect(targetChangedCoord, isNull);
+        expect(discoveryNotifier.selectedRestroom, equals(restroom2));
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsNothing);
+
+        // Attempting to invoke old View Details for A
+        oldViewDetailsButton.onPressed!();
+        await tester.pumpAndSettle();
+
+        // B remains intact: preview remains for B, target unchanged
+        expect(targetChangedCoord, isNull);
+        expect(discoveryNotifier.selectedRestroom, equals(restroom2));
+        expect(find.text('South Terminal Restroom'), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsNothing);
+
+        // Step 4: Confirm a valid, current Retry still succeeds
+        // Dismiss preview sheet for clean slate
+        Navigator.of(tester.element(find.byType(RestroomPreviewSheet))).pop();
+        await tester.pumpAndSettle();
+
+        // Fail camera for a new focus on restroom1
+        fakeMap.controller.onAnimateCamera = (update) async {
+          throw Exception('Platform animation error A2');
+        };
+        fakeMap.controller.onMoveCamera = (update) async {
+          throw Exception('Platform moveCamera error A2');
+        };
+
+        discoveryNotifier.focusOnRestroom(restroom1);
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text('Could not center map on North Gate Restroom.'),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+
+        // Camera recovers
+        fakeMap.controller.onAnimateCamera = null;
+        fakeMap.controller.onMoveCamera = null;
+
+        // Current, valid Retry is tapped
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pumpAndSettle();
+
+        // Valid Retry succeeded!
+        expect(targetChangedCoord, equals(restroom1.coordinates));
+        expect(discoveryNotifier.selectedRestroom, equals(restroom1));
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('North Gate Restroom'), findsOneWidget);
       },
     );
 

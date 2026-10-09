@@ -47,6 +47,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   MapDiscoveryNotifier? _discoveryNotifier;
   int? _lastExecutedFocusToken;
   MapFocusIntent? _pendingFocusExecution;
+  int? _activeFailureToken;
+  String? _activeFailureRestroomId;
 
   @override
   void didChangeDependencies() {
@@ -63,12 +65,25 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   @override
   void dispose() {
     _discoveryNotifier?.removeListener(_onNotifierChanged);
+    _activeFailureToken = null;
+    _activeFailureRestroomId = null;
     super.dispose();
   }
 
   void _onNotifierChanged() {
     final notifier = _discoveryNotifier;
     if (notifier == null || !mounted) return;
+
+    // Invalidate and dismiss active failure snackbar if superseded by a newer focus
+    // or if the relevant restroom selection has changed.
+    if (_activeFailureToken != null &&
+        (_activeFailureToken != notifier.latestFocusToken ||
+            _activeFailureRestroomId != notifier.selectedRestroom?.id)) {
+      _activeFailureToken = null;
+      _activeFailureRestroomId = null;
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+    }
+
     final intent = notifier.pendingFocusIntent;
     if (intent == null) {
       _pendingFocusExecution = null;
@@ -105,6 +120,15 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     if (_mapCameraController == null || !mounted) {
       _pendingFocusExecution = intent;
       return;
+    }
+
+    // Dismiss any active failure snackbar upon executing a focus intent.
+    if (_activeFailureToken != null) {
+      _activeFailureToken = null;
+      _activeFailureRestroomId = null;
+      if (mounted) {
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      }
     }
 
     // Mark token as executed immediately so no subsequent frame or race can re-enter.
@@ -168,6 +192,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       }
     } else {
       // Camera operation failed: do not automatically open preview as though map navigation succeeded.
+      // Track active failure state for safe, non-stale recovery controls.
+      _activeFailureToken = intent.token;
+      _activeFailureRestroomId = intent.restroom.id;
+
       // Provide an explicit, safe Retry action and allow user to intentionally view facility details.
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -180,14 +208,28 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                 const SizedBox(height: 4),
                 TextButton(
                   style: TextButton.styleFrom(
-                    padding: EdgeInsets.zero,
-                    minimumSize: const Size(48, 32),
-                    tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 8,
+                      vertical: 8,
+                    ),
+                    minimumSize: const Size(48, 48),
+                    tapTargetSize: MaterialTapTargetSize.padded,
+                    alignment: Alignment.centerLeft,
                     foregroundColor: Theme.of(context)
                         .colorScheme
                         .inversePrimary,
                   ),
                   onPressed: () {
+                    if (!mounted) return;
+                    // Stale recovery guard: View Details is valid only while this failed focus
+                    // remains the relevant user selection and has not been superseded.
+                    if (notifier.latestFocusToken != intent.token ||
+                        notifier.selectedRestroom?.id != intent.restroom.id) {
+                      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                      return;
+                    }
+                    _activeFailureToken = null;
+                    _activeFailureRestroomId = null;
                     ScaffoldMessenger.of(context).hideCurrentSnackBar();
                     final locationNotifier = context.read<LocationNotifier>();
                     _showRestroomPreviewSheet(
@@ -207,6 +249,16 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             label: 'Retry',
             onPressed: () {
               if (!mounted) return;
+              // Stale recovery guard: Retry is valid only while this failed focus
+              // remains the relevant user selection and has not been superseded.
+              if (notifier.latestFocusToken != intent.token ||
+                  notifier.selectedRestroom?.id != intent.restroom.id) {
+                ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                return;
+              }
+              _activeFailureToken = null;
+              _activeFailureRestroomId = null;
+              ScaffoldMessenger.of(context).hideCurrentSnackBar();
               notifier.focusOnRestroom(
                 intent.restroom,
                 zoom: intent.zoom,

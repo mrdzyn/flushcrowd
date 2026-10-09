@@ -146,6 +146,7 @@ class MapDiscoveryNotifier extends ChangeNotifier {
   String get searchQuery => _searchQuery;
   DiscoveryFilters get filters => _filters;
   MapFocusIntent? get pendingFocusIntent => _pendingFocusIntent;
+  int get latestFocusToken => _focusIntentCounter;
 
   bool get isComplete => _isComplete;
   DiscoveryCompletenessReason get completenessReason => _completenessReason;

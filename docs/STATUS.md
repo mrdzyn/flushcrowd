@@ -48,11 +48,12 @@ Remediate independent exact-head audit on **PR #10 (Milestone P2.4 — Bounded D
   - Re-evaluates focus intent token ownership before fallback and post-await; discards superseded intents.
   - When both camera operations fail, `RestroomPreviewSheet` is NOT opened automatically as though navigation succeeded.
   - Surfaces floating failure SnackBar: `'Could not center map on ${intent.restroom.name}.'` with safe manual recovery options:
-    - `'View Details'`: manually opens facility preview sheet without moving the camera or invoking `onCameraTargetChanged`.
+    - `'View Details'`: manually opens facility preview sheet without moving the camera or invoking `onCameraTargetChanged`. Touch target increased to min 48×48dp (`MaterialTapTargetSize.padded`, `Size(48, 48)`), preventing disposed context invocations via `mounted` guard.
     - `'Retry'`: dispatches a fresh focus intent via `notifier.focusOnRestroom(intent.restroom, zoom: intent.zoom, openPreview: intent.openPreview)`.
+  - Stale failure recovery controls guarded: Retry and View Details are valid only while their failed focus remains the relevant user selection (`latestFocusToken == intent.token && selectedRestroom?.id == intent.restroom.id`). A newer focus or explicit selection invalidates and dismisses older recovery controls.
   - Automatic retry loops are strictly prevented; retry requires explicit user tap.
   - Preserves stale/superseded token protections.
-  - Added regression tests in `test/presentation/map_focus_navigation_test.dart` (Tests 7, 8, 8b, 9).
+  - Added regression tests in `test/presentation/map_focus_navigation_test.dart` (Tests 7, 8, 8b, 8c, 9).
 - **MAJOR-2 Remediated (Draft Preservation & Stable Identifier Across Warning Dismissal):**
   - When user dismisses `DuplicateWarningSheet` (`action == null`), draft is preserved with its stable `CreateRestroomCommand` and `restroomId`.
   - Floating SnackBar surfaced with `'Review'` action button to re-open duplicate warning sheet.
@@ -324,7 +325,7 @@ Owner-confirmed staging infrastructure state:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (372/372 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 10 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- `flutter test` — PASS (373/373 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
 - Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
 - `flutter build apk --debug` without credentials — PASS (built in 25.5s)
 - `flutter build ios --debug --no-codesign` without credentials — PASS (built in 52.7s)
