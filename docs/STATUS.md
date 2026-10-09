@@ -7,22 +7,23 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.5 End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback — KICKOFF / IMPLEMENTATION PENDING
+- **Current milestone:** Milestone P2.5 End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback — IMPLEMENTED / READY FOR REVIEW & AUDIT
 - **Current branch:** `phase-2/p2.5-submission-map-sync`
-- **Current PR:** #11 — DRAFT, P2.5 implementation task contract only; app code pending
+- **Current PR:** #11 — P2.5 submission & discovery sync implementation ready for audit
 - **Base:** `main` at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee` (PR #10 P2.4 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [KICKOFF SPEC ONLY, PR #11 DRAFT].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [IMPLEMENTED — READY FOR REVIEW / AUDIT].
 
 ## Current objective
 
-Implement **P2.5** on draft PR #11, using the checked-in task contract `docs/tasks/P2.5-submission-map-sync.md` and canonical `docs/09-phase-2-add-restroom.md`.
+Implement and validate **P2.5** on branch `phase-2/p2.5-submission-map-sync` (PR #11), following `docs/tasks/P2.5-submission-map-sync.md` and canonical `docs/09-phase-2-add-restroom.md`.
 
-- Wire existing P2.4 validated `CreateRestroomCommand` + advisory duplicate flow to the already implemented P2.1 `FirestoreRestroomRepository.submitRestroom()` atomic public/private batch.
-- Authenticate anonymously before submitting; avoid any false successful remote saves when staging Firebase fails initialization and app uses offline fallback.
-- Keep one exact command/restroom ID through recoverable failures, retries, and reconciliation; give clear disabled/loading/success/error UI. Continue remains advisory fail-open.
-- After confirmed remote success, navigate to map at zoom 16.5, force canonical viewport refresh, select by authoritative discovered `restroomId`, show one `Unverified` preview; no optimistic insertion.
-- Add targeted automated tests; physical-device staging QA to follow independently audited code and owner authorization. P2.4 QA Test 2 remains BLOCKED for lack of seeded records.
-- **No P2.5 runtime implementation has been made in this kickoff; no Firestore writes or Firebase deployment have occurred.** Production contribution writes require P2.6 enforceable per-UID rate limiting.
+- Wire existing P2.4 validated `CreateRestroomCommand` + advisory duplicate flow to the P2.1 `FirestoreRestroomRepository.submitRestroom()` atomic public/private batch.
+- Authenticate anonymously before submitting; prevent false successful saves when staging Firebase fails initialization (`firebase-init-failed` exception in offline in-memory fallback).
+- Enforce production contribution write block until P2.6 enforceable per-UID rate limiting.
+- Keep one exact command/restroom ID through recoverable failures, retries, and reconciliation; provide clear disabled/loading/success/error feedback.
+- On remote success, clear draft, show success message with advisory scan note, navigate to map at zoom 16.5, force canonical viewport refresh, select by authoritative discovered `restroomId`, show one `Unverified` preview; strictly zero optimistic or synthetic insertion.
+- Surface recovery action (`Refresh`) if authoritative query omits newly created facility.
+- 13 automated regression tests covering safety gates, single-flight submission, recoverable retries, and authoritative map synchronization.
 
 The active specification is:
 
@@ -195,16 +196,34 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Remediated MINOR-1: Updated `RestroomSummaryCard` `onInfoTap` `IconButton` constraints from `minWidth: 40, minHeight: 40` to `minWidth: 48, minHeight: 48` satisfying the repository minimum interactive touch target accessibility rule.
 - Authored 18 unit and widget tests in `test/presentation/explore_restrooms_screen_test.dart` and 1 additional navigation/tab-switch test in `test/presentation/main_shell_navigation_test.dart` (317 total Flutter tests, all PASS).
 
-### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX (PLANNED)
-- Implement `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
-- Implement `DuplicateWarningSheet` advisory UI showing top 3 candidates.
-- Unit tests for similarity heuristics and global script fixtures (`東京駅 トイレ`, `مطار دبي حمام`, etc.); widget tests for modal display and button actions.
+### P2.4 — Bounded Duplicate Detection Engine & Advisory Warning UX [MERGED — PR #10]
+- Squash-merged into `main` at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee` (PR #10).
+- Implemented `DuplicateDetectionService` reusing Phase 1 GIS primitives (`GeohashService.getCandidatePrefixes` with max 16 ranges, `.limit(20)`), Unicode-preserving normalization, and deterministic scoring model.
+- Implemented `DuplicateWarningSheet` advisory UI showing top 3 candidates with distance and similarity chips.
+- Non-blocking advisory warning with continue, view existing, and cancel actions; safe draft preservation across flows.
 
-### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback (PLANNED)
-- Connect anonymous authentication lifecycle.
-- Wire submit action through repository batch write with `CreateRestroomCommand`, stable ID, and ambiguous commit reconciliation.
-- Sync successful submissions with canonical viewport refresh and preview selection.
-- End-to-end integration and widget tests.
+### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback [IMPLEMENTED — READY FOR REVIEW / AUDIT]
+- **P2.5-A Staging Runtime & Identity Safety:**
+  - Guarded offline in-memory fallback against false successful submissions when Firebase init fails on staging or production (`allowSubmissions: !config.isStaging && !config.isProduction`). Throws `RepositoryException` with code `firebase-init-failed`.
+  - Enforced production safety gate (`config.isProduction` explicitly blocks contribution writes with `production-writes-blocked`).
+  - Guaranteed valid anonymous session via `AuthNotifier.signInAnonymously()` before write; auth errors preserve draft state with actionable retry SnackBar.
+  - Zero contributor UID exposed, zero movement tracking, zero paid Google Maps Platform APIs.
+- **P2.5-B Single-Flight Submission & Recoverable Failures:**
+  - Preserved identical stable `CreateRestroomCommand` and `restroomId` across all retry attempts and draft resumptions.
+  - Wired P2.4 non-duplicate and acknowledged duplicate warning paths to actual submission.
+  - Implemented single-flight submission lock (`_isSubmitting`), non-dismissible submission progress indicator, and disabled interactive controls during in-flight submission.
+  - Provided explicit error handling: invariant exceptions offer `Resume` (no blind auto-retry), network/repository exceptions offer `Retry`, auth failures offer `Retry`.
+- **P2.5-C Authoritative Discovery Synchronization & Feedback:**
+  - Cleanly clears draft state and displays success feedback SnackBar with advisory scan notes.
+  - Switches to Map tab (`_currentTabIndex = 0`), moves/animates camera to restroom location at `zoom: 16.5`.
+  - Dispatches `MapFocusIntent` with `forceRefresh: true` to trigger forced authoritative discovery viewport refresh (`refreshCurrentViewport(bounds, zoom)`).
+  - Selects newly created restroom strictly after authoritative query returns it in `discoveredRestrooms`; strictly zero optimistic or synthetic insertion.
+  - Displays exactly one `RestroomPreviewSheet` with the `Unverified` chip (`StatusChip(label: 'Unverified', type: StatusChipType.warning)`).
+  - Surfaces non-blocking recovery SnackBar with `Refresh` action if authoritative discovery omits the record due to replication lag or bounds mismatch, without claiming false map display.
+- **P2.5-D Testability & Quality Checks:**
+  - 13 comprehensive unit/widget regression tests in `test/presentation/p2_5_submission_map_sync_test.dart` covering Groups P2.5-A through P2.5-D.
+  - Updated `test/presentation/main_shell_navigation_test.dart` and `test/presentation/map_focus_navigation_test.dart`.
+  - Validated full test suite (386 total Flutter tests, all PASS; 49 Firestore Security Rules tests, all PASS).
 
 ### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation (PLANNED)
 - Audit touch targets (>= 48×48), semantic labels, and contrast.
@@ -270,9 +289,10 @@ Owner-confirmed staging infrastructure state:
   - Owner physical-device QA Test 1 PASS on Samsung SM G998B Android and iPhone 12 Pro Max iOS.
   - QA Test 2 BLOCKED on both: no preexisting restroom records in staging for duplicate comparison; repeat during P2.5 after an authorized staging contribution.
 - Milestone P2.5:
-  - ACTIVE KICKOFF / SPEC ONLY — draft PR #11, branch `phase-2/p2.5-submission-map-sync`
-  - Task contract: `docs/tasks/P2.5-submission-map-sync.md`
-  - No P2.5 application implementation, build, or staging write performed yet.
+  - IMPLEMENTED & VERIFIED — branch `phase-2/p2.5-submission-map-sync`, PR #11.
+  - Task contract: `docs/tasks/P2.5-submission-map-sync.md`.
+  - All 13 P2.5 automated regression tests pass; all 386 Flutter tests pass; 49/49 Firestore rules pass.
+  - Ready for independent exact-head code audit prior to authorized staging saves.
 
 ## Current owner actions / external dependencies
 
@@ -282,24 +302,23 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-P2.4 baseline validation below (from prior audited PR #10, **not** P2.5 implementation validation). P2.5 has not yet run tests because this kickoff changes documentation only.
+Milestone P2.5 exact-head validation:
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (373/373 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
+- `flutter test` — PASS (386/386 tests passed: 13 tests in `p2_5_submission_map_sync_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
 - Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
-- `flutter build apk --debug` without credentials — PASS (built in 25.5s)
-- `flutter build ios --debug --no-codesign` without credentials — PASS (built in 52.7s)
+- `flutter build apk --debug` without credentials — PASS (built in 22.3s)
+- `flutter build ios --debug --no-codesign` without credentials — PASS (built in 31.4s)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Implement P2.5 against `docs/tasks/P2.5-submission-map-sync.md` on the open draft PR #11; preserve staging-only writes and P2.6 production rate-limit gate.
-2. Add targeted integration/widget tests for auth, single-flight save, stable-ID retry/reconciliation, error recovery, and authoritative map refresh.
-3. Run required Flutter and Firestore rules tests; update PR and `docs/STATUS.md` with exact-head evidence.
-4. Request an independent exact-head audit. Only after approval perform authorized staging saves and Android/iOS cross-device QA, including previously BLOCKED P2.4 QA Test 2.
-5. Do not merge, deploy, or enable production writes without explicit human approval.
+1. Request an independent exact-head code audit for PR #11.
+2. Only after independent audit approval, perform authorized physical-device staging saves and Android/iOS cross-device QA, including previously BLOCKED P2.4 QA Test 2.
+3. Keep production contribution writes disabled (`config.isProduction` release gate) until P2.6 rate limiting.
+4. Do not merge PR #11 or deploy to production without explicit human owner approval.
 
 ## Handoff template
 

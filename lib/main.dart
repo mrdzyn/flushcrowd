@@ -39,7 +39,9 @@ Future<void> main() async {
     // are not yet provided in the local dev environment, fall back to in-memory repositories.
     debugPrint('[FirebaseInit] Running in offline/development mode: $e');
     authRepository = InMemoryAuthRepository();
-    restroomRepository = InMemoryRestroomRepository();
+    restroomRepository = InMemoryRestroomRepository(
+      allowSubmissions: !config.isStaging && !config.isProduction,
+    );
   }
 
   final locationRepository = LocationRepositoryImpl();

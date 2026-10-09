@@ -333,10 +333,48 @@ class MapDiscoveryNotifier extends ChangeNotifier {
 
     _focusIntentCounter++;
     _pendingFocusIntent = MapFocusIntent(
+      coordinates: restroom.coordinates,
       restroom: restroom,
+      targetRestroomId: restroom.id,
+      facilityName: restroom.name,
       zoom: zoom,
       openPreview: openPreview,
       token: _focusIntentCounter,
+      forceRefresh: false,
+    );
+
+    notifyListeners();
+  }
+
+  /// Sets an explicit focus intent for a newly submitted restroom (P2.5-C).
+  ///
+  /// Resets search and filters to prevent active filters from hiding the facility.
+  /// Invariant: Does NOT set [_selectedRestroom] yet; selection happens strictly
+  /// AFTER authoritative discovery returns the newly created facility.
+  void focusOnSubmittedRestroom({
+    required Coordinates coordinates,
+    required String restroomId,
+    required String facilityName,
+    double zoom = 16.5,
+  }) {
+    _cancelDebounce();
+    _invalidateActiveRequest();
+
+    _searchQuery = '';
+    _filters = DiscoveryFilters.empty;
+
+    _selectedRestroom = null;
+    _selectionOrigin = SelectionOrigin.none;
+
+    _focusIntentCounter++;
+    _pendingFocusIntent = MapFocusIntent(
+      coordinates: coordinates,
+      targetRestroomId: restroomId,
+      facilityName: facilityName,
+      zoom: zoom,
+      openPreview: true,
+      token: _focusIntentCounter,
+      forceRefresh: true,
     );
 
     notifyListeners();

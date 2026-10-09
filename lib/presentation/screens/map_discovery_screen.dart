@@ -134,7 +134,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     // Mark token as executed immediately so no subsequent frame or race can re-enter.
     _lastExecutedFocusToken = intent.token;
 
-    final coords = intent.restroom.coordinates;
+    final coords = intent.coordinates;
+    final facilityName =
+        intent.facilityName ?? intent.restroom?.name ?? 'restroom';
+    final targetRestroomId = intent.targetRestroomId ?? intent.restroom?.id;
 
     // 1. Camera focus occurs before preview presentation when possible.
     bool cameraMoved = false;
@@ -164,7 +167,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       } catch (fallbackError) {
         // Do not silently swallow camera errors: log failure details
         debugPrint(
-          'MapDiscoveryScreen: Camera centering failed for restroom ${intent.restroom.id}: $e (fallback error: $fallbackError)',
+          'MapDiscoveryScreen: Camera centering failed for restroom $targetRestroomId: $e (fallback error: $fallbackError)',
         );
       }
     }
@@ -182,11 +185,90 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     if (cameraMoved) {
       // Camera moved successfully: notify target change and open preview if requested.
       widget.onCameraTargetChanged?.call(coords);
-      if (intent.openPreview) {
+
+      if (intent.forceRefresh) {
+        // Canonical Discovery Synchronization (P2.5-C)
+        GeoBoundingBox? geoBounds;
+        double? currentZoom;
+        try {
+          final bounds = await _getVisibleRegion();
+          currentZoom = await _getZoomLevel();
+          if (bounds != null) {
+            geoBounds = GeoBoundingBox(
+              southWest: Coordinates(
+                latitude: bounds.southwest.latitude,
+                longitude: bounds.southwest.longitude,
+              ),
+              northEast: Coordinates(
+                latitude: bounds.northeast.latitude,
+                longitude: bounds.northeast.longitude,
+              ),
+            );
+          }
+        } catch (_) {}
+
+        geoBounds ??= GeoBoundingBox.fromCenterAndRadius(
+          coords,
+          radiusMeters: 500,
+        );
+
+        await notifier.refreshCurrentViewport(
+          bounds: geoBounds,
+          zoom: currentZoom ?? intent.zoom,
+        );
+
+        if (!mounted || notifier.latestFocusToken != intent.token) {
+          return;
+        }
+
+        final matchingRestroom = targetRestroomId != null
+            ? notifier.discoveredRestrooms
+                  .where((r) => r.id == targetRestroomId)
+                  .firstOrNull
+            : null;
+
+        if (matchingRestroom != null) {
+          notifier.selectRestroom(matchingRestroom);
+          if (intent.openPreview) {
+            final locationNotifier = context.read<LocationNotifier>();
+            _showRestroomPreviewSheet(
+              context,
+              matchingRestroom,
+              locationNotifier.currentCoordinates,
+            );
+          }
+        } else {
+          // Authoritative discovery did not return the new record.
+          // Never claim successful map refresh when not observed; offer explicit recovery.
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Refresh',
+                onPressed: () {
+                  if (mounted && targetRestroomId != null) {
+                    notifier.focusOnSubmittedRestroom(
+                      coordinates: coords,
+                      restroomId: targetRestroomId,
+                      facilityName: facilityName,
+                      zoom: intent.zoom,
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+        }
+      } else if (intent.openPreview && intent.restroom != null) {
         final locationNotifier = context.read<LocationNotifier>();
         _showRestroomPreviewSheet(
           context,
-          intent.restroom,
+          intent.restroom!,
           locationNotifier.currentCoordinates,
         );
       }
@@ -194,7 +276,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       // Camera operation failed: do not automatically open preview as though map navigation succeeded.
       // Track active failure state for safe, non-stale recovery controls.
       _activeFailureToken = intent.token;
-      _activeFailureRestroomId = intent.restroom.id;
+      _activeFailureRestroomId = targetRestroomId;
 
       // Provide an explicit, safe Retry action and allow user to intentionally view facility details.
       ScaffoldMessenger.of(context).showSnackBar(
@@ -203,8 +285,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Could not center map on ${intent.restroom.name}.'),
-              if (intent.openPreview) ...[
+              Text('Could not center map on $facilityName.'),
+              if (intent.openPreview && intent.restroom != null) ...[
                 const SizedBox(height: 4),
                 TextButton(
                   style: TextButton.styleFrom(
@@ -224,7 +306,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                     // Stale recovery guard: View Details is valid only while this failed focus
                     // remains the relevant user selection and has not been superseded.
                     if (notifier.latestFocusToken != intent.token ||
-                        notifier.selectedRestroom?.id != intent.restroom.id) {
+                        notifier.selectedRestroom?.id != intent.restroom!.id) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       return;
                     }
@@ -234,7 +316,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                     final locationNotifier = context.read<LocationNotifier>();
                     _showRestroomPreviewSheet(
                       context,
-                      intent.restroom,
+                      intent.restroom!,
                       locationNotifier.currentCoordinates,
                     );
                   },
@@ -252,18 +334,28 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
               // Stale recovery guard: Retry is valid only while this failed focus
               // remains the relevant user selection and has not been superseded.
               if (notifier.latestFocusToken != intent.token ||
-                  notifier.selectedRestroom?.id != intent.restroom.id) {
+                  (intent.restroom != null &&
+                      notifier.selectedRestroom?.id != intent.restroom!.id)) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 return;
               }
               _activeFailureToken = null;
               _activeFailureRestroomId = null;
               ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              notifier.focusOnRestroom(
-                intent.restroom,
-                zoom: intent.zoom,
-                openPreview: intent.openPreview,
-              );
+              if (intent.forceRefresh && targetRestroomId != null) {
+                notifier.focusOnSubmittedRestroom(
+                  coordinates: coords,
+                  restroomId: targetRestroomId,
+                  facilityName: facilityName,
+                  zoom: intent.zoom,
+                );
+              } else if (intent.restroom != null) {
+                notifier.focusOnRestroom(
+                  intent.restroom!,
+                  zoom: intent.zoom,
+                  openPreview: intent.openPreview,
+                );
+              }
             },
           ),
         ),
@@ -311,23 +403,47 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     );
   }
 
+  Future<LatLngBounds?> _getVisibleRegion() async {
+    if (_googleMapController != null) {
+      return _googleMapController!.getVisibleRegion();
+    }
+    final controller = _mapCameraController;
+    if (controller is MapViewportController) {
+      return (controller as MapViewportController).getVisibleRegion();
+    }
+    return null;
+  }
+
+  Future<double?> _getZoomLevel() async {
+    if (_googleMapController != null) {
+      return _googleMapController!.getZoomLevel();
+    }
+    final controller = _mapCameraController;
+    if (controller is MapViewportController) {
+      return (controller as MapViewportController).getZoomLevel();
+    }
+    return null;
+  }
+
   Future<void> _handleCameraIdle() async {
-    if (_googleMapController == null || !mounted) return;
+    if (!mounted) return;
     final notifier = context.read<MapDiscoveryNotifier>();
     try {
-      final bounds = await _googleMapController!.getVisibleRegion();
-      final zoom = await _googleMapController!.getZoomLevel();
-      final geoBounds = GeoBoundingBox(
-        southWest: Coordinates(
-          latitude: bounds.southwest.latitude,
-          longitude: bounds.southwest.longitude,
-        ),
-        northEast: Coordinates(
-          latitude: bounds.northeast.latitude,
-          longitude: bounds.northeast.longitude,
-        ),
-      );
-      notifier.onCameraIdle(bounds: geoBounds, zoom: zoom);
+      final bounds = await _getVisibleRegion();
+      final zoom = await _getZoomLevel();
+      if (bounds != null && zoom != null) {
+        final geoBounds = GeoBoundingBox(
+          southWest: Coordinates(
+            latitude: bounds.southwest.latitude,
+            longitude: bounds.southwest.longitude,
+          ),
+          northEast: Coordinates(
+            latitude: bounds.northeast.latitude,
+            longitude: bounds.northeast.longitude,
+          ),
+        );
+        notifier.onCameraIdle(bounds: geoBounds, zoom: zoom);
+      }
     } catch (_) {
       // Ignore map controller errors during teardown or unit testing
     }

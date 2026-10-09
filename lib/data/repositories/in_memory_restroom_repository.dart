@@ -18,11 +18,13 @@ class InMemoryRestroomRepository implements RestroomRepository {
   final List<Restroom> _storage = [];
   final Map<String, Map<String, dynamic>> _contributions = {};
   final AuthRepository? authRepository;
+  final bool allowSubmissions;
 
   InMemoryRestroomRepository({
     List<Restroom>? initialData,
     Map<String, Map<String, dynamic>>? initialContributions,
     this.authRepository,
+    this.allowSubmissions = true,
   }) {
     if (initialData != null) {
       _storage.addAll(initialData);
@@ -247,6 +249,13 @@ class InMemoryRestroomRepository implements RestroomRepository {
 
   @override
   Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
+    if (!allowSubmissions) {
+      throw const RepositoryException(
+        'Submission is unavailable because staging Firebase configuration failed to initialize.',
+        'firebase-init-failed',
+      );
+    }
+
     if (authRepository != null && authRepository!.currentUserId == null) {
       throw const UnauthenticatedException();
     }
