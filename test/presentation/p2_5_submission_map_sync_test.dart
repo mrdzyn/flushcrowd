@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 
 import 'package:flushcrowd/core/config/app_config.dart';
 import 'package:flushcrowd/core/config/environment.dart';
+import 'package:flushcrowd/core/constants/app_constants.dart';
 import 'package:flushcrowd/core/errors/exceptions.dart';
 import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
@@ -49,8 +50,16 @@ class FakeAuthRepository implements AuthRepository {
     _authStreamController.add(uid);
   }
 
+  Completer<String>? signInCompleter;
+
   @override
   Future<String> ensureAnonymousSession() async {
+    if (signInCompleter != null) {
+      final uid = await signInCompleter!.future;
+      _uid = uid;
+      _authStreamController.add(_uid);
+      return uid;
+    }
     if (shouldThrowOnSignIn) {
       throw const RepositoryException(
         'Simulated network timeout during anonymous sign in',
@@ -156,6 +165,21 @@ class TestRestroomRepository implements RestroomRepository {
   }
 }
 
+class ThrowingDiscoveryNotifier extends MapDiscoveryNotifier {
+  ThrowingDiscoveryNotifier({required super.restroomRepository})
+    : super(debounceDuration: Duration.zero);
+
+  @override
+  void focusOnSubmittedRestroom({
+    required Coordinates coordinates,
+    required String restroomId,
+    required String facilityName,
+    double zoom = 16.5,
+  }) {
+    throw Exception('Simulated map focus initiation crash');
+  }
+}
+
 class FakeMapCameraController
     implements MapCameraController, MapViewportController {
   final FakeMapState fakeMapState;
@@ -165,6 +189,7 @@ class FakeMapCameraController
   double? lastRequestedZoom;
   bool autoSettle = true;
   bool shouldThrow = false;
+  LatLngBounds? Function()? visibleRegionOverride;
 
   FakeMapCameraController(this.fakeMapState);
 
@@ -175,8 +200,10 @@ class FakeMapCameraController
     if (shouldThrow) {
       throw Exception('Platform animateCamera failed');
     }
+    fakeMapState.simulateMoveStarted();
     if (autoSettle) {
       _applyUpdate(cameraUpdate);
+      fakeMapState.simulateIdle();
     }
   }
 
@@ -187,13 +214,18 @@ class FakeMapCameraController
     if (shouldThrow) {
       throw Exception('Platform moveCamera failed');
     }
+    fakeMapState.simulateMoveStarted();
     if (autoSettle) {
       _applyUpdate(cameraUpdate);
+      fakeMapState.simulateIdle();
     }
   }
 
   @override
   Future<LatLngBounds?> getVisibleRegion() async {
+    if (visibleRegionOverride != null) {
+      return visibleRegionOverride!();
+    }
     final target = fakeMapState.currentCameraPosition.target;
     return LatLngBounds(
       southwest: LatLng(target.latitude - 0.005, target.longitude - 0.005),
@@ -260,6 +292,10 @@ class FakeMapState {
     onMapCreated?.call(controller);
   }
 
+  void simulateMoveStarted() {
+    onCameraMoveStarted?.call();
+  }
+
   void simulateMove(CameraPosition position) {
     currentCameraPosition = position;
     onCameraMoveStarted?.call();
@@ -309,11 +345,14 @@ Widget createTestApp({
   required FakeMapState addFakeMap,
   required FakeMapState discoveryFakeMap,
   AuthNotifier? authNotifier,
-  AppConfig config = const AppConfig(environment: Environment.staging),
+  AppConfig? config = const AppConfig(
+    environment: Environment.staging,
+    firebaseProjectId: AppConstants.stagingFirebaseProjectId,
+  ),
 }) {
   return MultiProvider(
     providers: [
-      Provider<AppConfig>.value(value: config),
+      if (config != null) Provider<AppConfig>.value(value: config),
       Provider<RestroomRepository>.value(value: restroomRepo),
       Provider<LocationRepository>.value(value: locationRepo),
       ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),
@@ -496,6 +535,180 @@ void main() {
         expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'A.4 Default development config (Environment.development) blocks submission write, preserves draft',
+      (tester) async {
+        const devConfig = AppConfig(environment: Environment.development);
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+            config: devConfig,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Dev Blocked Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(0));
+        expect(
+          find.text(
+            'Community restroom contributions are only permitted in the verified staging environment.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'A.5 Unknown environment config (Environment.unknown) blocks submission write, preserves draft',
+      (tester) async {
+        const unknownConfig = AppConfig(environment: Environment.unknown);
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+            config: unknownConfig,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Unknown Env Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(0));
+        expect(
+          find.text(
+            'Community restroom contributions are only permitted in the verified staging environment.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'A.6 Missing config (config: null) blocks submission write, preserves draft',
+      (tester) async {
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+            config: null,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Unconfigured Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(0));
+        expect(
+          find.text(
+            'Community restroom contributions are unavailable due to missing application configuration.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'A.7 Staging config with mismatched Firebase project ID blocks submission write, preserves draft',
+      (tester) async {
+        const mismatchedConfig = AppConfig(
+          environment: Environment.staging,
+          firebaseProjectId: 'flushcrowd-production',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+            config: mismatchedConfig,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Mismatched Project Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(0));
+        expect(
+          find.text(
+            'Community restroom contributions are restricted to the verified staging Firebase project (flushcrowd-staging).',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'A.8 Staging config with null Firebase project ID blocks submission write, preserves draft',
+      (tester) async {
+        const noProjectConfig = AppConfig(
+          environment: Environment.staging,
+          firebaseProjectId: null,
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+            config: noProjectConfig,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'No Project Staging Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(0));
+        expect(
+          find.text(
+            'Community restroom contributions are restricted to the verified staging Firebase project (flushcrowd-staging).',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
   });
 
   group('P2.5-B — Single-Flight Submit & Recoverable Failures', () {
@@ -645,12 +858,69 @@ void main() {
 
         expect(
           find.text(
-            'Data invariant violation: only one document of the restroom pair exists. Cannot safely submit.',
+            'Data invariant violation: only one document of the atomic restroom pair exists.',
           ),
           findsOneWidget,
         );
         expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
         expect(find.widgetWithText(SnackBarAction, 'Retry'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'B.4 Single-flight submit locks before anonymous sign-in: multiple taps during sign-in trigger exactly 1 repository write',
+      (tester) async {
+        final delayedAuthRepo = FakeAuthRepository(initialUid: null);
+        final signInCompleter = Completer<String>();
+        delayedAuthRepo.signInCompleter = signInCompleter;
+        final delayedAuthNotifier = AuthNotifier(
+          authRepository: delayedAuthRepo,
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: delayedAuthNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Lock Ordering Restroom');
+
+        // First tap initiates submission and begins anonymous sign-in
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+
+        // While sign-in is pending, attempt a second submission tap
+        await tester.tap(
+          find.widgetWithText(LooPrimaryButton, 'Continue'),
+          warnIfMissed: false,
+        );
+        await tester.pump();
+
+        // Also attempt tapping Add on shell during flight
+        await tester.tap(find.text('Add'));
+        await tester.pump();
+
+        expect(restroomRepo.submitCount, equals(0));
+
+        // Now complete the anonymous sign-in
+        signInCompleter.complete('newly_signed_in_uid');
+        restroomRepo.returnLastSubmittedInViewport = true;
+        await tester.pumpAndSettle();
+
+        // Exactly one repository write occurred!
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Restroom "Lock Ordering Restroom" submitted successfully.',
+          ),
+          findsOneWidget,
+        );
       },
     );
   });
@@ -739,6 +1009,273 @@ void main() {
           findsOneWidget,
         );
         expect(find.widgetWithText(SnackBarAction, 'Refresh'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'C.3 Delayed camera settlement: authoritative query does not fire until camera settles on coordinates',
+      (tester) async {
+        const submittedName = 'Delayed Settle Restroom';
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.autoSettle = false;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        final initialDiscoveryCount = restroomRepo.discoveryCount;
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Camera animation was initiated
+        expect(
+          discoveryFakeMap.controller.animateCameraCalls,
+          greaterThanOrEqualTo(1),
+        );
+
+        // Map has not settled yet -> discovery query NOT yet fired for submitted restroom
+        expect(restroomRepo.discoveryCount, equals(initialDiscoveryCount));
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // Now camera settles on the submitted coordinates
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.5839, 121.0617), zoom: 16.5),
+        );
+        discoveryFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+
+        // Query fires after settlement and opens preview
+        expect(restroomRepo.discoveryCount, greaterThan(initialDiscoveryCount));
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text(submittedName), findsAtLeastNWidgets(1));
+      },
+    );
+
+    testWidgets(
+      'C.4 Premature camera idle on intermediate/stale bounds does not trigger query until bounds contain coordinates',
+      (tester) async {
+        const submittedName = 'Stale Bounds Restroom';
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.autoSettle = false;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        final initialDiscoveryCount = restroomRepo.discoveryCount;
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Intermediate idle at (0.0, 0.0) — does NOT contain (14.5839, 121.0617)
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(0.0, 0.0), zoom: 10.0),
+        );
+        discoveryFakeMap.simulateIdle();
+        await tester.pump();
+
+        // Should NOT trigger query for submitted restroom
+        expect(restroomRepo.discoveryCount, equals(initialDiscoveryCount));
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // Final settlement at submitted coordinates
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.5839, 121.0617), zoom: 16.5),
+        );
+        discoveryFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.discoveryCount, greaterThan(initialDiscoveryCount));
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'C.5 Stale focus intent race during settlement: newer focus intent supersedes earlier settlement',
+      (tester) async {
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.autoSettle = false;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Restroom A');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // While Restroom A focus is waiting for settlement, a newer focus intent B arrives
+        final restroomB = Restroom(
+          id: 'restroom_b',
+          name: 'Restroom B',
+          coordinates: Coordinates(latitude: 14.5900, longitude: 121.0700),
+          geohash: 'w4rr7y',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+        discoveryNotifier.focusOnRestroom(restroomB);
+        await tester.pump();
+
+        // Now older settlement finishes for Restroom A coordinates
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.5839, 121.0617), zoom: 16.5),
+        );
+        discoveryFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+
+        // Restroom A preview sheet should NOT be opened
+        expect(
+          find.widgetWithText(RestroomPreviewSheet, 'Restroom A'),
+          findsNothing,
+        );
+      },
+    );
+
+    testWidgets(
+      'C.6 Unverified/out-of-bounds settlement surfaces recovery SnackBar without 500m speculative fallback',
+      (tester) async {
+        const submittedName = 'Out Of Bounds Restroom';
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.visibleRegionOverride = () => LatLngBounds(
+          southwest: const LatLng(0.0, 0.0),
+          northeast: const LatLng(0.01, 0.01),
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(seconds: 4));
+        await tester.pumpAndSettle();
+
+        // Preview sheet should NOT open
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // Surfaces explicit recovery SnackBar without 500m fallback
+        expect(
+          find.text(
+            'Restroom saved, but map could not confirm centering on $submittedName. Tap to retry.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'C.7 Authoritative discovery query error surfaces retry SnackBar without false preview',
+      (tester) async {
+        const submittedName = 'Query Error Restroom';
+        restroomRepo.viewportQueryShouldThrow = true;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // Preview sheet NOT opened
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // Surfaces discovery failure SnackBar
+        expect(
+          find.text(
+            'Restroom saved, but discovery refresh encountered an error. Tap Refresh to try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Refresh'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'C.8 Map focus initiation failure surfaces recoverable SnackBar with Center action',
+      (tester) async {
+        final throwingNotifier = ThrowingDiscoveryNotifier(
+          restroomRepository: restroomRepo,
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: throwingNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Focus Crash Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(
+          find.text(
+            'Restroom saved, but map could not navigate automatically. Tap to center.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Center'), findsOneWidget);
       },
     );
   });
@@ -953,6 +1490,78 @@ void main() {
           findsOneWidget,
         );
         expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'D.6 Server permission denied error surfaces permission error SnackBar and preserves draft',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'Missing permission',
+          'permission-denied',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Permission Denied Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Submission rejected by server permissions. Please ensure your session is valid.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'D.7 Invalid draft error surfaces validation error SnackBar with Resume action',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'Coordinates are out of bounds.',
+          'invalid-draft',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Invalid Coords Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text('Invalid restroom details: Coordinates are out of bounds.'),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
       },
     );
   });

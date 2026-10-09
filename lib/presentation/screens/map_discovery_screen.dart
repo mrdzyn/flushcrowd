@@ -44,11 +44,14 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   GoogleMapController? _googleMapController;
   MapCameraController? _mapCameraController;
   bool _isRecentering = false;
+  bool _isCameraMoving = false;
   MapDiscoveryNotifier? _discoveryNotifier;
   int? _lastExecutedFocusToken;
   MapFocusIntent? _pendingFocusExecution;
   int? _activeFailureToken;
   String? _activeFailureRestroomId;
+  Completer<GeoBoundingBox?>? _cameraSettlementCompleter;
+  int? _settlementToken;
 
   @override
   void didChangeDependencies() {
@@ -65,6 +68,9 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   @override
   void dispose() {
     _discoveryNotifier?.removeListener(_onNotifierChanged);
+    _cameraSettlementCompleter?.complete(null);
+    _cameraSettlementCompleter = null;
+    _settlementToken = null;
     _activeFailureToken = null;
     _activeFailureRestroomId = null;
     super.dispose();
@@ -179,45 +185,144 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       return;
     }
 
-    // Consume the intent in notifier now that execution (or failure) is complete.
-    notifier.consumeFocusIntent(intent.token);
-
     if (cameraMoved) {
       // Camera moved successfully: notify target change and open preview if requested.
       widget.onCameraTargetChanged?.call(coords);
 
       if (intent.forceRefresh) {
-        // Canonical Discovery Synchronization (P2.5-C)
-        GeoBoundingBox? geoBounds;
-        double? currentZoom;
+        // Canonical Discovery Synchronization (P2.5-C / MAJOR-1):
+        // Coordinate with camera settlement and validate that the visible viewport contains coords.
+        GeoBoundingBox? settledBounds;
+        double? settledZoom;
+
+        // 1. Check if the camera has already settled and current visible region contains coords at target zoom
         try {
-          final bounds = await _getVisibleRegion();
-          currentZoom = await _getZoomLevel();
-          if (bounds != null) {
-            geoBounds = GeoBoundingBox(
-              southWest: Coordinates(
-                latitude: bounds.southwest.latitude,
-                longitude: bounds.southwest.longitude,
-              ),
-              northEast: Coordinates(
-                latitude: bounds.northeast.latitude,
-                longitude: bounds.northeast.longitude,
-              ),
-            );
+          final immediateBounds = await _getVisibleBoundingBox();
+          final immediateZoom = await _getZoomLevel();
+          final isZoomSettled =
+              immediateZoom != null &&
+              (immediateZoom - intent.zoom).abs() < 0.1;
+          if (immediateBounds != null &&
+              immediateBounds.contains(coords) &&
+              !_isCameraMoving &&
+              isZoomSettled) {
+            settledBounds = immediateBounds;
+            settledZoom = immediateZoom;
           }
         } catch (_) {}
 
-        geoBounds ??= GeoBoundingBox.fromCenterAndRadius(
-          coords,
-          radiusMeters: 500,
-        );
+        // 2. If not immediately settled with valid containing bounds, await camera settlement
+        if (settledBounds == null) {
+          final completer = Completer<GeoBoundingBox?>();
+          _cameraSettlementCompleter = completer;
+          _settlementToken = intent.token;
 
+          // Safety timeout (3 seconds) to prevent hanging indefinitely
+          Timer? timeoutTimer;
+          timeoutTimer = Timer(const Duration(milliseconds: 3000), () {
+            if (!completer.isCompleted) {
+              completer.complete(null);
+            }
+          });
+
+          settledBounds = await completer.future;
+          timeoutTimer.cancel();
+          if (_cameraSettlementCompleter == completer) {
+            _cameraSettlementCompleter = null;
+            _settlementToken = null;
+          }
+          try {
+            settledZoom = await _getZoomLevel();
+          } catch (_) {}
+        }
+
+        // Stale intent guard after settlement wait:
+        if (!mounted) return;
+        if (notifier.pendingFocusIntent?.token != intent.token ||
+            notifier.latestFocusToken != intent.token) {
+          return;
+        }
+
+        // Consume intent now that settlement phase is verified
+        notifier.consumeFocusIntent(intent.token);
+
+        if (settledBounds == null || !settledBounds.contains(coords)) {
+          // Viewport could not be verified to contain the coordinates.
+          // NEVER use a speculative 500m fallback bounding box as proof of centering.
+          // Expose recoverable state.
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Restroom saved, but map could not confirm centering on $facilityName. Tap to retry.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Retry',
+                onPressed: () {
+                  if (mounted && targetRestroomId != null) {
+                    notifier.focusOnSubmittedRestroom(
+                      coordinates: coords,
+                      restroomId: targetRestroomId,
+                      facilityName: facilityName,
+                      zoom: intent.zoom,
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+          return;
+        }
+
+        // Execute forced authoritative viewport refresh with verified bounds
         await notifier.refreshCurrentViewport(
-          bounds: geoBounds,
-          zoom: currentZoom ?? intent.zoom,
+          bounds: settledBounds,
+          zoom: settledZoom ?? intent.zoom,
         );
 
         if (!mounted || notifier.latestFocusToken != intent.token) {
+          return;
+        }
+
+        // Handle discovery status:
+        if (notifier.status == DiscoveryStatus.error) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Restroom saved, but discovery refresh encountered an error. Tap Refresh to try again.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Refresh',
+                onPressed: () {
+                  if (mounted && targetRestroomId != null) {
+                    notifier.focusOnSubmittedRestroom(
+                      coordinates: coords,
+                      restroomId: targetRestroomId,
+                      facilityName: facilityName,
+                      zoom: intent.zoom,
+                    );
+                  }
+                },
+              ),
+            ),
+          );
+          return;
+        }
+
+        if (notifier.status == DiscoveryStatus.suppressed) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Restroom saved. Zoom in to view it on the map.'),
+              duration: Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
           return;
         }
 
@@ -265,15 +370,19 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
           );
         }
       } else if (intent.openPreview && intent.restroom != null) {
+        notifier.consumeFocusIntent(intent.token);
         final locationNotifier = context.read<LocationNotifier>();
         _showRestroomPreviewSheet(
           context,
           intent.restroom!,
           locationNotifier.currentCoordinates,
         );
+      } else {
+        notifier.consumeFocusIntent(intent.token);
       }
     } else {
       // Camera operation failed: do not automatically open preview as though map navigation succeeded.
+      notifier.consumeFocusIntent(intent.token);
       // Track active failure state for safe, non-stale recovery controls.
       _activeFailureToken = intent.token;
       _activeFailureRestroomId = targetRestroomId;
@@ -414,6 +523,21 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     return null;
   }
 
+  Future<GeoBoundingBox?> _getVisibleBoundingBox() async {
+    final bounds = await _getVisibleRegion();
+    if (bounds == null) return null;
+    return GeoBoundingBox(
+      southWest: Coordinates(
+        latitude: bounds.southwest.latitude,
+        longitude: bounds.southwest.longitude,
+      ),
+      northEast: Coordinates(
+        latitude: bounds.northeast.latitude,
+        longitude: bounds.northeast.longitude,
+      ),
+    );
+  }
+
   Future<double?> _getZoomLevel() async {
     if (_googleMapController != null) {
       return _googleMapController!.getZoomLevel();
@@ -427,6 +551,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
 
   Future<void> _handleCameraIdle() async {
     if (!mounted) return;
+    _isCameraMoving = false;
     final notifier = context.read<MapDiscoveryNotifier>();
     try {
       final bounds = await _getVisibleRegion();
@@ -442,6 +567,21 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             longitude: bounds.northeast.longitude,
           ),
         );
+
+        // Coordinate with pending camera settlement for submitted restroom focus
+        if (_cameraSettlementCompleter != null &&
+            !_cameraSettlementCompleter!.isCompleted &&
+            _settlementToken != null) {
+          final pendingIntent = notifier.pendingFocusIntent;
+          if (pendingIntent != null &&
+              pendingIntent.token == _settlementToken) {
+            if (geoBounds.contains(pendingIntent.coordinates)) {
+              _cameraSettlementCompleter!.complete(geoBounds);
+            }
+            return; // In-flight focus coordinates its own refresh; suppress regular idle discovery on intermediate bounds
+          }
+        }
+
         notifier.onCameraIdle(bounds: geoBounds, zoom: zoom);
       }
     } catch (_) {
@@ -631,6 +771,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
         },
         onCameraIdle: _handleCameraIdle,
         onCameraMoveStarted: () {
+          _isCameraMoving = true;
           context.read<MapDiscoveryNotifier>().onCameraMoveStarted();
         },
       );
@@ -649,6 +790,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       markers: markers,
       clusterManagers: {clusterManager},
       onCameraMoveStarted: () {
+        _isCameraMoving = true;
         context.read<MapDiscoveryNotifier>().onCameraMoveStarted();
       },
       onCameraMove: (position) {

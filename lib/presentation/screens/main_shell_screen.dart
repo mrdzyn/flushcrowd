@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
 import '../../core/config/app_config.dart';
-import '../../core/config/environment.dart';
 import '../../core/constants/app_constants.dart';
 import '../../core/errors/exceptions.dart';
 import '../../core/theme/app_colors.dart';
@@ -256,62 +255,44 @@ class _MainShellScreenState extends State<MainShellScreen> {
     required Coordinates confirmedCoordinates,
     String? advisoryScanNote,
   }) async {
+    // Acquire operation lock before any async stage
     if (_isSubmitting) return;
+    setState(() => _isSubmitting = true);
 
-    final config =
-        Provider.of<AppConfig?>(context, listen: false) ??
-        const AppConfig(environment: Environment.staging);
+    try {
+      final config = Provider.of<AppConfig?>(context, listen: false);
 
-    // P2.5-A.2: Production release gate (blocked until P2.6 server rate limiting)
-    if (config.isProduction) {
-      _preservedDraftCommand = command;
-      _preservedDraftCoordinates = confirmedCoordinates;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: const Text(
-            'Community restroom contributions are currently disabled in production until server-side abuse protections are active (Milestone P2.6).',
-          ),
-          duration: const Duration(seconds: 6),
-          behavior: SnackBarBehavior.floating,
-          action: SnackBarAction(
-            label: 'Resume',
-            onPressed: () {
-              if (mounted) {
-                _openAddRestroom();
-              }
-            },
-          ),
-        ),
-      );
-      return;
-    }
-
-    // P2.5-A.3: Ensure anonymous session before write
-    final authNotifier = Provider.of<AuthNotifier?>(context, listen: false);
-    if (authNotifier != null && !authNotifier.isAuthenticated) {
-      await authNotifier.signInAnonymously();
-      if (!mounted) return;
-      if (!authNotifier.isAuthenticated) {
+      // BLOCKER-1: Fail closed unless verified staging and approved staging project ID
+      if (config == null || !config.isStagingSubmissionAllowed) {
         _preservedDraftCommand = command;
         _preservedDraftCoordinates = confirmedCoordinates;
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
+
+        final String rejectionMessage;
+        if (config == null) {
+          rejectionMessage = 'Community restroom contributions are unavailable due to missing application configuration.';
+        } else if (config.isProduction) {
+          rejectionMessage = 'Community restroom contributions are currently disabled in production until server-side abuse protections are active (Milestone P2.6).';
+        } else if (!config.isStaging) {
+          rejectionMessage = 'Community restroom contributions are only permitted in the verified staging environment.';
+        } else if (config.firebaseProjectId !=
+            AppConstants.stagingFirebaseProjectId) {
+          rejectionMessage =
+              'Community restroom contributions are restricted to the verified staging Firebase project (${AppConstants.stagingFirebaseProjectId}).';
+        } else {
+          rejectionMessage = 'Community restroom contributions are only permitted in the verified staging environment.';
+        }
+
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: const Text(
-              'Unable to sign in anonymously. Please check your internet connection and try again.',
-            ),
+            content: Text(rejectionMessage),
             duration: const Duration(seconds: 6),
             behavior: SnackBarBehavior.floating,
             action: SnackBarAction(
-              label: 'Retry',
+              label: 'Resume',
               onPressed: () {
                 if (mounted) {
-                  _submitRestroom(
-                    command: command,
-                    confirmedCoordinates: confirmedCoordinates,
-                    advisoryScanNote: advisoryScanNote,
-                  );
+                  _openAddRestroom();
                 }
               },
             ),
@@ -319,86 +300,148 @@ class _MainShellScreenState extends State<MainShellScreen> {
         );
         return;
       }
-    }
 
-    setState(() => _isSubmitting = true);
-    ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Row(
-          children: [
-            SizedBox(
-              width: 18,
-              height: 18,
-              child: CircularProgressIndicator(
-                strokeWidth: 2,
-                color: Colors.white,
+      // MAJOR-2: Ensure anonymous session before write while operation lock is held
+      final authNotifier = Provider.of<AuthNotifier?>(context, listen: false);
+      if (authNotifier != null && !authNotifier.isAuthenticated) {
+        await authNotifier.signInAnonymously();
+        if (!mounted) return;
+        if (!authNotifier.isAuthenticated) {
+          _preservedDraftCommand = command;
+          _preservedDraftCoordinates = confirmedCoordinates;
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Unable to sign in anonymously. Please check your internet connection and try again.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Retry',
+                onPressed: () {
+                  if (mounted) {
+                    _submitRestroom(
+                      command: command,
+                      confirmedCoordinates: confirmedCoordinates,
+                      advisoryScanNote: advisoryScanNote,
+                    );
+                  }
+                },
               ),
             ),
-            SizedBox(width: 14),
-            Text('Submitting restroom...'),
-          ],
+          );
+          return;
+        }
+      }
+
+      // Display non-dismissible progress indicator
+      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Row(
+            children: [
+              SizedBox(
+                width: 18,
+                height: 18,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              ),
+              SizedBox(width: 14),
+              Text('Submitting restroom...'),
+            ],
+          ),
+          duration: Duration(days: 1),
+          behavior: SnackBarBehavior.floating,
         ),
-        duration: Duration(days: 1),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
+      );
 
-    Object? submissionError;
+      Object? submissionError;
+      try {
+        final repo = context.read<RestroomRepository>();
+        await repo.submitRestroom(command);
+      } catch (e) {
+        submissionError = e;
+      }
 
-    try {
-      final repo = context.read<RestroomRepository>();
-      await repo.submitRestroom(command);
-    } catch (e) {
-      submissionError = e;
+      if (!mounted) return;
+
+      ScaffoldMessenger.of(context).clearSnackBars();
+
+      if (submissionError != null) {
+        _handleSubmissionFailure(
+          command: command,
+          confirmedCoordinates: confirmedCoordinates,
+          error: submissionError,
+        );
+        return;
+      }
+
+      // Success! Clear preserved draft
+      _preservedDraftCommand = null;
+      _preservedDraftCoordinates = null;
+
+      final successMessage = advisoryScanNote != null
+          ? '$advisoryScanNote Restroom "${command.draft.name}" submitted successfully.'
+          : 'Restroom "${command.draft.name}" submitted successfully.';
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(successMessage),
+          duration: const Duration(seconds: 4),
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+
+      // Switch to Map tab (tab 0)
+      setState(() => _currentTabIndex = 0);
+
+      // Canonical discovery sync (P2.5-C)
+      try {
+        final discoveryNotifier = context.read<MapDiscoveryNotifier>();
+        discoveryNotifier.focusOnSubmittedRestroom(
+          coordinates: command.draft.coordinates,
+          restroomId: command.restroomId,
+          facilityName: command.draft.name,
+          zoom: 16.5,
+        );
+      } catch (e) {
+        debugPrint('Failed to initiate map focus on submitted restroom: $e');
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Restroom saved, but map could not navigate automatically. Tap to center.',
+            ),
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Center',
+              onPressed: () {
+                if (mounted) {
+                  try {
+                    context
+                        .read<MapDiscoveryNotifier>()
+                        .focusOnSubmittedRestroom(
+                          coordinates: command.draft.coordinates,
+                          restroomId: command.restroomId,
+                          facilityName: command.draft.name,
+                          zoom: 16.5,
+                        );
+                  } catch (_) {}
+                }
+              },
+            ),
+          ),
+        );
+      }
     } finally {
       if (mounted) {
         setState(() => _isSubmitting = false);
       }
     }
-
-    if (!mounted) return;
-
-    ScaffoldMessenger.of(context).clearSnackBars();
-
-    if (submissionError != null) {
-      _handleSubmissionFailure(
-        command: command,
-        confirmedCoordinates: confirmedCoordinates,
-        error: submissionError,
-      );
-      return;
-    }
-
-    // Success! Clear preserved draft
-    _preservedDraftCommand = null;
-    _preservedDraftCoordinates = null;
-
-    final successMessage = advisoryScanNote != null
-        ? '$advisoryScanNote Restroom "${command.draft.name}" submitted successfully.'
-        : 'Restroom "${command.draft.name}" submitted successfully.';
-
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text(successMessage),
-        duration: const Duration(seconds: 4),
-        behavior: SnackBarBehavior.floating,
-      ),
-    );
-
-    // Switch to Map tab (tab 0)
-    setState(() => _currentTabIndex = 0);
-
-    // Canonical discovery sync (P2.5-C)
-    try {
-      final discoveryNotifier = context.read<MapDiscoveryNotifier>();
-      discoveryNotifier.focusOnSubmittedRestroom(
-        coordinates: command.draft.coordinates,
-        restroomId: command.restroomId,
-        facilityName: command.draft.name,
-        zoom: 16.5,
-      );
-    } catch (_) {}
   }
 
   void _handleSubmissionFailure({
@@ -422,7 +465,11 @@ class _MainShellScreenState extends State<MainShellScreen> {
     };
 
     if (error is SubmissionInvariantException) {
-      errorMessage = 'Data invariant violation: only one document of the restroom pair exists. Cannot safely submit.';
+      final detail = error.message.replaceFirst(
+        RegExp(r'^(Data )?[Ii]nvariant violation:\s*'),
+        '',
+      );
+      errorMessage = 'Data invariant violation: $detail';
       actionLabel = 'Resume';
       onAction = () {
         if (mounted) {
@@ -440,12 +487,37 @@ class _MainShellScreenState extends State<MainShellScreen> {
             _openAddRestroom();
           }
         };
+      } else if (error.code == 'production-writes-blocked' ||
+          error.code == 'unconfigured-environment' ||
+          error.code == 'staging-project-mismatch' ||
+          error.code == 'non-staging-environment') {
+        errorMessage = error.message;
+        actionLabel = 'Resume';
+        onAction = () {
+          if (mounted) {
+            _openAddRestroom();
+          }
+        };
+      } else if (error.code == 'invalid-draft' ||
+          error.code == 'invalid-restroom-id') {
+        errorMessage = 'Invalid restroom details: ${error.message}';
+        actionLabel = 'Resume';
+        onAction = () {
+          if (mounted) {
+            _openAddRestroom();
+          }
+        };
       } else if (error.code == 'permission-denied' ||
           error.code == 'unauthorized') {
-        errorMessage = 'Unable to save restroom. Please ensure you are using the official app.';
-      } else {
+        errorMessage = 'Submission rejected by server permissions. Please ensure your session is valid.';
+      } else if (error.code == 'network-error' ||
+          error.code == 'unavailable' ||
+          error.code == 'deadline-exceeded') {
         errorMessage =
             'Connection failed. Please check your internet connection.';
+      } else {
+        errorMessage =
+            'Unable to save restroom (${error.message}). Please try again.';
       }
     } else {
       errorMessage =

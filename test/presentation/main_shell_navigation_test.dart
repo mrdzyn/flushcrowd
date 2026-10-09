@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flushcrowd/core/config/app_config.dart';
+import 'package:flushcrowd/core/config/environment.dart';
 import 'package:flushcrowd/core/constants/app_constants.dart';
 import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
@@ -219,9 +221,14 @@ Widget createTestApp({
   required MapDiscoveryNotifier discoveryNotifier,
   required FakeMapState fakeMap,
   FakeMapState? discoveryFakeMap,
+  AppConfig config = const AppConfig(
+    environment: Environment.staging,
+    firebaseProjectId: AppConstants.stagingFirebaseProjectId,
+  ),
 }) {
   return MultiProvider(
     providers: [
+      Provider<AppConfig>.value(value: config),
       Provider<RestroomRepository>.value(value: restroomRepo),
       Provider<LocationRepository>.value(value: locationRepo),
       ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),

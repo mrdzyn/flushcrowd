@@ -21,14 +21,18 @@ import 'presentation/state/map_discovery_notifier.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final config = AppConfig.fromEnvironment();
+  var config = AppConfig.fromEnvironment();
 
   // Safe Firebase Initialization Boundary
   AuthRepository authRepository;
   RestroomRepository restroomRepository;
 
   try {
-    await Firebase.initializeApp();
+    final firebaseApp = await Firebase.initializeApp();
+    final detectedProjectId = firebaseApp.options.projectId;
+    if (detectedProjectId.isNotEmpty) {
+      config = config.copyWith(firebaseProjectId: detectedProjectId);
+    }
     final appCheckService = FirebaseAppCheckService(config: config);
     await appCheckService.initialize();
 
