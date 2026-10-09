@@ -2,16 +2,16 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-08
+- **Last updated:** 2026-10-09
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.4 Bounded Duplicate Detection Engine & Advisory Warning UX — remediation active / pending independent re-audit
+- **Current milestone:** Milestone P2.4 Bounded Duplicate Detection Engine & Advisory Warning UX — ACTIVE
 - **Current branch:** `phase-2/p2.4-duplicate-detection`
 - **Current PR:** #10 — `feat: implement P2.4 bounded duplicate detection engine and advisory warning UX`
 - **Base:** `main` at `ce04479bd3b69ca9b3bc342854583f8ff7544330` (includes PR #9 Explore tab squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [AUDIT REMEDIATED — READY FOR RE-AUDIT]; P2.5 [NOT STARTED].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [ACTIVE]; P2.5 [NOT STARTED].
 
 ## Current objective
 
@@ -286,8 +286,11 @@ Owner-confirmed staging infrastructure state:
   - Manual human QA: PASS on Android, PASS on iOS
 - Phase 1 Explore tab restoration:
   - MERGED into main (`ce04479bd3b69ca9b3bc342854583f8ff7544330`, PR #9)
+  - Manual human QA: PASS on Android, PASS on iOS
 - Milestone P2.4 (Duplicate Detection):
-  - IMPLEMENTED & VALIDATED — READY FOR AUDIT
+  - ACTIVE
+- Milestone P2.5:
+  - NOT STARTED
 
 ## Current owner actions / external dependencies
 
@@ -300,7 +303,7 @@ Owner-confirmed staging infrastructure state:
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (96 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (363/363 tests passed: 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 14 tests in `main_shell_navigation_test.dart` + 6 tests in `map_focus_navigation_test.dart` + 54 tests in `firestore_restroom_repository_test.dart`)
-- Firestore Security Rules emulator tests — NOT RUN (Firestore emulator requires JDK >= 21 in host environment; rules unchanged in P2.4)
+- Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
 - `flutter build apk --debug` without credentials — PASS (built in 12.2s)
 - `flutter build ios --debug --no-codesign` without credentials — PASS (built in 27.1s)
 - `git diff --check` — PASS
