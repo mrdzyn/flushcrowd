@@ -203,29 +203,27 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Non-blocking advisory warning with continue, view existing, and cancel actions; safe draft preservation across flows.
 
 ### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback [AUDIT REMEDIATED — READY FOR RE-AUDIT]
-- **Priority 1 (BLOCKER-1 — Staging-only Write Safety):**
-  - Fail-closed client submission gate in `MainShellScreen._submitRestroom`: requires explicit `config.isStaging` AND `config.firebaseProjectId == 'flushcrowd-staging'`.
-  - Blocks submissions and safely preserves draft with `Resume` action for: missing config (`unconfigured-environment`), default development (`Environment.development`), unknown environments (`Environment.unknown`), mismatched/null project IDs, and production (`production-writes-blocked`).
-  - Added 5 negative safety regression tests in `test/presentation/p2_5_submission_map_sync_test.dart` (A.4 to A.8) confirming zero writes occur for unverified configurations.
-  - Zero changes to production/staging Firestore rules or indexes without authorization.
-- **Priority 2 (MAJOR-1 — Authoritative Map Refresh Timing & Settlement Coordination):**
-  - Coordinated submitted-restroom focus refresh with camera settlement; eliminated speculative 500m bounding box fallback.
-  - Validates that visible viewport bounds actually contain submitted coordinates at target zoom before triggering authoritative discovery.
-  - Suppresses premature/intermediate idle discovery queries while settlement is in-flight.
-  - Handles discovery error (`error`), zoom suppression (`suppressed`), and record omission with explicit recovery SnackBars (`Retry` / `Refresh`) without displaying false preview cards.
-  - Added regression tests for delayed settlement (C.3), intermediate stale bounds (C.4), stale focus-intent supersession (C.5), unverified bounds recovery (C.6), and discovery error recovery (C.7).
-- **Priority 3 (MAJOR-2 — Submission Single-Flight Lock Ordering):**
-  - Acquired `_isSubmitting = true` synchronously at the entry of `_submitRestroom` before awaiting anonymous authentication or any async phase.
-  - Wrapped submission in `try ... finally` ensuring lock release on all completion paths.
-  - Added concurrency test (B.4) verifying that repeated taps while awaiting deferred anonymous sign-in result in exactly 1 repository write.
-- **Priority 4 (MINOR-1 — Error Classification & Reporting):**
-  - Enhanced error classification: surfaces `error.message` for `SubmissionInvariantException`, distinguishes permission-denied (`permission-denied`), validation failures (`invalid-draft`), and configuration mismatch errors.
-  - Wrapped map focus initiation (`focusOnSubmittedRestroom`) with error logging and recoverable fallback SnackBar (`Center` action) to prevent silent swallowing.
-  - Added tests C.8, D.6, and D.7 covering map focus failure and error classifications.
+- **Targeted Re-Audit Remediation (HOLD Resolution):**
+  - **MAJOR-1 — Stale P2.5 recovery actions invalidated & guarded:**
+    - Token-owned tracking (`_activeRecoveryToken`, `_activeRecoveryRestroomId`) for all submitted-restroom recovery SnackBars (unverified bounds, discovery error, record omitted).
+    - In `_onNotifierChanged`, invalidates and dismisses active recovery SnackBars when superseded by a newer focus token or explicit user selection of another facility via `addPostFrameCallback` (preventing `setState` during build).
+    - Closure-level token-ownership and selection guards in `Retry` and `Refresh` actions prevent stale callbacks from overriding newer focus or manual user selection.
+    - Valid current `Retry` and `Refresh` recovery remains completely functional and dispatches fresh focus intents.
+  - **MAJOR-2 — Strict zoom tolerance on awaited camera settlement:**
+    - `_handleCameraIdle` validates both coordinate containment and target zoom tolerance (`(zoom - pendingIntent.zoom).abs() < 0.1`) before completing `_cameraSettlementCompleter`. Intermediate idles at zoom 13 or 10 suppress discovery without completing settlement.
+    - `_executeFocusIntent` verifies `isSettledZoomValid` before running authoritative viewport discovery; unverified zoom exposes recoverable `Retry` state.
+    - Tested: delayed animation with target-containing bounds at zoom 13 triggers zero queries/previews; final 16.5 idle triggers exactly one authoritative query and preview (Test C.9).
+  - **MINOR-1 — Completer disposal race guarded:**
+    - Guarded `_cameraSettlementCompleter?.complete(null)` in `dispose()` with `!isCompleted`, preventing `StateError: Future already completed`.
+    - Tested teardown while settlement is pending (Test C.12) and immediately after completion (Test C.13).
+- **Prior Findings Remediated:**
+  - **BLOCKER-1 — Staging-only Write Safety:** Fail-closed gate requires `config.isStaging` AND `firebaseProjectId == 'flushcrowd-staging'`; tested default/dev/unknown/prod/mismatched configurations (Tests A.4–A.8).
+  - **MAJOR-1 — Authoritative Map Refresh Timing:** Removed speculative 500m fallback; coordinates camera settlement with coordinate containment and target zoom verification; tested C.3–C.7.
+  - **MAJOR-2 — Submission Single-Flight Lock:** Synchronously acquires `_isSubmitting = true` before awaiting anonymous auth or async stages; tested concurrency with deferred auth (Test B.4).
+  - **MINOR-1 — Inaccurate Error Handling:** Distinct error classification for permission-denied, invalid draft, invariant violations; map focus initiation error recovery.
 - **P2.5 Testability & Quality Checks:**
-  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` from 13 to 27 comprehensive tests across Groups A through D.
-  - Updated `test/presentation/main_shell_navigation_test.dart` to provide verified staging `AppConfig`.
-  - Full test suite: 401 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
+  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 32 tests (covering A.1–A.8, B.1–B.4, C.1–C.13, D.1–D.7).
+  - Full test suite: 406 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
 
 ### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation (PLANNED)
 - Audit touch targets (>= 48×48), semantic labels, and contrast.
@@ -308,7 +306,7 @@ Milestone P2.5 audit-remediation exact-head validation:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (401/401 tests passed: 27 tests in `p2_5_submission_map_sync_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
+- `flutter test` — PASS (406/406 tests passed: 32 tests in `p2_5_submission_map_sync_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
 - Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)

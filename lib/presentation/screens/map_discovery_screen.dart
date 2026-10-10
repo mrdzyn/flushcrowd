@@ -50,6 +50,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   MapFocusIntent? _pendingFocusExecution;
   int? _activeFailureToken;
   String? _activeFailureRestroomId;
+  int? _activeRecoveryToken;
+  String? _activeRecoveryRestroomId;
   Completer<GeoBoundingBox?>? _cameraSettlementCompleter;
   int? _settlementToken;
 
@@ -68,11 +70,16 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   @override
   void dispose() {
     _discoveryNotifier?.removeListener(_onNotifierChanged);
-    _cameraSettlementCompleter?.complete(null);
+    if (_cameraSettlementCompleter != null &&
+        !_cameraSettlementCompleter!.isCompleted) {
+      _cameraSettlementCompleter!.complete(null);
+    }
     _cameraSettlementCompleter = null;
     _settlementToken = null;
     _activeFailureToken = null;
     _activeFailureRestroomId = null;
+    _activeRecoveryToken = null;
+    _activeRecoveryRestroomId = null;
     super.dispose();
   }
 
@@ -87,7 +94,26 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             _activeFailureRestroomId != notifier.selectedRestroom?.id)) {
       _activeFailureToken = null;
       _activeFailureRestroomId = null;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
+      });
+    }
+
+    // Invalidate and dismiss active submitted-restroom recovery snackbar if superseded
+    // by a newer focus or if the user explicitly selected another restroom.
+    if (_activeRecoveryToken != null &&
+        (_activeRecoveryToken != notifier.latestFocusToken ||
+            (notifier.selectedRestroom != null &&
+                _activeRecoveryRestroomId != notifier.selectedRestroom?.id))) {
+      _activeRecoveryToken = null;
+      _activeRecoveryRestroomId = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
+      });
     }
 
     final intent = notifier.pendingFocusIntent;
@@ -128,10 +154,12 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       return;
     }
 
-    // Dismiss any active failure snackbar upon executing a focus intent.
-    if (_activeFailureToken != null) {
+    // Dismiss any active failure or recovery snackbar upon executing a focus intent.
+    if (_activeFailureToken != null || _activeRecoveryToken != null) {
       _activeFailureToken = null;
       _activeFailureRestroomId = null;
+      _activeRecoveryToken = null;
+      _activeRecoveryRestroomId = null;
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
       }
@@ -246,10 +274,17 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
         // Consume intent now that settlement phase is verified
         notifier.consumeFocusIntent(intent.token);
 
-        if (settledBounds == null || !settledBounds.contains(coords)) {
-          // Viewport could not be verified to contain the coordinates.
+        final isSettledZoomValid =
+            settledZoom != null && (settledZoom - intent.zoom).abs() < 0.1;
+
+        if (settledBounds == null ||
+            !settledBounds.contains(coords) ||
+            !isSettledZoomValid) {
+          // Viewport could not be verified to contain the coordinates at target zoom.
           // NEVER use a speculative 500m fallback bounding box as proof of centering.
           // Expose recoverable state.
+          _activeRecoveryToken = intent.token;
+          _activeRecoveryRestroomId = targetRestroomId;
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -261,14 +296,22 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
               action: SnackBarAction(
                 label: 'Retry',
                 onPressed: () {
-                  if (mounted && targetRestroomId != null) {
-                    notifier.focusOnSubmittedRestroom(
-                      coordinates: coords,
-                      restroomId: targetRestroomId,
-                      facilityName: facilityName,
-                      zoom: intent.zoom,
-                    );
+                  if (!mounted || targetRestroomId == null) return;
+                  if (notifier.latestFocusToken != intent.token ||
+                      (notifier.selectedRestroom != null &&
+                          notifier.selectedRestroom?.id != targetRestroomId)) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    return;
                   }
+                  _activeRecoveryToken = null;
+                  _activeRecoveryRestroomId = null;
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  notifier.focusOnSubmittedRestroom(
+                    coordinates: coords,
+                    restroomId: targetRestroomId,
+                    facilityName: facilityName,
+                    zoom: intent.zoom,
+                  );
                 },
               ),
             ),
@@ -279,7 +322,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
         // Execute forced authoritative viewport refresh with verified bounds
         await notifier.refreshCurrentViewport(
           bounds: settledBounds,
-          zoom: settledZoom ?? intent.zoom,
+          zoom: settledZoom,
         );
 
         if (!mounted || notifier.latestFocusToken != intent.token) {
@@ -288,6 +331,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
 
         // Handle discovery status:
         if (notifier.status == DiscoveryStatus.error) {
+          _activeRecoveryToken = intent.token;
+          _activeRecoveryRestroomId = targetRestroomId;
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -299,14 +344,22 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
               action: SnackBarAction(
                 label: 'Refresh',
                 onPressed: () {
-                  if (mounted && targetRestroomId != null) {
-                    notifier.focusOnSubmittedRestroom(
-                      coordinates: coords,
-                      restroomId: targetRestroomId,
-                      facilityName: facilityName,
-                      zoom: intent.zoom,
-                    );
+                  if (!mounted || targetRestroomId == null) return;
+                  if (notifier.latestFocusToken != intent.token ||
+                      (notifier.selectedRestroom != null &&
+                          notifier.selectedRestroom?.id != targetRestroomId)) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    return;
                   }
+                  _activeRecoveryToken = null;
+                  _activeRecoveryRestroomId = null;
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  notifier.focusOnSubmittedRestroom(
+                    coordinates: coords,
+                    restroomId: targetRestroomId,
+                    facilityName: facilityName,
+                    zoom: intent.zoom,
+                  );
                 },
               ),
             ),
@@ -333,6 +386,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             : null;
 
         if (matchingRestroom != null) {
+          _activeRecoveryToken = null;
+          _activeRecoveryRestroomId = null;
           notifier.selectRestroom(matchingRestroom);
           if (intent.openPreview) {
             final locationNotifier = context.read<LocationNotifier>();
@@ -345,6 +400,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
         } else {
           // Authoritative discovery did not return the new record.
           // Never claim successful map refresh when not observed; offer explicit recovery.
+          _activeRecoveryToken = intent.token;
+          _activeRecoveryRestroomId = targetRestroomId;
           ScaffoldMessenger.of(context).hideCurrentSnackBar();
           ScaffoldMessenger.of(context).showSnackBar(
             SnackBar(
@@ -356,14 +413,22 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
               action: SnackBarAction(
                 label: 'Refresh',
                 onPressed: () {
-                  if (mounted && targetRestroomId != null) {
-                    notifier.focusOnSubmittedRestroom(
-                      coordinates: coords,
-                      restroomId: targetRestroomId,
-                      facilityName: facilityName,
-                      zoom: intent.zoom,
-                    );
+                  if (!mounted || targetRestroomId == null) return;
+                  if (notifier.latestFocusToken != intent.token ||
+                      (notifier.selectedRestroom != null &&
+                          notifier.selectedRestroom?.id != targetRestroomId)) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    return;
                   }
+                  _activeRecoveryToken = null;
+                  _activeRecoveryRestroomId = null;
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  notifier.focusOnSubmittedRestroom(
+                    coordinates: coords,
+                    restroomId: targetRestroomId,
+                    facilityName: facilityName,
+                    zoom: intent.zoom,
+                  );
                 },
               ),
             ),
@@ -575,10 +640,14 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
           final pendingIntent = notifier.pendingFocusIntent;
           if (pendingIntent != null &&
               pendingIntent.token == _settlementToken) {
-            if (geoBounds.contains(pendingIntent.coordinates)) {
-              _cameraSettlementCompleter!.complete(geoBounds);
+            final isZoomSettled = (zoom - pendingIntent.zoom).abs() < 0.1;
+            if (geoBounds.contains(pendingIntent.coordinates) &&
+                isZoomSettled) {
+              if (!_cameraSettlementCompleter!.isCompleted) {
+                _cameraSettlementCompleter!.complete(geoBounds);
+              }
             }
-            return; // In-flight focus coordinates its own refresh; suppress regular idle discovery on intermediate bounds
+            return; // In-flight focus coordinates its own refresh; suppress regular idle discovery on intermediate bounds or zoom
           }
         }
 

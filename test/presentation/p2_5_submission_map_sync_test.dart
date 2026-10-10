@@ -1278,6 +1278,293 @@ void main() {
         expect(find.widgetWithText(SnackBarAction, 'Center'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      'C.9 Wrong zoom rejected during delayed camera settlement: intermediate idle at zoom 13 does not trigger query or preview; final 16.5 idle triggers exactly one authoritative query and preview',
+      (tester) async {
+        const submittedName = 'Zoom Tolerance Restroom';
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.autoSettle = false;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        final initialDiscoveryCount = restroomRepo.discoveryCount;
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Step 1: Intermediate idle at submitted coordinates, but at zoom 13.0 (wrong zoom)
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.5839, 121.0617), zoom: 13.0),
+        );
+        discoveryFakeMap.simulateIdle();
+        await tester.pump();
+
+        // Must NOT trigger authoritative query or open preview at zoom 13.0
+        expect(restroomRepo.discoveryCount, equals(initialDiscoveryCount));
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // Step 2: Camera settles at the requested zoom 16.5
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.5839, 121.0617), zoom: 16.5),
+        );
+        discoveryFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+
+        // Exactly one authoritative query fired and preview sheet opened
+        expect(restroomRepo.discoveryCount, equals(initialDiscoveryCount + 1));
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text(submittedName), findsAtLeastNWidgets(1));
+      },
+    );
+
+    testWidgets(
+      'C.10 Stale P2.5 recovery actions: newer focus B supersedes failure A, dismisses A recovery SnackBar, and old A callback cannot override B',
+      (tester) async {
+        const submittedNameA = 'Restroom A';
+        restroomRepo.returnLastSubmittedInViewport = false;
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: const [],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedNameA);
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // A's recovery snackbar is visible
+        expect(
+          find.text(
+            'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+          ),
+          findsOneWidget,
+        );
+        final oldRefreshAction = tester.widget<SnackBarAction>(
+          find.widgetWithText(SnackBarAction, 'Refresh'),
+        );
+
+        // Now user focuses on another restroom B
+        final restroomB = Restroom(
+          id: 'restroom_b',
+          name: 'Restroom B',
+          coordinates: Coordinates(latitude: 14.5900, longitude: 121.0700),
+          geohash: 'w4rr7y',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: [restroomB],
+        );
+        discoveryNotifier.focusOnRestroom(restroomB);
+        await tester.pumpAndSettle();
+
+        // A's recovery snackbar must be dismissed
+        expect(
+          find.text(
+            'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+          ),
+          findsNothing,
+        );
+
+        // Selection is B
+        expect(discoveryNotifier.selectedRestroom, equals(restroomB));
+
+        // Tapping old Refresh callback for A cannot override B
+        oldRefreshAction.onPressed();
+        await tester.pumpAndSettle();
+
+        // Selection remains B, no pending focus for A
+        expect(discoveryNotifier.selectedRestroom, equals(restroomB));
+        expect(discoveryNotifier.pendingFocusIntent, isNull);
+      },
+    );
+
+    testWidgets(
+      'C.11 Stale P2.5 recovery actions: explicit user selection of B supersedes failure A, dismisses A recovery SnackBar, and old A callback cannot override B; current A recovery still functions',
+      (tester) async {
+        const submittedNameA = 'Restroom A';
+        restroomRepo.returnLastSubmittedInViewport = false;
+        restroomRepo.viewportResultToReturn = DiscoveryResult.complete(
+          items: const [],
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedNameA);
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // A's recovery snackbar is visible
+        expect(
+          find.text(
+            'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+          ),
+          findsOneWidget,
+        );
+        final oldRefreshAction = tester.widget<SnackBarAction>(
+          find.widgetWithText(SnackBarAction, 'Refresh'),
+        );
+
+        // User explicitly selects restroom B on the map
+        final restroomB = Restroom(
+          id: 'restroom_b',
+          name: 'Restroom B',
+          coordinates: Coordinates(latitude: 14.5900, longitude: 121.0700),
+          geohash: 'w4rr7y',
+          accessType: AccessType.free,
+          status: RestroomStatus.active,
+          createdAt: DateTime.now(),
+        );
+        discoveryNotifier.selectRestroom(restroomB);
+        await tester.pumpAndSettle();
+
+        // A's recovery snackbar must be dismissed
+        expect(
+          find.text(
+            'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+          ),
+          findsNothing,
+        );
+
+        // Attempting to invoke old Refresh callback for A cannot override B
+        oldRefreshAction.onPressed();
+        await tester.pumpAndSettle();
+
+        // Selection remains B
+        expect(discoveryNotifier.selectedRestroom, equals(restroomB));
+        expect(discoveryNotifier.pendingFocusIntent, isNull);
+
+        // Now test valid current recovery for A:
+        // Clear selection and re-trigger submitted focus for A where discovery now finds it
+        discoveryNotifier.selectRestroom(null);
+        restroomRepo.returnLastSubmittedInViewport = true;
+        final submittedRestroomId =
+            restroomRepo.lastSubmittedCommand!.restroomId;
+
+        discoveryNotifier.focusOnSubmittedRestroom(
+          coordinates: Coordinates(latitude: 14.5839, longitude: 121.0617),
+          restroomId: submittedRestroomId,
+          facilityName: submittedNameA,
+          zoom: 16.5,
+        );
+        await tester.pumpAndSettle();
+
+        // Valid recovery succeeded: preview sheet opened for A
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text(submittedNameA), findsAtLeastNWidgets(1));
+      },
+    );
+
+    testWidgets(
+      'C.12 Completer disposal race: widget disposal while camera settlement is pending completes safely without error',
+      (tester) async {
+        const submittedName = 'Pending Teardown Restroom';
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.autoSettle = false;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Camera settlement is pending. Immediately unmount/tear down widget tree:
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+
+        // Must complete teardown without throwing any StateError
+        expect(find.byType(MainShellScreen), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'C.13 Completer disposal race: widget disposal immediately after settlement completes does not throw already-completed StateError',
+      (tester) async {
+        const submittedName = 'Settled Teardown Restroom';
+        restroomRepo.returnLastSubmittedInViewport = true;
+        discoveryFakeMap.controller.autoSettle = false;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: submittedName);
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        // Simulate camera idle settlement
+        discoveryFakeMap.simulateMove(
+          const CameraPosition(target: LatLng(14.5839, 121.0617), zoom: 16.5),
+        );
+        discoveryFakeMap.simulateIdle();
+
+        // Immediately tear down widget tree in the same test turn
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpAndSettle();
+
+        // Must tear down cleanly without StateError: Future already completed
+        expect(find.byType(MainShellScreen), findsNothing);
+      },
+    );
   });
 
   group('P2.5-D — Duplicate Warning Integration & Error Recovery', () {
