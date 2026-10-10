@@ -21,14 +21,18 @@ import 'presentation/state/map_discovery_notifier.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  final config = AppConfig.fromEnvironment();
+  var config = AppConfig.fromEnvironment();
 
   // Safe Firebase Initialization Boundary
   AuthRepository authRepository;
   RestroomRepository restroomRepository;
 
   try {
-    await Firebase.initializeApp();
+    final firebaseApp = await Firebase.initializeApp();
+    final detectedProjectId = firebaseApp.options.projectId;
+    if (detectedProjectId.isNotEmpty) {
+      config = config.copyWith(firebaseProjectId: detectedProjectId);
+    }
     final appCheckService = FirebaseAppCheckService(config: config);
     await appCheckService.initialize();
 
@@ -39,7 +43,9 @@ Future<void> main() async {
     // are not yet provided in the local dev environment, fall back to in-memory repositories.
     debugPrint('[FirebaseInit] Running in offline/development mode: $e');
     authRepository = InMemoryAuthRepository();
-    restroomRepository = InMemoryRestroomRepository();
+    restroomRepository = InMemoryRestroomRepository(
+      allowSubmissions: !config.isStaging && !config.isProduction,
+    );
   }
 
   final locationRepository = LocationRepositoryImpl();

@@ -46,6 +46,9 @@ class AppConstants {
   static const String ratingOwnershipCollection = 'ratingOwnership';
   static const String contributionOwnershipCollection = 'contributionOwnership';
 
+  // Firebase project configuration
+  static const String stagingFirebaseProjectId = 'flushcrowd-staging';
+
   // Support & legal destinations
   // NOTE: External destinations are pending verification and configuration by the project owner.
   // Using explicit non-live empty string placeholders prevents directing users to unverified or unowned third-party addresses.

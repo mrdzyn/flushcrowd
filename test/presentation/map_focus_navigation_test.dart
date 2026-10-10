@@ -264,7 +264,7 @@ void main() {
         // 3. Intent is NOT consumed prematurely while controller is unavailable
         expect(discoveryNotifier.pendingFocusIntent, isNotNull);
         expect(
-          discoveryNotifier.pendingFocusIntent?.restroom.id,
+          discoveryNotifier.pendingFocusIntent?.restroom?.id,
           equals(restroom1.id),
         );
       },
@@ -502,7 +502,7 @@ void main() {
         expect(find.byType(RestroomPreviewSheet), findsNothing);
         expect(discoveryNotifier.pendingFocusIntent, isNotNull);
         expect(
-          discoveryNotifier.pendingFocusIntent!.restroom.id,
+          discoveryNotifier.pendingFocusIntent!.restroom!.id,
           equals(restroom1.id),
         );
 
