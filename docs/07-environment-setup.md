@@ -29,8 +29,12 @@ FlushCrowd does **not** use a runtime dotenv package; `.env` is not loaded at ru
    ```
 
    **Staging Submission Safety Rules:**
-   - Omitting `--dart-define=APP_ENV=staging`, running with default `development`, or providing unknown `APP_ENV` values fails closed and disables restroom submissions (`Submissions are disabled outside staging environment`).
-   - Staging submissions strictly validate that the active Firebase project ID is `flushcrowd-staging`. Mismatched or absent project configurations block writes and preserve the draft with a `Resume` action.
+   - Under `Environment.fromString()`:
+     - Missing `APP_ENV` defaults to `development`.
+     - Explicit `development` maps to `development`.
+     - Unrecognized values map to `unknown`, not `development`.
+     - Neither `development` nor `unknown` permits contribution submission.
+   - Staging submissions strictly require both `APP_ENV=staging` and the verified Firebase project ID `flushcrowd-staging` (`AppConfig.isStagingSubmissionAllowed`). Mismatched or absent project configurations block writes and preserve the draft with a `Resume` action.
    - Production submissions remain strictly blocked ahead of P2.6 server-enforced rate limiting.
 2. **Platform-native Maps keys:**
    - Android: `android/local.properties` -> `MAPS_API_KEY=<restricted-key>`
@@ -174,7 +178,7 @@ The human owner should follow this exact sequence in order:
     flutter run \
       --dart-define=APP_ENV=staging
     ```
-    Verify native builds succeed and Google Maps render correctly. Note that omitting `--dart-define=APP_ENV=staging` or passing an unknown `APP_ENV` value fails closed into development mode where submissions are safely disabled.
+    Verify native builds succeed and Google Maps render correctly. Note that omitting `--dart-define=APP_ENV=staging` defaults to `development`, and passing unrecognized values maps to `unknown`; neither environment permits contribution submissions, failing closed until configured for verified staging.
 12. Verify Firebase SDK initializes successfully on both platforms without fallback error logs.
 13. Obtain explicit human owner approval before deploying Firestore security rules.
 14. Deploy audited Firestore Rules and indexes explicitly to staging:

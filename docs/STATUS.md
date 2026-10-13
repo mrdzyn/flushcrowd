@@ -231,6 +231,11 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
     - Updated `docs/07-environment-setup.md` with required staging command (`flutter run --dart-define=APP_ENV=staging`), documenting that unknown or missing `APP_ENV` values fail closed and disable submissions, and that staging requires the configured `flushcrowd-staging` Firebase project.
   - **m3 — PR Description Metadata:**
     - Updated PR #12 description with latest implementation HEAD, total Flutter test count (422), P2.5 regression test count (42), anonymous authentication test count (6), independent audit status, and outstanding owner physical-device staging QA requirements.
+  - **N1 — Accurate Audit Status in Documentation:**
+    - Corrected `docs/tasks/P2.5-submission-map-sync.md` to accurately reflect audit history without premature 0/0/0 claims: previous audit PASS WITH MINORS (0/0/3) at `de692b5`; remediation at `ece86b9`; latest independent re-audit PASS WITH MINORS (0/0/2); N1/N2 documentation fixes pending verification; code eligible for owner-authorized physical-device staging QA.
+  - **N2 — Accurate Environment Mapping Documentation:**
+    - Accurately documented `Environment.fromString()` behavior across `docs/tasks/P2.5-submission-map-sync.md` and `docs/07-environment-setup.md`: missing `APP_ENV` defaults to `development`, explicit `development` maps to `development`, unrecognized values map to `unknown` (not `development`), neither `development` nor `unknown` permits contribution submission, and staging submissions strictly require both `APP_ENV=staging` and Firebase project `flushcrowd-staging`.
+    - Removed nonexistent quoted error message strings.
 - **Prior Findings Remediated:**
   - **BLOCKER-1 — Staging-only Write Safety:** Fail-closed gate requires `config.isStaging` AND `firebaseProjectId == 'flushcrowd-staging'`; tested default/dev/unknown/prod/mismatched configurations (Tests A.4–A.8).
   - **MAJOR-1 — Authoritative Map Refresh Timing:** Coordinates camera settlement with coordinate containment and target zoom verification; tested C.3–C.7.
@@ -309,7 +314,7 @@ Owner-confirmed staging infrastructure state:
   - Overlapping older candidate: PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner instruction).
   - Task contract: `docs/tasks/P2.5-submission-map-sync.md`.
   - All 42 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); all 422 Flutter tests pass; 49/49 Firestore rules pass.
-  - Ready for independent exact-head code re-audit for PR #12 prior to staging saves.
+  - Code verified eligible for owner-authorized physical-device staging QA; documentation-only fixes N1/N2 pending narrow independent verification.
 
 ## Current owner actions / external dependencies
 
@@ -330,9 +335,9 @@ Milestone P2.5 PR #12 audit-remediation exact-head validation:
 
 ## Next recommended action
 
-1. Request an independent exact-head code re-audit for PR #12 (`phase-2/p2.5-submission`).
-2. Do not merge or close PR #11 (`phase-2/p2.5-submission-map-sync`); it awaits human owner disposition.
-3. Only after independent re-audit approval of PR #12, perform authorized physical-device staging saves and Android/iOS cross-device QA, including previously BLOCKED P2.4 QA Test 2.
+1. Perform narrow independent documentation diff verification of N1/N2 on PR #12 (`phase-2/p2.5-submission`).
+2. Proceed to owner-authorized physical-device staging QA on Samsung SM G998B and iPhone 12 Pro Max (`flutter run --dart-define=APP_ENV=staging` against `flushcrowd-staging`), reconciling previously BLOCKED P2.4 QA Test 2.
+3. Do not merge or close PR #11 (`phase-2/p2.5-submission-map-sync`); it awaits human owner disposition.
 4. Keep production contribution writes disabled (`config.isProduction` release gate) until P2.6 rate limiting.
 5. Do not merge PR #12 or deploy to production without explicit human owner approval.
 
