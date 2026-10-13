@@ -221,15 +221,25 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
     - Forwarded `advisoryScanNote` through recoverable error and retry paths in `MainShellScreen._handleSubmissionFailure` and `onAction`.
     - Stored `_preservedDraftAdvisoryScanNote` on draft preservation and cleared on successful submission or explicit draft abandonment.
     - Retry does not repeat duplicate scans unnecessarily; preserves incomplete or fail-open advisory note on successful retry (Tests D.8, D.9).
+  - **m1 — Submission Error UX:**
+    - Replaced raw backend error exposure in `MainShellScreen._handleSubmissionFailure` with concise, user-friendly error messages without exposing sensitive Firebase details.
+    - Distinguishes expired authentication (`'Authentication session expired. Please check your connection and try again.'`), permission failures (`'Submission rejected by server permissions. Please ensure your session is valid.'`), App Check verification failures (`'App verification failed. Please ensure you are using the official app.'`), authorization failures (`'Authorization failed. Please ensure your session is valid and try again.'`), network problems (`'Connection failed. Please check your internet connection.'`), and unclassified errors (`'Unable to save restroom. Please try again.'`).
+    - Preserves exact pending `CreateRestroomCommand`, `restroomId`, draft coordinates, and recovery options (`Retry`/`Resume`); never shows success when persistence fails.
+    - Added regression tests D.10 through D.14 in `test/presentation/p2_5_submission_map_sync_test.dart`.
+  - **m2 — Documentation Alignment:**
+    - Updated `docs/tasks/P2.5-submission-map-sync.md` with active candidate branch (`phase-2/p2.5-submission`), active status, and required staging execution command (`flutter run --dart-define=APP_ENV=staging`).
+    - Updated `docs/07-environment-setup.md` with required staging command (`flutter run --dart-define=APP_ENV=staging`), documenting that unknown or missing `APP_ENV` values fail closed and disable submissions, and that staging requires the configured `flushcrowd-staging` Firebase project.
+  - **m3 — PR Description Metadata:**
+    - Updated PR #12 description with latest implementation HEAD, total Flutter test count (422), P2.5 regression test count (42), anonymous authentication test count (6), independent audit status, and outstanding owner physical-device staging QA requirements.
 - **Prior Findings Remediated:**
   - **BLOCKER-1 — Staging-only Write Safety:** Fail-closed gate requires `config.isStaging` AND `firebaseProjectId == 'flushcrowd-staging'`; tested default/dev/unknown/prod/mismatched configurations (Tests A.4–A.8).
   - **MAJOR-1 — Authoritative Map Refresh Timing:** Coordinates camera settlement with coordinate containment and target zoom verification; tested C.3–C.7.
   - **MAJOR-2 — Submission Single-Flight Lock:** Synchronously acquires `_isSubmitting = true` before awaiting anonymous auth or async stages; tested concurrency with deferred auth (Test B.4).
   - **MINOR-1 — Inaccurate Error Handling:** Distinct error classification for permission-denied, invalid draft, invariant violations; map focus initiation error recovery.
 - **P2.5 Testability & Quality Checks:**
-  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 37 regression tests (covering A.1–A.11, B.1–B.4, C.1–C.13, D.1–D.9).
+  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 42 regression tests (covering A.1–A.11, B.1–B.4, C.1–C.13, D.1–D.14).
   - Authored 6 unit tests in `test/presentation/auth_notifier_test.dart`.
-  - Full test suite: 417 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
+  - Full test suite: 422 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
 
 ### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation [NOT STARTED]
 - Audit touch targets (>= 48×48), semantic labels, and contrast.
@@ -298,7 +308,7 @@ Owner-confirmed staging infrastructure state:
   - ACTIVE AUDITED CANDIDATE: PR #12 on branch `phase-2/p2.5-submission`.
   - Overlapping older candidate: PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner instruction).
   - Task contract: `docs/tasks/P2.5-submission-map-sync.md`.
-  - All 37 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); all 417 Flutter tests pass; 49/49 Firestore rules pass.
+  - All 42 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); all 422 Flutter tests pass; 49/49 Firestore rules pass.
   - Ready for independent exact-head code re-audit for PR #12 prior to staging saves.
 
 ## Current owner actions / external dependencies
@@ -313,7 +323,7 @@ Milestone P2.5 PR #12 audit-remediation exact-head validation:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (417/417 tests passed: 37 tests in `p2_5_submission_map_sync_test.dart` + 6 tests in `auth_notifier_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
+- `flutter test` — PASS (422/422 tests passed: 42 tests in `p2_5_submission_map_sync_test.dart` + 6 tests in `auth_notifier_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
 - Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)

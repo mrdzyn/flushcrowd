@@ -508,9 +508,20 @@ class _MainShellScreenState extends State<MainShellScreen> {
         }
       };
     } else if (error is UnauthenticatedException) {
-      errorMessage = 'Authentication required. Please check your connection and try again.';
+      if (error.code == 'auth-expired' ||
+          error.code == 'session-expired' ||
+          error.code == 'user-token-expired' ||
+          error.code == 'token-expired' ||
+          error.message.toLowerCase().contains('expired')) {
+        errorMessage = 'Authentication session expired. Please check your connection and try again.';
+      } else {
+        errorMessage = 'Authentication required. Please check your connection and try again.';
+      }
     } else if (error is RepositoryException) {
-      if (error.code == 'firebase-init-failed') {
+      final code = error.code?.toLowerCase();
+      final message = error.message.toLowerCase();
+
+      if (code == 'firebase-init-failed') {
         errorMessage = 'Submission is unavailable because staging Firebase configuration failed to initialize.';
         actionLabel = 'Resume';
         onAction = () {
@@ -518,10 +529,10 @@ class _MainShellScreenState extends State<MainShellScreen> {
             _openAddRestroom();
           }
         };
-      } else if (error.code == 'production-writes-blocked' ||
-          error.code == 'unconfigured-environment' ||
-          error.code == 'staging-project-mismatch' ||
-          error.code == 'non-staging-environment') {
+      } else if (code == 'production-writes-blocked' ||
+          code == 'unconfigured-environment' ||
+          code == 'staging-project-mismatch' ||
+          code == 'non-staging-environment') {
         errorMessage = error.message;
         actionLabel = 'Resume';
         onAction = () {
@@ -529,8 +540,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
             _openAddRestroom();
           }
         };
-      } else if (error.code == 'invalid-draft' ||
-          error.code == 'invalid-restroom-id') {
+      } else if (code == 'invalid-draft' || code == 'invalid-restroom-id') {
         errorMessage = 'Invalid restroom details: ${error.message}';
         actionLabel = 'Resume';
         onAction = () {
@@ -538,21 +548,60 @@ class _MainShellScreenState extends State<MainShellScreen> {
             _openAddRestroom();
           }
         };
-      } else if (error.code == 'permission-denied' ||
-          error.code == 'unauthorized') {
+      } else if (code == 'auth-expired' ||
+          code == 'session-expired' ||
+          code == 'user-token-expired' ||
+          code == 'token-expired' ||
+          (code == 'unauthenticated' && message.contains('expired')) ||
+          message.contains('token expired') ||
+          message.contains('session expired')) {
+        errorMessage = 'Authentication session expired. Please check your connection and try again.';
+      } else if (code == 'unauthenticated') {
+        errorMessage = 'Authentication required. Please check your connection and try again.';
+      } else if (code == 'app-check-failed' ||
+          code == 'appcheck-failed' ||
+          code == 'app-check' ||
+          message.contains('app check') ||
+          message.contains('appcheck')) {
+        errorMessage = 'App verification failed. Please ensure you are using the official app.';
+      } else if (code == 'unauthorized') {
+        errorMessage = 'Authorization failed. Please ensure your session is valid and try again.';
+      } else if (code == 'permission-denied') {
         errorMessage = 'Submission rejected by server permissions. Please ensure your session is valid.';
-      } else if (error.code == 'network-error' ||
-          error.code == 'unavailable' ||
-          error.code == 'deadline-exceeded') {
+      } else if (code == 'network-error' ||
+          code == 'unavailable' ||
+          code == 'deadline-exceeded' ||
+          code == 'timeout' ||
+          message.contains('network') ||
+          message.contains('connection') ||
+          message.contains('offline') ||
+          message.contains('timed out')) {
         errorMessage =
             'Connection failed. Please check your internet connection.';
       } else {
-        errorMessage =
-            'Unable to save restroom (${error.message}). Please try again.';
+        errorMessage = 'Unable to save restroom. Please try again.';
       }
     } else {
-      errorMessage =
-          'Connection failed. Please check your internet connection.';
+      final str = error.toString().toLowerCase();
+      if (str.contains('app check') || str.contains('appcheck')) {
+        errorMessage = 'App verification failed. Please ensure you are using the official app.';
+      } else if (str.contains('permission-denied') ||
+          str.contains('permission denied')) {
+        errorMessage = 'Submission rejected by server permissions. Please ensure your session is valid.';
+      } else if (str.contains('expired')) {
+        errorMessage = 'Authentication session expired. Please check your connection and try again.';
+      } else if (str.contains('unauthorized')) {
+        errorMessage = 'Authorization failed. Please ensure your session is valid and try again.';
+      } else if (str.contains('network') ||
+          str.contains('socket') ||
+          str.contains('timeout') ||
+          str.contains('connection') ||
+          str.contains('offline')) {
+        errorMessage =
+            'Connection failed. Please check your internet connection.';
+      } else {
+        errorMessage = 'Unable to save restroom. Please try again.';
+      }
     }
 
     ScaffoldMessenger.of(context).showSnackBar(

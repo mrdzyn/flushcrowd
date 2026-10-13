@@ -2131,5 +2131,197 @@ void main() {
         );
       },
     );
+
+    testWidgets(
+      'D.10 Expired authentication error surfaces session expired SnackBar and preserves draft',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'Firebase auth session token has expired',
+          'auth-expired',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Expired Session Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Authentication session expired. Please check your connection and try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(find.textContaining('submitted successfully'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'D.11 App Check failure surfaces official app SnackBar without raw details and preserves draft',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'App Check token exchange failed with 403',
+          'app-check-failed',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'App Check Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'App verification failed. Please ensure you are using the official app.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.textContaining('token exchange failed'), findsNothing);
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(find.textContaining('submitted successfully'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'D.12 Authorization failure surfaces authorization error SnackBar and preserves draft',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'Caller unauthorized for submission endpoint',
+          'unauthorized',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Unauthorized Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Authorization failed. Please ensure your session is valid and try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(find.textContaining('submitted successfully'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'D.13 Network problem surfaces connection failed SnackBar and preserves draft',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'DEADLINE_EXCEEDED: socket timed out',
+          'deadline-exceeded',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Timeout Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Connection failed. Please check your internet connection.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(find.textContaining('submitted successfully'), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'D.14 Unclassified backend error does not expose raw backend details or sensitive paths',
+      (tester) async {
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'INTERNAL: com.google.cloud.firestore.v1.InternalError at /databases/(default)/documents/private/secret_path',
+          'internal',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Sensitive Error Restroom');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text('Unable to save restroom. Please try again.'),
+          findsOneWidget,
+        );
+        // Sensitive backend stack trace / internal path must NOT leak
+        expect(find.textContaining('secret_path'), findsNothing);
+        expect(find.textContaining('InternalError'), findsNothing);
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+        expect(find.textContaining('submitted successfully'), findsNothing);
+      },
+    );
   });
 }
