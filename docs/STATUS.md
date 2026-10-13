@@ -177,7 +177,7 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Zero-persistence milestone: 0 Firestore writes, 0 Firestore reads, 0 Places/Geocoding calls, no personal data or contributor UID collected.
 - Independent audit passed: 0 BLOCKER / 0 MAJOR / 0 MINOR.
 
-### Phase 1 — Explore Restrooms Experience Restoration [ACTIVE — remediation active / pending independent re-audit]
+### Phase 1 — Explore Restrooms Experience Restoration [MERGED — PR #9]
 - Resolved Phase 1 unfinished navigation seam: bottom-navigation **Explore** tab (index 1) previously mounted a placeholder claiming Phase 1 was unbuilt.
 - Implemented `ExploreRestroomsScreen` (`lib/presentation/screens/explore_restrooms_screen.dart`) providing rich list discovery, searching, and filtering on top of Phase 1 discovery state.
 - Zero new network queries: consumes `MapDiscoveryNotifier` and `LocationNotifier` with 0 Firestore reads triggered by tab navigation, searching, or filtering.
