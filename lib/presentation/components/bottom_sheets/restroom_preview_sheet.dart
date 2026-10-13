@@ -228,8 +228,14 @@ class RestroomPreviewSheet extends StatelessWidget {
                       : StatusChipType.neutral,
                 ),
 
-                // Status chip (only when explicitly unavailable)
-                if (restroom.status == RestroomStatus.temporarilyUnavailable)
+                // Status chip (when unverified or temporarily unavailable)
+                if (restroom.status == RestroomStatus.unverified)
+                  const StatusChip(
+                    label: 'Unverified',
+                    type: StatusChipType.warning,
+                  )
+                else if (restroom.status ==
+                    RestroomStatus.temporarilyUnavailable)
                   const StatusChip(
                     label: 'Temporarily Unavailable',
                     type: StatusChipType.warning,

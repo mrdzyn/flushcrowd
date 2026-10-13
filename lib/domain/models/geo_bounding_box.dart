@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:equatable/equatable.dart';
 
 import 'coordinates.dart';
@@ -11,6 +13,29 @@ class GeoBoundingBox extends Equatable {
   final Coordinates northEast;
 
   const GeoBoundingBox({required this.southWest, required this.northEast});
+
+  /// Creates a bounding box centered at [center] spanning [radiusMeters] in each direction.
+  factory GeoBoundingBox.fromCenterAndRadius(
+    Coordinates center, {
+    double radiusMeters = 500.0,
+  }) {
+    const earthRadius = 6371008.8;
+    final dLatDeg = (radiusMeters / earthRadius) * (180.0 / math.pi);
+    final minLat = (center.latitude - dLatDeg).clamp(-90.0, 90.0);
+    final maxLat = (center.latitude + dLatDeg).clamp(-90.0, 90.0);
+    final cosLat = math.cos(center.latitude * math.pi / 180.0).abs();
+    final dLngDeg = cosLat > 1e-6
+        ? (radiusMeters / (earthRadius * cosLat)) * (180.0 / math.pi)
+        : 180.0;
+    var minLng = center.longitude - dLngDeg;
+    var maxLng = center.longitude + dLngDeg;
+    if (minLng < -180.0) minLng += 360.0;
+    if (maxLng > 180.0) maxLng -= 360.0;
+    return GeoBoundingBox(
+      southWest: Coordinates(latitude: minLat, longitude: minLng),
+      northEast: Coordinates(latitude: maxLat, longitude: maxLng),
+    );
+  }
 
   /// Returns true if [point] is contained inside this bounding box.
   ///

@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
+import 'package:flushcrowd/core/config/app_config.dart';
+import 'package:flushcrowd/core/config/environment.dart';
 import 'package:flushcrowd/core/constants/app_constants.dart';
 import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
@@ -27,13 +29,26 @@ import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
 
 class CountingRestroomRepository implements RestroomRepository {
   int submitCount = 0;
+  bool submitShouldThrow = false;
+  Object? submitErrorToThrow;
   int discoveryCount = 0;
   int getRestroomCount = 0;
 
   @override
   Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
     submitCount++;
-    throw UnimplementedError('Submission should never be called in P2.2');
+    if (submitShouldThrow) {
+      throw submitErrorToThrow ?? Exception('Simulated submission failure');
+    }
+    return Restroom(
+      id: command.restroomId,
+      name: command.draft.name,
+      coordinates: command.draft.coordinates,
+      geohash: 'w4rr7x',
+      accessType: command.draft.accessType,
+      status: RestroomStatus.unverified,
+      createdAt: DateTime.now(),
+    );
   }
 
   @override
@@ -206,9 +221,14 @@ Widget createTestApp({
   required MapDiscoveryNotifier discoveryNotifier,
   required FakeMapState fakeMap,
   FakeMapState? discoveryFakeMap,
+  AppConfig config = const AppConfig(
+    environment: Environment.staging,
+    firebaseProjectId: AppConstants.stagingFirebaseProjectId,
+  ),
 }) {
   return MultiProvider(
     providers: [
+      Provider<AppConfig>.value(value: config),
       Provider<RestroomRepository>.value(value: restroomRepo),
       Provider<LocationRepository>.value(value: locationRepo),
       ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),
@@ -374,7 +394,7 @@ void main() {
     });
 
     testWidgets(
-      '5. Successful P2.2 coordinate confirmation opens AddRestroomFormScreen and does not pretend submission succeeded',
+      '5. Successful coordinate confirmation opens AddRestroomFormScreen and submits restroom in P2.5',
       (tester) async {
         await tester.pumpWidget(
           createTestApp(
@@ -418,18 +438,14 @@ void main() {
         expect(find.byType(AddRestroomFormScreen), findsNothing);
         expect(find.byType(MainShellScreen), findsOneWidget);
 
-        // Shows honest temporary coming-soon message
+        // Shows successful submission message
         expect(
           find.text(
-            'No likely duplicates found nearby. Restroom submission comes in Milestone P2.5.',
+            'Restroom "Central Station Restroom" submitted successfully.',
           ),
           findsOneWidget,
         );
-
-        // Does NOT pretend submission or contribution succeeded
-        expect(find.text('Restroom added!'), findsNothing);
-        expect(find.text('Submission succeeded'), findsNothing);
-        expect(restroomRepo.submitCount, equals(0));
+        expect(restroomRepo.submitCount, equals(1));
       },
     );
 
@@ -842,14 +858,13 @@ void main() {
         );
         await tester.pumpAndSettle();
 
-        // Sheet is dismissed
+        // Sheet is dismissed and submission proceeds
         expect(find.byType(DuplicateWarningSheet), findsNothing);
         expect(
-          find.text(
-            'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
-          ),
+          find.text('Restroom "Plaza Public Toilet" submitted successfully.'),
           findsOneWidget,
         );
+        expect(restroomRepo.submitCount, equals(1));
       },
     );
 
@@ -1087,10 +1102,11 @@ void main() {
         expect(find.byType(DuplicateWarningSheet), findsNothing);
         expect(
           find.text(
-            'Duplicate warning acknowledged. Restroom submission comes in Milestone P2.5.',
+            'Restroom "Review Candidate Restroom" submitted successfully.',
           ),
           findsOneWidget,
         );
+        expect(restroomRepo.submitCount, equals(1));
       },
     );
 
@@ -1295,7 +1311,7 @@ void main() {
 
         expect(
           find.text(
-            'No likely duplicates found in the results checked, but the duplicate scan was incomplete. Restroom submission comes in Milestone P2.5.',
+            'No likely duplicates found in the results checked, but the duplicate scan was incomplete. Restroom "Partial Scan Restroom" submitted successfully.',
           ),
           findsOneWidget,
         );
@@ -1324,7 +1340,7 @@ void main() {
 
         expect(
           find.text(
-            'Duplicate check could not be completed, but contribution proceeds (advisory fail-open). Restroom submission comes in Milestone P2.5.',
+            'Duplicate check could not be completed, but contribution proceeds (advisory fail-open). Restroom "Query Error Restroom" submitted successfully.',
           ),
           findsOneWidget,
         );
