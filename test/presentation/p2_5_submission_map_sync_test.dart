@@ -28,8 +28,22 @@ import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
 import 'package:flushcrowd/presentation/state/auth_notifier.dart';
 import 'package:flushcrowd/presentation/state/location_notifier.dart';
 import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
+import 'package:flushcrowd/presentation/state/restroom_id_generator.dart';
 
 // --- Test Doubles ---
+
+class CountingRestroomIdGenerator implements RestroomIdGenerator {
+  int generateCalls = 0;
+  final String fixedId;
+
+  CountingRestroomIdGenerator([this.fixedId = 'fixed_test_restroom_id_123']);
+
+  @override
+  String generate() {
+    generateCalls++;
+    return fixedId;
+  }
+}
 
 class FakeAuthRepository implements AuthRepository {
   final StreamController<String?> _authStreamController =
@@ -349,6 +363,7 @@ Widget createTestApp({
     environment: Environment.staging,
     firebaseProjectId: AppConstants.stagingFirebaseProjectId,
   ),
+  RestroomIdGenerator? formIdGenerator,
 }) {
   return MultiProvider(
     providers: [
@@ -366,6 +381,7 @@ Widget createTestApp({
       home: MainShellScreen(
         addLocationMapBuilder: createFakeMapBuilder(addFakeMap),
         discoveryMapBuilder: createFakeMapBuilder(discoveryFakeMap),
+        formIdGenerator: formIdGenerator,
       ),
     ),
   );
@@ -707,6 +723,156 @@ void main() {
           findsOneWidget,
         );
         expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'A.9 Initially authenticated notifier whose underlying repository UID subsequently becomes null establishes new anonymous session before submission write',
+      (tester) async {
+        final dynamicAuthRepo = FakeAuthRepository(
+          initialUid: 'initially_authenticated_uid',
+        );
+        final dynamicAuthNotifier = AuthNotifier(
+          authRepository: dynamicAuthRepo,
+        );
+
+        expect(dynamicAuthNotifier.isAuthenticated, isTrue);
+        expect(
+          dynamicAuthNotifier.userId,
+          equals('initially_authenticated_uid'),
+        );
+
+        // Underlying repository UID subsequently becomes null
+        dynamicAuthRepo.setUid(null);
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: dynamicAuthNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Reauth Recovered Facility');
+
+        restroomRepo.returnLastSubmittedInViewport = true;
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // Proves a new anonymous session was established and submission succeeded
+        expect(dynamicAuthRepo.currentUserId, isNotNull);
+        expect(dynamicAuthNotifier.isAuthenticated, isTrue);
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Restroom "Reauth Recovered Facility" submitted successfully.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'A.10 Failed reauthentication preserves exact command ID, and successful Retry establishes session with exactly 1 submission write',
+      (tester) async {
+        final dynamicAuthRepo = FakeAuthRepository(
+          initialUid: 'initial_uid_before_expiry',
+        );
+        final dynamicAuthNotifier = AuthNotifier(
+          authRepository: dynamicAuthRepo,
+        );
+        final idGenerator = CountingRestroomIdGenerator('stable_reauth_id_999');
+
+        // Underlying repository UID becomes null and anonymous sign-in throws
+        dynamicAuthRepo.setUid(null);
+        dynamicAuthRepo.shouldThrowOnSignIn = true;
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: dynamicAuthNotifier,
+            formIdGenerator: idGenerator,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Reauth Retry Facility');
+
+        // Submit form: fails during reauthentication
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // Zero repository writes occurred, ID generator called once
+        expect(restroomRepo.submitCount, equals(0));
+        expect(idGenerator.generateCalls, equals(1));
+        expect(
+          find.text(
+            'Unable to sign in anonymously. Please check your internet connection and try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+
+        // Restore network connectivity and retry
+        dynamicAuthRepo.shouldThrowOnSignIn = false;
+        restroomRepo.returnLastSubmittedInViewport = true;
+
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pumpAndSettle();
+
+        // Exactly one submission occurred with the identical command and restroom ID
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          idGenerator.generateCalls,
+          equals(1),
+        ); // Never allocated a new ID!
+        expect(
+          restroomRepo.lastSubmittedCommand!.restroomId,
+          equals('stable_reauth_id_999'),
+        );
+        expect(
+          find.text('Restroom "Reauth Retry Facility" submitted successfully.'),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'A.11 Missing authentication provider (authNotifier: null) fails closed, preserves draft, surfaces Retry',
+      (tester) async {
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: null,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Missing Auth Provider Facility');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.submitCount, equals(0));
+        expect(
+          find.text(
+            'Authentication service is unavailable. Please check your connection and try again.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
       },
     );
   });
@@ -1849,6 +2015,120 @@ void main() {
           findsOneWidget,
         );
         expect(find.widgetWithText(SnackBarAction, 'Resume'), findsOneWidget);
+      },
+    );
+
+    testWidgets(
+      'D.8 Advisory scan note forwarded on recoverable error retry: incomplete/failed scan note preserved and duplicate check not repeated',
+      (tester) async {
+        restroomRepo.duplicateResultToReturn = DiscoveryResult.partial(
+          items: const [],
+          reason: DiscoveryCompletenessReason.rangeCapExceeded,
+        );
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'Simulated recoverable network error',
+          'network-error',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Advisory Retry Facility');
+
+        // First attempt performs duplicate scan and fails submission
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.duplicateCount, equals(1));
+        expect(restroomRepo.submitCount, equals(1));
+        expect(
+          find.text(
+            'Connection failed. Please check your internet connection.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+
+        // Configure repository to succeed on retry
+        restroomRepo.submitShouldThrow = false;
+        restroomRepo.returnLastSubmittedInViewport = true;
+
+        // Tap Retry: must NOT repeat duplicate scan, and MUST preserve advisory note
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pumpAndSettle();
+
+        expect(
+          restroomRepo.duplicateCount,
+          equals(1),
+        ); // Scan was NOT repeated!
+        expect(
+          restroomRepo.submitCount,
+          equals(2),
+        ); // Second write attempt succeeded!
+        expect(
+          find.text(
+            'No likely duplicates found in the results checked, but the duplicate scan was incomplete. Restroom "Advisory Retry Facility" submitted successfully.',
+          ),
+          findsOneWidget,
+        );
+      },
+    );
+
+    testWidgets(
+      'D.9 Advisory fail-open note forwarded on recoverable error retry: fail-open note preserved and duplicate check not repeated',
+      (tester) async {
+        restroomRepo.duplicateShouldThrow = true;
+        restroomRepo.submitShouldThrow = true;
+        restroomRepo.submitErrorToThrow = const RepositoryException(
+          'Simulated recoverable network error',
+          'network-error',
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: restroomRepo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+          ),
+        );
+
+        await navigateToAddForm(tester, name: 'Fail-Open Retry Facility');
+
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.duplicateCount, equals(1));
+        expect(restroomRepo.submitCount, equals(1));
+        expect(find.widgetWithText(SnackBarAction, 'Retry'), findsOneWidget);
+
+        restroomRepo.submitShouldThrow = false;
+        restroomRepo.returnLastSubmittedInViewport = true;
+
+        await tester.tap(find.widgetWithText(SnackBarAction, 'Retry'));
+        await tester.pumpAndSettle();
+
+        expect(restroomRepo.duplicateCount, equals(1));
+        expect(restroomRepo.submitCount, equals(2));
+        expect(
+          find.text(
+            'Duplicate check could not be completed, but contribution proceeds (advisory fail-open). Restroom "Fail-Open Retry Facility" submitted successfully.',
+          ),
+          findsOneWidget,
+        );
       },
     );
   });

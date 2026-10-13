@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/foundation.dart';
 
 import '../../domain/repositories/auth_repository.dart';
@@ -13,6 +15,7 @@ enum AuthStatus {
 /// State notifier managing anonymous authentication.
 class AuthNotifier extends ChangeNotifier {
   final AuthRepository _authRepository;
+  StreamSubscription<String?>? _authSubscription;
 
   AuthStatus _status = AuthStatus.initial;
   String? _userId;
@@ -23,14 +26,27 @@ class AuthNotifier extends ChangeNotifier {
     if (_userId != null) {
       _status = AuthStatus.authenticated;
     }
+    _authSubscription = _authRepository.authStateChanges.listen((uid) {
+      if (_userId != uid) {
+        _userId = uid;
+        if (uid != null) {
+          _status = AuthStatus.authenticated;
+        } else if (_status == AuthStatus.authenticated) {
+          _status = AuthStatus.unauthenticated;
+        }
+        notifyListeners();
+      }
+    });
   }
 
   AuthStatus get status => _status;
   String? get userId => _userId;
   String? get errorMessage => _errorMessage;
-  bool get isAuthenticated => _status == AuthStatus.authenticated;
+  bool get isAuthenticated =>
+      _status == AuthStatus.authenticated && _userId != null;
 
-  Future<void> signInAnonymously() async {
+  /// Unconditionally ensures a live anonymous session via the underlying repository.
+  Future<void> ensureAnonymousSession() async {
     _status = AuthStatus.authenticating;
     _errorMessage = null;
     notifyListeners();
@@ -41,7 +57,16 @@ class AuthNotifier extends ChangeNotifier {
     } catch (e) {
       _status = AuthStatus.error;
       _errorMessage = e.toString();
+      _userId = null;
     }
     notifyListeners();
+  }
+
+  Future<void> signInAnonymously() => ensureAnonymousSession();
+
+  @override
+  void dispose() {
+    _authSubscription?.cancel();
+    super.dispose();
   }
 }

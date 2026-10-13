@@ -23,7 +23,7 @@ Implement and validate **P2.5** on branch `phase-2/p2.5-submission`, following `
 - Keep one exact command/restroom ID through recoverable failures, retries, and reconciliation; provide clear disabled/loading/success/error feedback.
 - On remote success, clear draft, show success message with advisory scan note, navigate to map at zoom 16.5, force canonical viewport refresh, select by authoritative discovered `restroomId`, show one `Unverified` preview; strictly zero optimistic or synthetic insertion.
 - Surface recovery action (`Refresh`) if authoritative query omits newly created facility.
-- 13 automated regression tests covering safety gates, single-flight submission, recoverable retries, and authoritative map synchronization.
+- 37 automated regression tests in `test/presentation/p2_5_submission_map_sync_test.dart` (plus 6 unit tests in `test/presentation/auth_notifier_test.dart`) covering safety gates, single-flight submission, live anonymous session restoration, recoverable retries, and authoritative map synchronization.
 
 The active specification is:
 
@@ -203,27 +203,33 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Non-blocking advisory warning with continue, view existing, and cancel actions; safe draft preservation across flows.
 
 ### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback [ACTIVE]
-- **Targeted Re-Audit Remediation (HOLD Resolution):**
-  - **MAJOR-1 — Stale P2.5 recovery actions invalidated & guarded:**
-    - Token-owned tracking (`_activeRecoveryToken`, `_activeRecoveryRestroomId`) for all submitted-restroom recovery SnackBars (unverified bounds, discovery error, record omitted).
-    - In `_onNotifierChanged`, invalidates and dismisses active recovery SnackBars when superseded by a newer focus token or explicit user selection of another facility via `addPostFrameCallback` (preventing `setState` during build).
-    - Closure-level token-ownership and selection guards in `Retry` and `Refresh` actions prevent stale callbacks from overriding newer focus or manual user selection.
-    - Valid current `Retry` and `Refresh` recovery remains completely functional and dispatches fresh focus intents.
-  - **MAJOR-2 — Strict zoom tolerance on awaited camera settlement:**
-    - `_handleCameraIdle` validates both coordinate containment and target zoom tolerance (`(zoom - pendingIntent.zoom).abs() < 0.1`) before completing `_cameraSettlementCompleter`. Intermediate idles at zoom 13 or 10 suppress discovery without completing settlement.
-    - `_executeFocusIntent` verifies `isSettledZoomValid` before running authoritative viewport discovery; unverified zoom exposes recoverable `Retry` state.
-    - Tested: delayed animation with target-containing bounds at zoom 13 triggers zero queries/previews; final 16.5 idle triggers exactly one authoritative query and preview (Test C.9).
-  - **MINOR-1 — Completer disposal race guarded:**
-    - Guarded `_cameraSettlementCompleter?.complete(null)` in `dispose()` with `!isCompleted`, preventing `StateError: Future already completed`.
-    - Tested teardown while settlement is pending (Test C.12) and immediately after completion (Test C.13).
+- **Active Audited Candidate:** PR #12 (`phase-2/p2.5-submission`).
+- **Overlapping Older Candidate:** PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner approval).
+- **PR #12 Audit Remediation:**
+  - **MAJOR-1 — Restore anonymous session on every submission attempt:**
+    - In `MainShellScreen._submitRestroom`, eliminated sole reliance on cached `AuthNotifier.isAuthenticated`.
+    - Unconditionally verifies and ensures live anonymous session via `authNotifier.ensureAnonymousSession()` before every attempted write (including retries).
+    - Fails closed if the required authentication provider is unavailable (`authNotifier == null`), preserving draft command/coordinates and displaying truthful retry feedback.
+    - Preserves synchronous `_isSubmitting = true` single-flight lock before any asynchronous authentication operation (preserving Test B.4).
+    - On auth failure: does not submit, preserves identical command and restroom ID, shows truthful recovery SnackBar with `Retry`, and never allocates a new restroom ID.
+    - Updated `AuthNotifier` to listen to live `authStateChanges`, clear `_userId` on errors, and unconditionally invoke `_authRepository.ensureAnonymousSession()`.
+    - Automated tests: Tests A.9, A.10, A.11 in `p2_5_submission_map_sync_test.dart` and 6 unit tests in `auth_notifier_test.dart`.
+  - **MAJOR-2 — Reconcile canonical status across competing PR candidates:**
+    - Documented PR #12 on branch `phase-2/p2.5-submission` as the active audited candidate.
+    - Documented PR #11 as an overlapping older candidate awaiting owner disposition; removed stale instructions directing next agent to audit or merge PR #11.
+  - **MINOR-1 — Preserve advisory scan note on retry:**
+    - Forwarded `advisoryScanNote` through recoverable error and retry paths in `MainShellScreen._handleSubmissionFailure` and `onAction`.
+    - Stored `_preservedDraftAdvisoryScanNote` on draft preservation and cleared on successful submission or explicit draft abandonment.
+    - Retry does not repeat duplicate scans unnecessarily; preserves incomplete or fail-open advisory note on successful retry (Tests D.8, D.9).
 - **Prior Findings Remediated:**
   - **BLOCKER-1 — Staging-only Write Safety:** Fail-closed gate requires `config.isStaging` AND `firebaseProjectId == 'flushcrowd-staging'`; tested default/dev/unknown/prod/mismatched configurations (Tests A.4–A.8).
-  - **MAJOR-1 — Authoritative Map Refresh Timing:** Removed speculative 500m fallback; coordinates camera settlement with coordinate containment and target zoom verification; tested C.3–C.7.
+  - **MAJOR-1 — Authoritative Map Refresh Timing:** Coordinates camera settlement with coordinate containment and target zoom verification; tested C.3–C.7.
   - **MAJOR-2 — Submission Single-Flight Lock:** Synchronously acquires `_isSubmitting = true` before awaiting anonymous auth or async stages; tested concurrency with deferred auth (Test B.4).
   - **MINOR-1 — Inaccurate Error Handling:** Distinct error classification for permission-denied, invalid draft, invariant violations; map focus initiation error recovery.
 - **P2.5 Testability & Quality Checks:**
-  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 32 tests (covering A.1–A.8, B.1–B.4, C.1–C.13, D.1–D.7).
-  - Full test suite: 406 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
+  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 37 regression tests (covering A.1–A.11, B.1–B.4, C.1–C.13, D.1–D.9).
+  - Authored 6 unit tests in `test/presentation/auth_notifier_test.dart`.
+  - Full test suite: 417 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
 
 ### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation [NOT STARTED]
 - Audit touch targets (>= 48×48), semantic labels, and contrast.
@@ -289,10 +295,11 @@ Owner-confirmed staging infrastructure state:
   - Owner physical-device QA Test 1 PASS on Samsung SM G998B Android and iPhone 12 Pro Max iOS.
   - QA Test 2 BLOCKED on both: no preexisting restroom records in staging for duplicate comparison; repeat during P2.5 after an authorized staging contribution.
 - Milestone P2.5:
-  - AUDIT REMEDIATED & VERIFIED — branch `phase-2/p2.5-submission-map-sync`, PR #11.
+  - ACTIVE AUDITED CANDIDATE: PR #12 on branch `phase-2/p2.5-submission`.
+  - Overlapping older candidate: PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner instruction).
   - Task contract: `docs/tasks/P2.5-submission-map-sync.md`.
-  - All 27 P2.5 automated regression tests pass; all 401 Flutter tests pass; 49/49 Firestore rules pass.
-  - Ready for independent exact-head code re-audit prior to staging saves.
+  - All 37 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); all 417 Flutter tests pass; 49/49 Firestore rules pass.
+  - Ready for independent exact-head code re-audit for PR #12 prior to staging saves.
 
 ## Current owner actions / external dependencies
 
@@ -302,21 +309,22 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-Milestone P2.5 audit-remediation exact-head validation:
+Milestone P2.5 PR #12 audit-remediation exact-head validation:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (406/406 tests passed: 32 tests in `p2_5_submission_map_sync_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
+- `flutter test` — PASS (417/417 tests passed: 37 tests in `p2_5_submission_map_sync_test.dart` + 6 tests in `auth_notifier_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
 - Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Request an independent exact-head code re-audit for PR #11.
-2. Only after independent re-audit approval, perform authorized physical-device staging saves and Android/iOS cross-device QA, including previously BLOCKED P2.4 QA Test 2.
-3. Keep production contribution writes disabled (`config.isProduction` release gate) until P2.6 rate limiting.
-4. Do not merge PR #11 or deploy to production without explicit human owner approval.
+1. Request an independent exact-head code re-audit for PR #12 (`phase-2/p2.5-submission`).
+2. Do not merge or close PR #11 (`phase-2/p2.5-submission-map-sync`); it awaits human owner disposition.
+3. Only after independent re-audit approval of PR #12, perform authorized physical-device staging saves and Android/iOS cross-device QA, including previously BLOCKED P2.4 QA Test 2.
+4. Keep production contribution writes disabled (`config.isProduction` release gate) until P2.6 rate limiting.
+5. Do not merge PR #12 or deploy to production without explicit human owner approval.
 
 ## Handoff template
 

@@ -24,6 +24,8 @@ import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dar
 import 'package:flushcrowd/presentation/screens/explore_restrooms_screen.dart';
 import 'package:flushcrowd/presentation/screens/main_shell_screen.dart';
 import 'package:flushcrowd/presentation/screens/map_discovery_screen.dart';
+import 'package:flushcrowd/data/repositories/auth_repository_impl.dart';
+import 'package:flushcrowd/presentation/state/auth_notifier.dart';
 import 'package:flushcrowd/presentation/state/location_notifier.dart';
 import 'package:flushcrowd/presentation/state/map_discovery_notifier.dart';
 
@@ -225,6 +227,7 @@ Widget createTestApp({
     environment: Environment.staging,
     firebaseProjectId: AppConstants.stagingFirebaseProjectId,
   ),
+  AuthNotifier? authNotifier,
 }) {
   return MultiProvider(
     providers: [
@@ -234,6 +237,11 @@ Widget createTestApp({
       ChangeNotifierProvider<LocationNotifier>.value(value: locationNotifier),
       ChangeNotifierProvider<MapDiscoveryNotifier>.value(
         value: discoveryNotifier,
+      ),
+      ChangeNotifierProvider<AuthNotifier>.value(
+        value:
+            authNotifier ??
+            AuthNotifier(authRepository: InMemoryAuthRepository()),
       ),
     ],
     child: MaterialApp(

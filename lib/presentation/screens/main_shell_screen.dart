@@ -301,38 +301,66 @@ class _MainShellScreenState extends State<MainShellScreen> {
         return;
       }
 
-      // MAJOR-2: Ensure anonymous session before write while operation lock is held
+      // MAJOR-1: Fail closed if the required authentication provider is unavailable
       final authNotifier = Provider.of<AuthNotifier?>(context, listen: false);
-      if (authNotifier != null && !authNotifier.isAuthenticated) {
-        await authNotifier.signInAnonymously();
-        if (!mounted) return;
-        if (!authNotifier.isAuthenticated) {
-          _preservedDraftCommand = command;
-          _preservedDraftCoordinates = confirmedCoordinates;
-          ScaffoldMessenger.of(context).hideCurrentSnackBar();
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: const Text(
-                'Unable to sign in anonymously. Please check your internet connection and try again.',
-              ),
-              duration: const Duration(seconds: 6),
-              behavior: SnackBarBehavior.floating,
-              action: SnackBarAction(
-                label: 'Retry',
-                onPressed: () {
-                  if (mounted) {
-                    _submitRestroom(
-                      command: command,
-                      confirmedCoordinates: confirmedCoordinates,
-                      advisoryScanNote: advisoryScanNote,
-                    );
-                  }
-                },
-              ),
+      if (authNotifier == null) {
+        _preservedDraftCommand = command;
+        _preservedDraftCoordinates = confirmedCoordinates;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Authentication service is unavailable. Please check your connection and try again.',
             ),
-          );
-          return;
-        }
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () {
+                if (mounted) {
+                  _submitRestroom(
+                    command: command,
+                    confirmedCoordinates: confirmedCoordinates,
+                    advisoryScanNote: advisoryScanNote,
+                  );
+                }
+              },
+            ),
+          ),
+        );
+        return;
+      }
+
+      // MAJOR-1: Unconditionally verify/ensure live anonymous session before every attempted write
+      await authNotifier.ensureAnonymousSession();
+      if (!mounted) return;
+
+      if (!authNotifier.isAuthenticated || authNotifier.userId == null) {
+        _preservedDraftCommand = command;
+        _preservedDraftCoordinates = confirmedCoordinates;
+        ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: const Text(
+              'Unable to sign in anonymously. Please check your internet connection and try again.',
+            ),
+            duration: const Duration(seconds: 6),
+            behavior: SnackBarBehavior.floating,
+            action: SnackBarAction(
+              label: 'Retry',
+              onPressed: () {
+                if (mounted) {
+                  _submitRestroom(
+                    command: command,
+                    confirmedCoordinates: confirmedCoordinates,
+                    advisoryScanNote: advisoryScanNote,
+                  );
+                }
+              },
+            ),
+          ),
+        );
+        return;
       }
 
       // Display non-dismissible progress indicator
@@ -375,6 +403,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
           command: command,
           confirmedCoordinates: confirmedCoordinates,
           error: submissionError,
+          advisoryScanNote: advisoryScanNote,
         );
         return;
       }
@@ -448,6 +477,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
     required CreateRestroomCommand command,
     required Coordinates confirmedCoordinates,
     required Object error,
+    String? advisoryScanNote,
   }) {
     // Preserve draft with identical command and restroomId
     _preservedDraftCommand = command;
@@ -460,6 +490,7 @@ class _MainShellScreenState extends State<MainShellScreen> {
         _submitRestroom(
           command: command,
           confirmedCoordinates: confirmedCoordinates,
+          advisoryScanNote: advisoryScanNote,
         );
       }
     };
