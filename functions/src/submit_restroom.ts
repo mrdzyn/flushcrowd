@@ -1,6 +1,7 @@
 import * as admin from 'firebase-admin';
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import { validateAndNormalizePayload, ValidatedRestroomData } from './validation';
+import { getAppConfig } from './config';
 
 export interface SubmitRestroomResponse {
   success: boolean;
@@ -65,6 +66,69 @@ export function buildPublicRestroomDocument(
 }
 
 /**
+ * Verifies whether an existing public restroom document exactly matches
+ * the canonical submission data. Dynamic server-managed fields
+ * (averageRating, ratingCount, verificationCount, lastVerifiedAt, status, createdAt, updatedAt)
+ * are excluded from the comparison.
+ */
+export function matchesCanonicalSubmission(
+  existing: Record<string, unknown>,
+  submitted: ValidatedRestroomData
+): boolean {
+  if (existing.id !== submitted.restroomId) return false;
+  if (existing.name !== submitted.name) return false;
+  if (existing.latitude !== submitted.latitude) return false;
+  if (existing.longitude !== submitted.longitude) return false;
+  if (existing.geohash !== submitted.geohash) return false;
+  if (existing.accessType !== submitted.accessType) return false;
+
+  const existingFeeAmount = existing.feeAmount !== undefined ? existing.feeAmount : null;
+  if (existingFeeAmount !== submitted.feeAmount) return false;
+
+  const existingFeeCurrency = existing.feeCurrency !== undefined ? existing.feeCurrency : null;
+  if (existingFeeCurrency !== submitted.feeCurrency) return false;
+
+  const stringOrNullFields: Array<keyof ValidatedRestroomData> = [
+    'countryCode',
+    'region',
+    'city',
+    'buildingName',
+    'buildingSection',
+    'floor',
+    'unitOrArea',
+    'landmark',
+    'directionsNote',
+    'accessInstructions',
+  ];
+
+  for (const field of stringOrNullFields) {
+    const existingVal = existing[field] !== undefined ? existing[field] : null;
+    const submittedVal = submitted[field] !== undefined ? submitted[field] : null;
+    if (existingVal !== submittedVal) return false;
+  }
+
+  const boolOrNullFields: Array<keyof ValidatedRestroomData> = [
+    'male',
+    'female',
+    'allGender',
+    'pwdAccessible',
+    'babyChanging',
+    'hasBidet',
+    'hasToiletPaper',
+    'hasSoap',
+    'hasHandDryer',
+  ];
+
+  for (const field of boolOrNullFields) {
+    const existingVal = existing[field] !== undefined ? existing[field] : null;
+    const submittedVal = submitted[field] !== undefined ? submitted[field] : null;
+    if (existingVal !== submittedVal) return false;
+  }
+
+  return true;
+}
+
+/**
  * Core transactional submission logic.
  * Bounded by OCC transaction on /contributionRateLimits/{uid}.
  */
@@ -84,22 +148,50 @@ export async function executeSubmitRestroom(
     const privateRef = db.collection('contributions').doc(`restroom_${validated.restroomId}`);
     const rateLimitRef = db.collection('contributionRateLimits').doc(uid);
 
-    // 1. Check existing public restroom document (Idempotency & Collision check)
+    // 1. Check existing public restroom and private contribution documents
+    // (Idempotency, Document ID Collision, and Orphaned Pair integrity checks)
     const publicSnap = await transaction.get(publicRef);
-    if (publicSnap.exists) {
-      const privateSnap = await transaction.get(privateRef);
-      if (privateSnap.exists && privateSnap.data()?.userUid === uid) {
-        // Idempotent retry of existing contribution: return existing record without charging rate limits
-        return {
-          success: true,
-          restroom: publicSnap.data() as Record<string, unknown>,
-          isIdempotentRetry: true,
-        };
+    const privateSnap = await transaction.get(privateRef);
+
+    if (publicSnap.exists || privateSnap.exists) {
+      // Check for corrupted / orphaned state
+      if (!publicSnap.exists && privateSnap.exists) {
+        throw new HttpsError(
+          'already-exists',
+          'A contribution record for this ID already exists without a matching public restroom (orphaned private record).'
+        );
       }
-      throw new HttpsError(
-        'already-exists',
-        'A restroom with this ID already exists or is owned by another contributor.'
-      );
+      if (publicSnap.exists && !privateSnap.exists) {
+        throw new HttpsError(
+          'already-exists',
+          'A public restroom with this ID already exists without a matching private contribution (orphaned public record).'
+        );
+      }
+
+      // Both public and private documents exist: verify ownership
+      const privateData = privateSnap.data() as Record<string, unknown> | undefined;
+      if (privateData?.userUid !== uid) {
+        throw new HttpsError(
+          'already-exists',
+          'A restroom with this ID already exists or is owned by another contributor.'
+        );
+      }
+
+      // Same UID: verify payload matches canonical original submission
+      const publicData = publicSnap.data() as Record<string, unknown>;
+      if (!matchesCanonicalSubmission(publicData, validated)) {
+        throw new HttpsError(
+          'already-exists',
+          'A restroom with this ID already exists with different details. Modified payloads cannot be resubmitted with the same ID.'
+        );
+      }
+
+      // Identical retry of existing contribution: return existing record without charging rate limits
+      return {
+        success: true,
+        restroom: publicData,
+        isIdempotentRetry: true,
+      };
     }
 
     // 2. Read rate-limit document for authenticated user
@@ -168,18 +260,23 @@ export async function executeSubmitRestroom(
  */
 export const submitRestroom = onCall(
   {
-    enforceAppCheck: false, // Default false in local tests; enforced via environment in staging/production
+    enforceAppCheck: getAppConfig().enforceAppCheck,
   },
   async (request: CallableRequest<unknown>): Promise<SubmitRestroomResponse> => {
+    const config = getAppConfig();
+
     // 1. Authenticate caller
     if (!request.auth || !request.auth.uid) {
       throw new HttpsError('unauthenticated', 'User must be authenticated anonymously.');
     }
     const uid = request.auth.uid;
 
-    // 2. Validate App Check if configured
-    if (process.env.ENFORCE_APP_CHECK === 'true' && !request.app) {
-      throw new HttpsError('failed-precondition', 'App Check verification failed.');
+    // 2. Validate App Check (enforced strictly in staging and production)
+    if (config.enforceAppCheck && !request.app) {
+      throw new HttpsError(
+        'failed-precondition',
+        'App Check verification failed. Request must originate from an authentic application instance.'
+      );
     }
 
     const db = admin.firestore();

@@ -5,6 +5,7 @@ if (admin.apps.length === 0) {
   admin.initializeApp();
 }
 
-export { submitRestroom } from './submit_restroom';
+export { submitRestroom, matchesCanonicalSubmission } from './submit_restroom';
 export { validateAndNormalizePayload } from './validation';
 export { encodeGeohash } from './geohash';
+export { getAppConfig } from './config';

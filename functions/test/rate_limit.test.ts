@@ -4,6 +4,7 @@ import * as admin from 'firebase-admin';
 import { executeSubmitRestroom, submitRestroom } from '../src/submit_restroom';
 import { HttpsError } from 'firebase-functions/v2/https';
 import { initializeTestEnvironment, assertFails } from '@firebase/rules-unit-testing';
+import { getAppConfig } from '../src/config';
 
 // Ensure Firebase Admin is connected to Firestore emulator
 const PROJECT_ID = 'flushcrowd-p26-test';
@@ -268,8 +269,8 @@ describe('P2.6-C — Comprehensive Emulator Test Suite for Rate Limiting & Abuse
     assert.equal(rateDoc.data()!.submissionTimestamps.length, 3);
   });
 
-  // Scenario 7: Idempotency with Stable ID
-  it('Scenario 7: Idempotency with Stable ID succeeds without consuming rate limit quota', async () => {
+  // Scenario 7: Idempotency with Stable ID & Integrity Guards
+  it('Scenario 7a: Identical retry succeeds without consuming rate limit quota', async () => {
     const uid = 'uid_idempotent_user';
     const payload = getSamplePayload('rr_stable_007');
 
@@ -286,6 +287,133 @@ describe('P2.6-C — Comprehensive Emulator Test Suite for Rate Limiting & Abuse
     // Ensure timestamp count did not increase
     const rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
     assert.equal(rateDoc.data()!.submissionTimestamps.length, 1);
+  });
+
+  it('Scenario 7b: Same UID, same ID, modified contents fails and rejects payload mutation', async () => {
+    const uid = 'uid_mod_user';
+    const payloadOriginal = getSamplePayload('rr_mod_001', 'Original Restroom Name');
+
+    // Original valid submission
+    const res1 = await executeSubmitRestroom(db, uid, payloadOriginal);
+    assert.equal(res1.success, true);
+    assert.equal(res1.isIdempotentRetry, false);
+
+    // Resubmission attempt with modified name
+    const payloadModifiedName = getSamplePayload('rr_mod_001', 'Tampered Restroom Name');
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, payloadModifiedName);
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        assert.match(err.message, /different details/);
+        return true;
+      }
+    );
+
+    // Resubmission attempt with modified coordinates
+    const payloadModifiedCoords = {
+      ...payloadOriginal,
+      latitude: 14.56,
+      longitude: 121.03,
+      geohash: 'wdw4f4',
+    };
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, payloadModifiedCoords);
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        return true;
+      }
+    );
+
+    // Verify original public document was NOT altered
+    const pubDoc = await db.collection('restrooms').doc('rr_mod_001').get();
+    assert.equal(pubDoc.data()!.name, 'Original Restroom Name');
+
+    // Verify rate limit timestamp count was NOT charged for failed mutation attempts
+    const rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
+    assert.equal(rateDoc.data()!.submissionTimestamps.length, 1);
+  });
+
+  it('Scenario 7c: Existing private contribution without public restroom (orphaned private) fails safely', async () => {
+    const uid = 'uid_orphan_priv_user';
+    const rrId = 'rr_orphan_priv_001';
+
+    // Pre-seed orphaned private contribution doc directly without public restroom
+    await db.collection('contributions').doc(`restroom_${rrId}`).set({
+      id: `restroom_${rrId}`,
+      contributionType: 'restroom',
+      resourceId: rrId,
+      restroomId: rrId,
+      userUid: uid,
+      moderationState: 'pending',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    // Attempt to submit with this ID -> must fail safely
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, getSamplePayload(rrId));
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        assert.match(err.message, /orphaned private record/);
+        return true;
+      }
+    );
+
+    // Verify public restroom was NEVER created
+    const pubDoc = await db.collection('restrooms').doc(rrId).get();
+    assert.equal(pubDoc.exists, false);
+
+    // Verify rate limit doc was not created
+    const rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
+    assert.equal(rateDoc.exists, false);
+  });
+
+  it('Scenario 7d: Existing public restroom without matching private contribution (orphaned public) fails safely', async () => {
+    const uid = 'uid_orphan_pub_user';
+    const rrId = 'rr_orphan_pub_001';
+
+    // Pre-seed orphaned public restroom doc directly without private contribution
+    await db.collection('restrooms').doc(rrId).set({
+      id: rrId,
+      name: 'Orphan Public Restroom',
+      latitude: 14.552,
+      longitude: 121.0205,
+      geohash: 'wdw4cc',
+      accessType: 'free',
+      status: 'unverified',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    // Attempt to submit with this ID -> must fail safely
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, getSamplePayload(rrId));
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        assert.match(err.message, /orphaned public record/);
+        return true;
+      }
+    );
+
+    // Verify private contribution was NEVER created
+    const privDoc = await db.collection('contributions').doc(`restroom_${rrId}`).get();
+    assert.equal(privDoc.exists, false);
+
+    // Verify rate limit doc was not created
+    const rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
+    assert.equal(rateDoc.exists, false);
   });
 
   // Scenario 8: Document ID Collision
@@ -355,7 +483,101 @@ describe('P2.6-C — Comprehensive Emulator Test Suite for Rate Limiting & Abuse
     assert.equal(pubDoc.data()!.createdByUid, undefined);
   });
 
-  // Scenario 10: Direct Write Bypass Prevention
+  it('Scenario 9b: App Check enforcement fails closed when enabled and missing valid token', async () => {
+    const originalEnv = process.env.ENFORCE_APP_CHECK;
+    try {
+      process.env.ENFORCE_APP_CHECK = 'true';
+
+      // 1. Missing request.app -> Fails with failed-precondition
+      await assert.rejects(
+        async () => {
+          await submitRestroom.run({
+            data: getSamplePayload('rr_appcheck_fail'),
+            auth: { uid: 'uid_test_appcheck', token: {} as any },
+            app: undefined,
+            rawRequest: {} as any,
+          });
+        },
+        (err: unknown) => {
+          assert.ok(err instanceof HttpsError);
+          assert.equal(err.code, 'failed-precondition');
+          assert.match(err.message, /App Check verification failed/);
+          return true;
+        }
+      );
+
+      // 2. Valid request.app -> Passes App Check validation
+      const res = await submitRestroom.run({
+        data: getSamplePayload('rr_appcheck_pass'),
+        auth: { uid: 'uid_test_appcheck_pass', token: {} as any },
+        app: {
+          appId: 'com.flushcrowd.flushcrowd',
+          token: {} as any,
+          alreadyConsumed: false,
+        },
+        rawRequest: {} as any,
+      });
+      assert.equal(res.success, true);
+    } finally {
+      if (originalEnv !== undefined) {
+        process.env.ENFORCE_APP_CHECK = originalEnv;
+      } else {
+        delete process.env.ENFORCE_APP_CHECK;
+      }
+    }
+  });
+
+  it('Scenario 9c: getAppConfig fails closed on unconfigured or insecure deployment settings', () => {
+    const savedAppEnv = process.env.APP_ENV;
+    const savedEnforce = process.env.ENFORCE_APP_CHECK;
+
+    try {
+      // 1. Production cannot disable App Check
+      process.env.APP_ENV = 'production';
+      process.env.ENFORCE_APP_CHECK = 'false';
+      assert.throws(
+        () => getAppConfig(),
+        /Cannot disable App Check.*in production/
+      );
+
+      // 2. Staging cannot disable App Check
+      process.env.APP_ENV = 'staging';
+      process.env.ENFORCE_APP_CHECK = 'false';
+      assert.throws(
+        () => getAppConfig(),
+        /Cannot disable App Check.*in staging/
+      );
+
+      // 3. Staging and production default to enforceAppCheck = true
+      process.env.APP_ENV = 'production';
+      delete process.env.ENFORCE_APP_CHECK;
+      assert.equal(getAppConfig().enforceAppCheck, true);
+
+      process.env.APP_ENV = 'staging';
+      delete process.env.ENFORCE_APP_CHECK;
+      assert.equal(getAppConfig().enforceAppCheck, true);
+    } finally {
+      if (savedAppEnv !== undefined) process.env.APP_ENV = savedAppEnv;
+      else delete process.env.APP_ENV;
+      if (savedEnforce !== undefined) process.env.ENFORCE_APP_CHECK = savedEnforce;
+      else delete process.env.ENFORCE_APP_CHECK;
+    }
+  });
+
+  // Scenario 10: Direct Write Bypass Prevention under PROPOSED Production Rules
+  // =====================================================================================
+  // ARCHITECTURAL NOTE & PRODUCTION RULES EVIDENCE (Phase 2 Milestone P2.6 Release Gate):
+  //
+  // 1. This test evaluates the PROPOSED production security rules in an isolated test environment.
+  // 2. The repository's root `firestore.rules` is deliberately NOT changed in this checkpoint.
+  //    It remains on the existing P2.1/P2.5 staging rules allowing client batch writes to preserve
+  //    staging parity and prevent breaking live mobile testing during P2.6-B development.
+  // 3. This test proves that once `allow create: if false;` is deployed for production, direct client
+  //    SDK writes to `/restrooms` and `/contributions` will fail with PERMISSION_DENIED, while the
+  //    trusted Cloud Functions backend (using Firebase Admin SDK) continues to succeed.
+  // 4. Actual production rules migration and deployment is an explicit later P2.6 release gate.
+  //    Live Firebase rules are NOT modified in this test or checkpoint.
+  // =====================================================================================
   it('Scenario 10: Direct Write Bypass Prevention rejects direct client SDK writes under proposed production rules', async () => {
     const PROD_PROJECT_ID = 'flushcrowd-p26-prod-rules-test';
     const proposedProductionRules = `
