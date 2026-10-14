@@ -45,6 +45,7 @@ dependencies:
   provider: ^6.1.5+1
   url_launcher: ^6.3.2
   unorm_dart: ^0.3.3
+  cloud_functions: ^6.5.0
 
 dev_dependencies:
   flutter_test:

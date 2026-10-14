@@ -99,5 +99,15 @@ void main() {
         isFalse,
       );
     });
+
+    test('useCallableSubmission defaults to false and is copied correctly', () {
+      const config = AppConfig(environment: Environment.staging);
+      expect(config.useCallableSubmission, isFalse);
+
+      final callableConfig = config.copyWith(useCallableSubmission: true);
+      expect(callableConfig.useCallableSubmission, isTrue);
+
+      expect(AppConstants.defaultCloudFunctionsRegion, equals('us-central1'));
+    });
   });
 }

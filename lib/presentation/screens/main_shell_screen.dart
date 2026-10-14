@@ -548,6 +548,25 @@ class _MainShellScreenState extends State<MainShellScreen> {
             _openAddRestroom();
           }
         };
+      } else if (code == 'rate-limited' ||
+          code == 'resource-exhausted' ||
+          message.contains('rate limit') ||
+          message.contains('submission limit')) {
+        errorMessage = error.message;
+        actionLabel = 'Resume';
+        onAction = () {
+          if (mounted) {
+            _openAddRestroom();
+          }
+        };
+      } else if (code == 'already-exists') {
+        errorMessage = error.message;
+        actionLabel = 'Resume';
+        onAction = () {
+          if (mounted) {
+            _openAddRestroom();
+          }
+        };
       } else if (code == 'auth-expired' ||
           code == 'session-expired' ||
           code == 'user-token-expired' ||
@@ -583,7 +602,27 @@ class _MainShellScreenState extends State<MainShellScreen> {
       }
     } else {
       final str = error.toString().toLowerCase();
-      if (str.contains('app check') || str.contains('appcheck')) {
+      if (str.contains('rate limit') ||
+          str.contains('submission limit') ||
+          str.contains('resource-exhausted')) {
+        errorMessage = 'Submission limit reached. Please wait before submitting another restroom.';
+        actionLabel = 'Resume';
+        onAction = () {
+          if (mounted) {
+            _openAddRestroom();
+          }
+        };
+      } else if (str.contains('already-exists') ||
+          str.contains('already exists')) {
+        errorMessage =
+            'A restroom with this ID already exists with different details.';
+        actionLabel = 'Resume';
+        onAction = () {
+          if (mounted) {
+            _openAddRestroom();
+          }
+        };
+      } else if (str.contains('app check') || str.contains('appcheck')) {
         errorMessage = 'App verification failed. Please ensure you are using the official app.';
       } else if (str.contains('permission-denied') ||
           str.contains('permission denied')) {
