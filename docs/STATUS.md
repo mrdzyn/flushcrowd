@@ -2,16 +2,16 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-13
+- **Last updated:** 2026-10-14
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.5 End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback — ACTIVE
+- **Current milestone:** Milestone P2.5 End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback — AWAITING PR #12 MERGE
 - **Current branch:** `phase-2/p2.5-submission`
 - **Current PR:** #12 — P2.5 submission & discovery sync implementation (https://github.com/mrdzyn/flushcrowd/pull/12)
 - **Base:** `main` at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee` (PR #10 P2.4 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [ACTIVE]; P2.6 [NOT STARTED].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [QA PASS — AWAITING OWNER MERGE]; P2.6 [READY TO START].
 
 ## Current objective
 
@@ -245,13 +245,21 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
   - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 42 regression tests (covering A.1–A.11, B.1–B.4, C.1–C.13, D.1–D.14).
   - Authored 6 unit tests in `test/presentation/auth_notifier_test.dart`.
   - Full test suite: 422 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
+- **Owner Physical-Device Staging QA Findings:**
+  - Samsung SM-G998B Android: PASS for adding restrooms and duplicate advisory.
+  - Johnmikel Xavier's iPhone: PASS for adding restrooms and duplicate advisory.
+  - Pending Pre-Production Staging Verification:
+    1. Cross-device visibility & discovery query synchronization (Android-added restroom visible on iOS and vice versa).
+    2. Authoritative camera settlement & preview card rendering (zoom 16.5 settlement and Unverified preview without optimistic local state).
+    3. Cloud Firestore public/private document pair integrity (matching `/restrooms/{id}` with `status == 'unverified'` and no UID, and `/contributions/restroom_{id}` with `moderationState == 'pending'` and contributor UID).
+- **Overlapping PR Disposition:** PR #11 (`phase-2/p2.5-submission-map-sync`) is superseded by PR #12 (`phase-2/p2.5-submission`); awaits human owner action to squash-merge PR #12 into `main` and close PR #11 without merge.
 
-### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation [NOT STARTED]
-- Audit touch targets (>= 48×48), semantic labels, and contrast.
-- Verify production abuse rate-limiting release gate.
-- Run complete test suite (`flutter test`, Firestore emulator rules tests).
-- Validate platform compilation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
-- Update `docs/STATUS.md` and prepare Phase 2 for audit.
+### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation [PLANNED]
+- **Abuse Rate-Limiting Gate:** Evaluate and enforce server-side per-UID rate limiting before opening production writes. Recommended Phase 2 implementation: deterministic private hourly slot documents `/contributionRateLimits/{uid}_{YYYYMMDD_HH}` verified via Firestore Security Rules `existsAfter()` ensuring maximum 1 write/UID/hour without serverless compute.
+- **Accessibility (a11y) Audit:** Audit touch targets (>= 48×48 dp), semantic labels, high contrast (>= 4.5:1), and dynamic text scaling (up to 200%) across all Phase 2 screens (`AddRestroomLocationScreen`, `AddRestroomFormScreen`, `TriStateAmenitySelector`, `DuplicateWarningSheet`).
+- **Platform Builds & Static Analysis:** Validate `flutter build apk --debug`, `flutter build ios --debug --no-codesign`, `flutter analyze` (0 issues), and `dart format`.
+- **Validation Suite:** Run complete Flutter test suite (422+ tests) and Firestore Security Rules emulator suite (49+ tests).
+- **Independent Audit:** Submit for independent 0/0/0 audit to formally close Phase 2.
 
 ---
 
@@ -308,19 +316,23 @@ Owner-confirmed staging infrastructure state:
 - Milestone P2.4 (Duplicate Detection):
   - SQUASH-MERGED — PR #10, `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`
   - Owner physical-device QA Test 1 PASS on Samsung SM G998B Android and iPhone 12 Pro Max iOS.
-  - QA Test 2 BLOCKED on both: no preexisting restroom records in staging for duplicate comparison; repeat during P2.5 after an authorized staging contribution.
+  - QA Test 2 reconciled & unblocked following P2.5 staging contribution writes.
 - Milestone P2.5:
   - ACTIVE AUDITED CANDIDATE: PR #12 on branch `phase-2/p2.5-submission`.
   - Overlapping older candidate: PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner instruction).
   - Task contract: `docs/tasks/P2.5-submission-map-sync.md`.
   - All 42 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); all 422 Flutter tests pass; 49/49 Firestore rules pass.
-  - Code verified eligible for owner-authorized physical-device staging QA; documentation-only fixes N1/N2 pending narrow independent verification.
+  - Owner physical-device QA: PASS on Samsung SM-G998B Android and iPhone (Johnmikel Xavier) for add restroom and duplicate advisory sheet.
+  - Pending Pre-Production Staging Verification: Cross-device query sync, camera settlement to zoom 16.5 & preview rendering, and Firestore Console document pair integrity.
+  - Disposition: Awaiting human owner squash-merge of PR #12 into `main` and closure of PR #11 without merge.
 
 ## Current owner actions / external dependencies
 
 1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
 2. Configure GCP billing budget alerts.
 3. Production Android signing remains a later release-readiness action.
+4. Authorize squash-merge of PR #12 and closure of PR #11.
+5. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
 
 ## Current validation status
 
@@ -335,11 +347,11 @@ Milestone P2.5 PR #12 audit-remediation exact-head validation:
 
 ## Next recommended action
 
-1. Perform narrow independent documentation diff verification of N1/N2 on PR #12 (`phase-2/p2.5-submission`).
-2. Proceed to owner-authorized physical-device staging QA on Samsung SM G998B and iPhone 12 Pro Max (`flutter run --dart-define=APP_ENV=staging` against `flushcrowd-staging`), reconciling previously BLOCKED P2.4 QA Test 2.
-3. Do not merge or close PR #11 (`phase-2/p2.5-submission-map-sync`); it awaits human owner disposition.
-4. Keep production contribution writes disabled (`config.isProduction` release gate) until P2.6 rate limiting.
-5. Do not merge PR #12 or deploy to production without explicit human owner approval.
+1. Human owner to squash-merge PR #12 (`phase-2/p2.5-submission`) into `main`.
+2. Human owner to close overlapping PR #11 (`phase-2/p2.5-submission-map-sync`) without merge.
+3. Complete pending physical-device QA verification (cross-device discovery sync, camera settlement, Firestore document pair check).
+4. Create branch `phase-2/p2.6-hardening` from updated `main` to implement Milestone P2.6 (enforceable rate-limiting gate, a11y audit, platform compilation).
+5. Human owner to review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
 
 ## Handoff template
 
