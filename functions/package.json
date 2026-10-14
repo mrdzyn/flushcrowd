@@ -1,0 +1,25 @@
+{
+  "name": "flushcrowd-functions",
+  "version": "1.0.0",
+  "private": true,
+  "main": "lib/index.js",
+  "scripts": {
+    "build": "tsc",
+    "build:watch": "tsc --watch",
+    "pretest": "npm run build",
+    "test": "node --test lib/test/*.test.js",
+    "test:emulators": "../rules_tests/node_modules/.bin/firebase emulators:exec --only firestore \"npm test\""
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "firebase-admin": "^12.7.0",
+    "firebase-functions": "^5.1.1"
+  },
+  "devDependencies": {
+    "@types/node": "^20.17.0",
+    "@firebase/rules-unit-testing": "^5.0.2",
+    "typescript": "^5.6.3"
+  }
+}

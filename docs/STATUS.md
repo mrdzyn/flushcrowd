@@ -7,27 +7,26 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.5 End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback — AWAITING PR #12 MERGE
-- **Current branch:** `phase-2/p2.5-submission`
-- **Current PR:** #12 — P2.5 submission & discovery sync implementation (https://github.com/mrdzyn/flushcrowd/pull/12)
-- **Base:** `main` at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee` (PR #10 P2.4 squash merge)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [QA PASS — AWAITING OWNER MERGE]; P2.6 [READY TO START].
+- **Current milestone:** Milestone P2.6 Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation — ACTIVE (P2.6-A Backend Checkpoint Complete)
+- **Current branch:** `phase-2/p2.6-hardening`
+- **Current PR:** Candidate PR for P2.6 hardening (rate-limiting backend & direct-write bypass prevention)
+- **Base:** `main` at `ce208ee6be4364ad5fd39364d596725548c525b9` (following owner merge of PR #12)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [MERGED — PR #12 at `ce208ee6be4364ad5fd39364d596725548c525b9`]; P2.6 [ACTIVE — P2.6-A BACKEND IMPLEMENTED & TESTED].
 
 ## Current objective
 
-Implement and validate **P2.5** on branch `phase-2/p2.5-submission`, following `docs/tasks/P2.5-submission-map-sync.md` and canonical `docs/09-phase-2-add-restroom.md`.
+Implement and validate **P2.6** on branch `phase-2/p2.6-hardening`, following `docs/tasks/P2.6-hardening-rate-limit.md`, canonical `docs/03-privacy-security.md`, and `docs/09-phase-2-add-restroom.md`:
 
-- Wire existing P2.4 validated `CreateRestroomCommand` + advisory duplicate flow to the P2.1 `FirestoreRestroomRepository.submitRestroom()` atomic public/private batch.
-- Authenticate anonymously before submitting; prevent false successful saves when staging Firebase fails initialization (`firebase-init-failed` exception in offline in-memory fallback).
-- Enforce production contribution write block until P2.6 enforceable per-UID rate limiting.
-- Keep one exact command/restroom ID through recoverable failures, retries, and reconciliation; provide clear disabled/loading/success/error feedback.
-- On remote success, clear draft, show success message with advisory scan note, navigate to map at zoom 16.5, force canonical viewport refresh, select by authoritative discovered `restroomId`, show one `Unverified` preview; strictly zero optimistic or synthetic insertion.
-- Surface recovery action (`Refresh`) if authoritative query omits newly created facility.
-- 37 automated regression tests in `test/presentation/p2_5_submission_map_sync_test.dart` (plus 6 unit tests in `test/presentation/auth_notifier_test.dart`) covering safety gates, single-flight submission, live anonymous session restoration, recoverable retries, and authoritative map synchronization.
+- **P2.6-A — Rate-Limiting Backend & Direct-Write Bypass Prevention:** Scaffold TypeScript Firebase Functions V2 (`functions/`) and implement `submitRestroom` callable backend with strict server-side validation, authoritative geohash derivation, transactional OCC concurrency on `/contributionRateLimits/{uid}`, locked rate limits (10/24h, 3/10m), timestamp pruning, stable-ID idempotency retry, ID collision defense, zero contributor UID leakage in public documents, and direct-write bypass prevention proof. (10/10 emulator test scenarios PASS).
+- **P2.6-B — Flutter Mutation Adapter & Fail-Closed Integrity:** Implement `CallableFirestoreMutationAdapter` in Flutter calling `submitRestroom` callable function; fail closed on all backend errors without direct write fallback; preserve draft commands and user input.
+- **P2.6-F — Accessibility (a11y) Audit:** Audit touch targets (>= 48×48 dp), semantic labels, contrast (>= 4.5:1), and dynamic text scaling (200%) across Phase 2 screens.
+- **P2.6-G — Platform Compilation & Release Validation:** Validate `flutter build apk --debug`, `flutter build ios --debug --no-codesign`, full Flutter test suite (422+ tests), Firestore rules tests (49 tests), and functions emulator tests (10 scenarios).
 
-The active specification is:
+The active specifications are:
 
-- `docs/09-phase-2-add-restroom.md` (active Phase 2 specification)
+- `docs/tasks/P2.6-hardening-rate-limit.md` (active P2.6 task specification)
+- `docs/03-privacy-security.md` (abuse-control release gate & contribution controls)
+- `docs/09-phase-2-add-restroom.md` (Phase 2 specification)
 
 ## Locked decisions
 
@@ -202,64 +201,34 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 - Implemented `DuplicateWarningSheet` advisory UI showing top 3 candidates with distance and similarity chips.
 - Non-blocking advisory warning with continue, view existing, and cancel actions; safe draft preservation across flows.
 
-### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback [ACTIVE]
-- **Active Audited Candidate:** PR #12 (`phase-2/p2.5-submission`).
-- **Overlapping Older Candidate:** PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner approval).
-- **PR #12 Audit Remediation:**
-  - **MAJOR-1 — Restore anonymous session on every submission attempt:**
-    - In `MainShellScreen._submitRestroom`, eliminated sole reliance on cached `AuthNotifier.isAuthenticated`.
-    - Unconditionally verifies and ensures live anonymous session via `authNotifier.ensureAnonymousSession()` before every attempted write (including retries).
-    - Fails closed if the required authentication provider is unavailable (`authNotifier == null`), preserving draft command/coordinates and displaying truthful retry feedback.
-    - Preserves synchronous `_isSubmitting = true` single-flight lock before any asynchronous authentication operation (preserving Test B.4).
-    - On auth failure: does not submit, preserves identical command and restroom ID, shows truthful recovery SnackBar with `Retry`, and never allocates a new restroom ID.
-    - Updated `AuthNotifier` to listen to live `authStateChanges`, clear `_userId` on errors, and unconditionally invoke `_authRepository.ensureAnonymousSession()`.
-    - Automated tests: Tests A.9, A.10, A.11 in `p2_5_submission_map_sync_test.dart` and 6 unit tests in `auth_notifier_test.dart`.
-  - **MAJOR-2 — Reconcile canonical status across competing PR candidates:**
-    - Documented PR #12 on branch `phase-2/p2.5-submission` as the active audited candidate.
-    - Documented PR #11 as an overlapping older candidate awaiting owner disposition; removed stale instructions directing next agent to audit or merge PR #11.
-  - **MINOR-1 — Preserve advisory scan note on retry:**
-    - Forwarded `advisoryScanNote` through recoverable error and retry paths in `MainShellScreen._handleSubmissionFailure` and `onAction`.
-    - Stored `_preservedDraftAdvisoryScanNote` on draft preservation and cleared on successful submission or explicit draft abandonment.
-    - Retry does not repeat duplicate scans unnecessarily; preserves incomplete or fail-open advisory note on successful retry (Tests D.8, D.9).
-  - **m1 — Submission Error UX:**
-    - Replaced raw backend error exposure in `MainShellScreen._handleSubmissionFailure` with concise, user-friendly error messages without exposing sensitive Firebase details.
-    - Distinguishes expired authentication (`'Authentication session expired. Please check your connection and try again.'`), permission failures (`'Submission rejected by server permissions. Please ensure your session is valid.'`), App Check verification failures (`'App verification failed. Please ensure you are using the official app.'`), authorization failures (`'Authorization failed. Please ensure your session is valid and try again.'`), network problems (`'Connection failed. Please check your internet connection.'`), and unclassified errors (`'Unable to save restroom. Please try again.'`).
-    - Preserves exact pending `CreateRestroomCommand`, `restroomId`, draft coordinates, and recovery options (`Retry`/`Resume`); never shows success when persistence fails.
-    - Added regression tests D.10 through D.14 in `test/presentation/p2_5_submission_map_sync_test.dart`.
-  - **m2 — Documentation Alignment:**
-    - Updated `docs/tasks/P2.5-submission-map-sync.md` with active candidate branch (`phase-2/p2.5-submission`), active status, and required staging execution command (`flutter run --dart-define=APP_ENV=staging`).
-    - Updated `docs/07-environment-setup.md` with required staging command (`flutter run --dart-define=APP_ENV=staging`), documenting that unknown or missing `APP_ENV` values fail closed and disable submissions, and that staging requires the configured `flushcrowd-staging` Firebase project.
-  - **m3 — PR Description Metadata:**
-    - Updated PR #12 description with latest implementation HEAD, total Flutter test count (422), P2.5 regression test count (42), anonymous authentication test count (6), independent audit status, and outstanding owner physical-device staging QA requirements.
-  - **N1 — Accurate Audit Status in Documentation:**
-    - Corrected `docs/tasks/P2.5-submission-map-sync.md` to accurately reflect audit history without premature 0/0/0 claims: previous audit PASS WITH MINORS (0/0/3) at `de692b5`; remediation at `ece86b9`; latest independent re-audit PASS WITH MINORS (0/0/2); N1/N2 documentation fixes pending verification; code eligible for owner-authorized physical-device staging QA.
-  - **N2 — Accurate Environment Mapping Documentation:**
-    - Accurately documented `Environment.fromString()` behavior across `docs/tasks/P2.5-submission-map-sync.md` and `docs/07-environment-setup.md`: missing `APP_ENV` defaults to `development`, explicit `development` maps to `development`, unrecognized values map to `unknown` (not `development`), neither `development` nor `unknown` permits contribution submission, and staging submissions strictly require both `APP_ENV=staging` and Firebase project `flushcrowd-staging`.
-    - Removed nonexistent quoted error message strings.
-- **Prior Findings Remediated:**
-  - **BLOCKER-1 — Staging-only Write Safety:** Fail-closed gate requires `config.isStaging` AND `firebaseProjectId == 'flushcrowd-staging'`; tested default/dev/unknown/prod/mismatched configurations (Tests A.4–A.8).
-  - **MAJOR-1 — Authoritative Map Refresh Timing:** Coordinates camera settlement with coordinate containment and target zoom verification; tested C.3–C.7.
-  - **MAJOR-2 — Submission Single-Flight Lock:** Synchronously acquires `_isSubmitting = true` before awaiting anonymous auth or async stages; tested concurrency with deferred auth (Test B.4).
-  - **MINOR-1 — Inaccurate Error Handling:** Distinct error classification for permission-denied, invalid draft, invariant violations; map focus initiation error recovery.
-- **P2.5 Testability & Quality Checks:**
-  - Expanded `test/presentation/p2_5_submission_map_sync_test.dart` to 42 regression tests (covering A.1–A.11, B.1–B.4, C.1–C.13, D.1–D.14).
-  - Authored 6 unit tests in `test/presentation/auth_notifier_test.dart`.
-  - Full test suite: 422 Flutter tests pass (0 failures), 49/49 Firestore rules pass, `flutter analyze` 0 warnings, `dart format` clean.
-- **Owner Physical-Device Staging QA Findings:**
-  - Samsung SM-G998B Android: PASS for adding restrooms and duplicate advisory.
-  - Johnmikel Xavier's iPhone: PASS for adding restrooms and duplicate advisory.
-  - Pending Pre-Production Staging Verification:
-    1. Cross-device visibility & discovery query synchronization (Android-added restroom visible on iOS and vice versa).
-    2. Authoritative camera settlement & preview card rendering (zoom 16.5 settlement and Unverified preview without optimistic local state).
-    3. Cloud Firestore public/private document pair integrity (matching `/restrooms/{id}` with `status == 'unverified'` and no UID, and `/contributions/restroom_{id}` with `moderationState == 'pending'` and contributor UID).
-- **Overlapping PR Disposition:** PR #11 (`phase-2/p2.5-submission-map-sync`) is superseded by PR #12 (`phase-2/p2.5-submission`); awaits human owner action to squash-merge PR #12 into `main` and close PR #11 without merge.
+### P2.5 — End-to-End Anonymous Auth Submission, Map Discovery Sync & Feedback [MERGED — PR #12]
+- Squash-merged into `main` at `ce208ee6be4364ad5fd39364d596725548c525b9` (PR #12).
+- Overlapping PR #11 closed without merge.
+- Owner physical-device QA: PASS on Samsung SM-G998B Android and iPhone (Johnmikel Xavier) for add restroom and duplicate advisory sheet.
+- All 42 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); full test suite (422 Flutter tests, 49 Firestore rules tests) passing.
 
-### P2.6 — Hardening, Accessibility, Abuse Rate-Limiting Gate & Validation [PLANNED]
-- **Abuse Rate-Limiting Gate:** Enforce server-side per-UID rate limiting (maximum 10 restroom submissions per UID per rolling 24 hours; maximum burst 3 submissions per UID per rolling 10 minutes) before opening production contribution writes. Architectural evaluation confirms Option A (Trusted Cloud Function V2 with transactional array filtering on private rate-limit document) as the only design satisfying rolling windows and atomic OCC concurrency without violating Firestore rules quotas. Closes the direct-write bypass by migrating production Firestore rules to require the trusted server boundary. Detailed task specification authored in `docs/tasks/P2.6-hardening-rate-limit.md`.
-- **Accessibility (a11y) Audit:** Audit touch targets (>= 48×48 dp), semantic labels, high contrast (>= 4.5:1), and dynamic text scaling (up to 200%) across all Phase 2 screens (`AddRestroomLocationScreen`, `AddRestroomFormScreen`, `TriStateAmenitySelector`, `DuplicateWarningSheet`).
-- **Platform Builds & Static Analysis:** Validate `flutter build apk --debug`, `flutter build ios --debug --no-codesign`, `flutter analyze` (0 issues), and `dart format`.
-- **Validation Suite:** Run complete Flutter test suite (422+ tests) and Firestore Security Rules emulator suite (49+ tests).
-- **Independent Audit:** Submit for independent 0/0/0 audit to formally close Phase 2.
+### P2.6 — Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation [ACTIVE]
+- **Active Branch:** `phase-2/p2.6-hardening`
+- **Base:** `main` at `ce208ee6be4364ad5fd39364d596725548c525b9`
+- **P2.6-A Rate-Limiting Backend & Direct-Write Bypass Prevention [IMPLEMENTED & TESTED]:**
+  - Scaffolded `functions/` TypeScript Cloud Functions V2 project (Node 20/22, `firebase-functions` v5.1.1, `firebase-admin` v12.7.0, TypeScript 5.6 strict mode).
+  - Implemented `submitRestroom` callable backend with server-authoritative validation, canonical Base32 geohash calculation (`wdw4cc` vs `wdw4fq` consistency checks), atomic OCC transaction on `/contributionRateLimits/{uid}`, locked rate limits (10/24h rolling daily, 3/10m rolling burst), timestamp array pruning, stable-ID idempotency retry, ID collision defense, and strict public privacy exclusion of contributor UIDs.
+  - Implemented comprehensive emulator test suite in `functions/test/rate_limit.test.ts` covering all 10 P2.6-C scenarios:
+    1. Initial Submission -> PASS
+    2. Rolling 10-Minute Burst Limit -> PASS
+    3. Rolling 24-Hour Daily Limit -> PASS
+    4. Boundary Timestamps -> PASS
+    5. Timestamp Pruning -> PASS
+    6. Concurrent Submissions (OCC serialization) -> PASS
+    7. Idempotency with Stable ID -> PASS
+    8. Document ID Collision -> PASS
+    9. Forged / Missing Identity & Malformed Input -> PASS
+    10. Direct Write Bypass Prevention under Proposed Production Rules -> PASS
+  - Proved that direct client SDK writes under proposed production rules fail with `PERMISSION_DENIED` while Cloud Function Admin SDK writes succeed, conclusively closing the direct-write bypass without deploying rules to live infrastructure.
+- **Next Sub-Milestones:**
+  - P2.6-B: Flutter `CallableFirestoreMutationAdapter` connecting `FirestoreRestroomRepository` to `submitRestroom` callable backend with fail-closed semantics.
+  - P2.6-F: Accessibility audit of Phase 2 screens (touch targets >= 48×48 dp, semantics, 200% text scaling).
+  - P2.6-G: Debug platform compilation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
 
 ---
 
@@ -318,40 +287,42 @@ Owner-confirmed staging infrastructure state:
   - Owner physical-device QA Test 1 PASS on Samsung SM G998B Android and iPhone 12 Pro Max iOS.
   - QA Test 2 reconciled & unblocked following P2.5 staging contribution writes.
 - Milestone P2.5:
-  - ACTIVE AUDITED CANDIDATE: PR #12 on branch `phase-2/p2.5-submission`.
-  - Overlapping older candidate: PR #11 (`phase-2/p2.5-submission-map-sync`) remains open awaiting human owner disposition (do not merge, close, or audit without owner instruction).
-  - Task contract: `docs/tasks/P2.5-submission-map-sync.md`.
-  - All 42 P2.5 automated regression tests pass (plus 6 unit tests in `auth_notifier_test.dart`); all 422 Flutter tests pass; 49/49 Firestore rules pass.
+  - SQUASH-MERGED into `main` at `ce208ee6be4364ad5fd39364d596725548c525b9` (PR #12).
+  - Overlapping older candidate PR #11 closed without merge.
+  - All 42 P2.5 automated regression tests passed; 422 total Flutter tests passed; 49/49 Firestore rules tests passed.
   - Owner physical-device QA: PASS on Samsung SM-G998B Android and iPhone (Johnmikel Xavier) for add restroom and duplicate advisory sheet.
   - Pending Pre-Production Staging Verification: Cross-device query sync, camera settlement to zoom 16.5 & preview rendering, and Firestore Console document pair integrity.
-  - Disposition: Awaiting human owner squash-merge of PR #12 into `main` and closure of PR #11 without merge.
+- Milestone P2.6:
+  - ACTIVE on branch `phase-2/p2.6-hardening` based on `main` at `ce208ee6be4364ad5fd39364d596725548c525b9`.
+  - P2.6-A checkpoint implemented: Firebase Functions V2 callable rate-limiting backend (`submitRestroom`), server-authoritative validation, OCC transactional concurrency, 10/24h and 3/10m rate limits, timestamp pruning, stable-ID idempotency retry, ID collision defense, and direct-write bypass prevention.
+  - All 10 emulator test scenarios in `functions/test/rate_limit.test.ts` pass cleanly under Firestore emulator.
 
 ## Current owner actions / external dependencies
 
 1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
-2. Configure GCP billing budget alerts.
+2. Configure GCP billing budget alerts for Cloud Functions V2 / Artifact Registry.
 3. Production Android signing remains a later release-readiness action.
-4. Authorize squash-merge of PR #12 and closure of PR #11.
-5. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
+4. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
 
 ## Current validation status
 
-Milestone P2.5 PR #12 audit-remediation exact-head validation:
+Milestone P2.6-A exact-head validation:
 
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
+- TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
+- Functions emulator test suite: `./rules_tests/node_modules/.bin/firebase emulators:exec --only firestore "npm --prefix functions test"` — PASS (10/10 scenarios passed: Scenarios 1–10)
+- Firestore Security Rules emulator test suite: `./rules_tests/node_modules/.bin/firebase emulators:exec --only firestore "npm --prefix rules_tests test"` — PASS (49/49 tests passed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (422/422 tests passed: 42 tests in `p2_5_submission_map_sync_test.dart` + 6 tests in `auth_notifier_test.dart` + 30 tests in `duplicate_detection_service_test.dart` + 6 tests in `duplicate_warning_sheet_test.dart` + 18 tests in `main_shell_navigation_test.dart` + 11 tests in `map_focus_navigation_test.dart` + 16 tests in `add_restroom_notifier_test.dart` + 54 tests in `firestore_restroom_repository_test.dart` + full existing suite)
-- Firestore Security Rules emulator tests — PASS (49/49 tests passed: `npm --prefix rules_tests run test:emulators`)
+- `flutter test` — PASS (422/422 tests passed)
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Human owner to squash-merge PR #12 (`phase-2/p2.5-submission`) into `main`.
-2. Human owner to close overlapping PR #11 (`phase-2/p2.5-submission-map-sync`) without merge.
-3. Complete pending physical-device QA verification (cross-device discovery sync, camera settlement, Firestore document pair check).
-4. Create branch `phase-2/p2.6-hardening` from updated `main` to implement Milestone P2.6 (enforceable rate-limiting gate, a11y audit, platform compilation).
-5. Human owner to review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
+1. Open focused PR for Milestone P2.6-A checkpoint (Rate-Limiting Backend & Direct-Write Bypass Prevention) on branch `phase-2/p2.6-hardening` against `main` for independent audit.
+2. Implement Milestone P2.6-B: Flutter `CallableFirestoreMutationAdapter` connecting `FirestoreRestroomRepository` to `submitRestroom` callable backend with fail-closed semantics.
+3. Conduct Milestone P2.6-F: Accessibility audit of Phase 2 screens (touch targets >= 48×48 dp, semantics, 200% text scaling).
+4. Perform Milestone P2.6-G: Platform debug builds & release validation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
 
 ## Handoff template
 
