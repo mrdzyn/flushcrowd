@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 Add Restroom
 - **Current milestone:** Milestone P2.6 Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation — ACTIVE (P2.6-A Backend Checkpoint Complete)
 - **Current branch:** `phase-2/p2.6-hardening`
-- **Current PR:** Candidate PR for P2.6 hardening (rate-limiting backend & direct-write bypass prevention)
+- **Current PR:** #13 — P2.6-A rate-limiting backend & direct-write bypass prevention (https://github.com/mrdzyn/flushcrowd/pull/13)
 - **Base:** `main` at `ce208ee6be4364ad5fd39364d596725548c525b9` (following owner merge of PR #12)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [MERGED — PR #12 at `ce208ee6be4364ad5fd39364d596725548c525b9`]; P2.6 [ACTIVE — P2.6-A BACKEND IMPLEMENTED & TESTED].
 
