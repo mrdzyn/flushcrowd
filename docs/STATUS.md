@@ -210,43 +210,55 @@ Squash-merged into `main` at `60ed8096ee1bc132c4a6144943a735e164ca86f0` (PR #5).
 ### P2.6 — Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation [ACTIVE]
 - **Active Branch:** `phase-2/p2.6-hardening`
 - **Base:** `main` at `ce208ee6be4364ad5fd39364d596725548c525b9`
-- **P2.6-A Rate-Limiting Backend & Direct-Write Bypass Prevention [AUDIT REMEDIATION COMPLETE]:**
+- **P2.6-A Rate-Limiting Backend & Direct-Write Bypass Prevention [FINAL AUDIT REMEDIATION COMPLETE]:**
   - Scaffolded `functions/` TypeScript Cloud Functions V2 project (Node 20/22, `firebase-functions` v5.1.1, `firebase-admin` v12.7.0, `firebase-tools` v13.31.0, TypeScript 5.6 strict mode).
   - Implemented `submitRestroom` callable backend with server-authoritative validation, canonical Base32 geohash calculation, atomic OCC transaction on `/contributionRateLimits/{uid}`, locked rate limits (10/24h rolling daily, 3/10m rolling burst), timestamp array pruning, stable-ID idempotency retry, ID collision defense, and strict public privacy exclusion of contributor UIDs.
-  - **MAJOR-1 Remediated (Idempotency Integrity):**
+  - **BLOCKER-1 Remediated (Package Entrypoint Packaging):**
+    * Corrected `functions/package.json` `"main"` field from `lib/index.js` to `lib/src/index.js` matching emitted TypeScript layout.
+    * Added `smoke:entrypoint` npm script (`APP_ENV=test node -e "require('.')"`).
+    * Added CI smoke test step to `.github/workflows/ci.yml` (`APP_ENV=test node -e "require('./functions')"`) executing after TypeScript compilation.
+  - **MAJOR-1 Remediated (Idempotency Integrity & Private Linkage Invariants):**
     * Implemented `matchesCanonicalSubmission` in `functions/src/submit_restroom.ts` comparing core identifiers, coordinates, access types, fees, location descriptors, and nullable amenities against existing public documents.
-    * Rejects modified payloads submitted with existing stable IDs (`already-exists`) without charging rate limits or mutating existing documents.
-    * Rejects orphaned public records (public doc without private contribution) and orphaned private records (private contribution without public doc) safely.
-    * Validated via Scenarios 7a, 7b, 7c, and 7d.
-  - **MAJOR-2 Remediated (App Check Fail-Closed Configuration):**
+    * Enforced full private contribution linkage verification during stable-ID reconciliation: validates `id === 'restroom_' + restroomId`, `contributionType === 'restroom'`, `resourceId === restroomId`, `restroomId === restroomId`, `userUid === uid`, and public `id === restroomId`.
+    * Rejects modified payloads and mismatched/corrupted linkage invariants with `already-exists` without charging rate limits or mutating existing documents.
+    * Validated via Scenarios 7a, 7b, 7c, 7d, and 7e.
+  - **MAJOR-2 & MINOR-1 Remediated (App Check Fail-Closed Configuration & Initialization Evidence):**
     * Implemented `getAppConfig()` in `functions/src/config.ts` enforcing strict configuration validation.
     * Staging and production strictly enforce App Check (`enforceAppCheck: true`); attempting to disable App Check in staging/production throws a fatal error.
     * Missing `APP_ENV` outside test/emulator environments fails closed.
-    * Callable function enforces App Check at both Cloud Functions runtime configuration and handler entry.
-    * Validated via Scenarios 9b and 9c.
+    * Implemented `createSubmitRestroom(config)` factory and added isolated test suite in `functions/test/app_check_init.test.ts`.
+    * Proved SDK-level transport rejection: callable initialized in staging and production rejects HTTP requests without `X-Firebase-AppCheck` with HTTP 401 `UNAUTHENTICATED` at ingress before any handler logic runs.
+    * Validated via `app_check_init.test.ts` (4/4 tests passed) and Scenarios 9b and 9c.
   - **MAJOR-3 Remediated (CI Coverage):**
-    * Updated `.github/workflows/ci.yml` adding canonical `functions` job ("Cloud Functions Build & Emulator Tests") executing Node 22, Java 17, `npm --prefix functions ci`, `npm --prefix functions run build`, and `npm --prefix functions run test:emulators`.
+    * Updated `.github/workflows/ci.yml` adding canonical `functions` job ("Cloud Functions Build & Emulator Tests") executing Node 22, Java 17, `npm --prefix functions ci`, `npm --prefix functions run build`, package entrypoint smoke test, and `npm --prefix functions run test:emulators`.
     * Added `firebase-tools` devDependency to `functions/package.json` for self-contained CI execution.
   - **MINOR-1 Remediated (Production Rules Evidence & Staging Parity):**
     * Documented explicit distinction between the inline proposed production rules test (Scenario 10) and root `firestore.rules`.
     * Root `firestore.rules` is deliberately NOT modified in this checkpoint, preserving staging parity and backward compatibility during P2.6-B development.
     * Proved that direct client SDK writes under proposed production rules fail with `PERMISSION_DENIED` while Cloud Function Admin SDK writes succeed, conclusively closing the direct-write bypass without deploying rules to live infrastructure.
-  - **Comprehensive Emulator Test Suite (15 tests, all PASS):**
-    1. Initial Submission -> PASS
-    2. Rolling 10-Minute Burst Limit -> PASS
-    3. Rolling 24-Hour Daily Limit -> PASS
-    4. Boundary Timestamps -> PASS
-    5. Timestamp Pruning -> PASS
-    6. Concurrent Submissions (OCC serialization) -> PASS
-    7a. Identical retry succeeds without consuming quota -> PASS
-    7b. Same UID, same ID, modified contents fails and rejects payload mutation -> PASS
-    7c. Existing private contribution without public restroom (orphaned private) fails safely -> PASS
-    7d. Existing public restroom without matching private contribution (orphaned public) fails safely -> PASS
-    8. Document ID Collision -> PASS
-    9. Forged / Missing Identity & Malformed Input -> PASS
-    9b. App Check enforcement fails closed when enabled and missing valid token -> PASS
-    9c. getAppConfig fails closed on unconfigured or insecure deployment settings -> PASS
-    10. Direct Write Bypass Prevention under Proposed Production Rules -> PASS
+  - **Comprehensive Emulator Test Suites (20 tests across 2 suites, all PASS):**
+    * *App Check Callable Initialization Contract (`app_check_init.test.ts`):*
+      1. Staging environment initializes callable with SDK-level App Check enforcement enabled -> PASS
+      2. Production environment initializes callable with SDK-level App Check enforcement enabled -> PASS
+      3. Development environment with enforceAppCheck=false allows SDK-level pass-through -> PASS
+      4. Staging and Production configurations strictly reject attempts to disable App Check -> PASS
+    * *Rate Limiting & Abuse Prevention (`rate_limit.test.ts`):*
+      1. Initial Submission -> PASS
+      2. Rolling 10-Minute Burst Limit -> PASS
+      3. Rolling 24-Hour Daily Limit -> PASS
+      4. Boundary Timestamps -> PASS
+      5. Timestamp Pruning -> PASS
+      6. Concurrent Submissions (OCC serialization) -> PASS
+      7a. Identical retry succeeds without consuming quota -> PASS
+      7b. Same UID, same ID, modified contents fails and rejects payload mutation -> PASS
+      7c. Existing private contribution without public restroom (orphaned private) fails safely -> PASS
+      7d. Existing public restroom without matching private contribution (orphaned public) fails safely -> PASS
+      7e. Same UID, same ID, corrupted/mismatched private linkage invariants fails safely -> PASS
+      8. Document ID Collision -> PASS
+      9. Forged / Missing Identity & Malformed Input -> PASS
+      9b. App Check enforcement fails closed when enabled and missing valid token -> PASS
+      9c. getAppConfig fails closed on unconfigured or insecure deployment settings -> PASS
+      10. Direct Write Bypass Prevention under Proposed Production Rules -> PASS
 - **Next Sub-Milestones:**
   - P2.6-B: Flutter `CallableFirestoreMutationAdapter` connecting `FirestoreRestroomRepository` to `submitRestroom` callable backend with fail-closed semantics.
   - P2.6-F: Accessibility audit of Phase 2 screens (touch targets >= 48×48 dp, semantics, 200% text scaling).
@@ -316,12 +328,11 @@ Owner-confirmed staging infrastructure state:
   - Pending Pre-Production Staging Verification: Cross-device query sync, camera settlement to zoom 16.5 & preview rendering, and Firestore Console document pair integrity.
 - Milestone P2.6:
   - ACTIVE on branch `phase-2/p2.6-hardening` based on `main` at `ce208ee6be4364ad5fd39364d596725548c525b9`.
-  - PR #13 opened; independent audit remediation complete addressing 3 MAJOR and 1 MINOR findings:
-    * MAJOR-1: Idempotency payload mutation rejection & orphaned record safe failure (`matchesCanonicalSubmission`).
-    * MAJOR-2: App Check fail-closed configuration (`getAppConfig()`, strict staging/production enforcement).
-    * MAJOR-3: Dedicated Functions CI build & emulator test job in `.github/workflows/ci.yml`.
-    * MINOR-1: Clarified inline proposed production rules test vs. root `firestore.rules` staging parity.
-  - All 15 emulator test cases in `functions/test/rate_limit.test.ts` pass cleanly under Firestore emulator.
+  - PR #13 opened; final targeted audit remediation complete addressing BLOCKER-1, MAJOR-1, and MINOR-1:
+    * BLOCKER-1: Package entrypoint corrected to `lib/src/index.js`, `smoke:entrypoint` script added, CI smoke test step added.
+    * MAJOR-1: Private contribution linkage invariants validation (`id`, `contributionType`, `resourceId`, `restroomId`, `userUid`, and public `id`) enforced in `executeSubmitRestroom`, verified via Scenario 7e.
+    * MINOR-1: Dedicated isolated test suite in `functions/test/app_check_init.test.ts` verifying SDK-level transport rejection (HTTP 401 `UNAUTHENTICATED`) before handler execution in staging and production.
+  - All 20 tests across 2 suites (`app_check_init.test.ts` 4/4 passed, `rate_limit.test.ts` 16/16 passed) pass cleanly under Firestore emulator.
 
 ## Current owner actions / external dependencies
 
@@ -335,7 +346,8 @@ Owner-confirmed staging infrastructure state:
 Milestone P2.6-A exact-head validation:
 
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
-- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (15/15 tests passed: Scenarios 1–10 including 7a–7d, 9b, 9c)
+- Package entrypoint smoke test: `APP_ENV=test node -e "require('./functions')"` & `npm --prefix functions run smoke:entrypoint` — PASS
+- Functions emulator test suites: `npm --prefix functions run test:emulators` — PASS (20/20 tests passed across 2 suites: `app_check_init.test.ts` 4/4, `rate_limit.test.ts` 16/16)
 - Firestore Security Rules emulator test suite: `./rules_tests/node_modules/.bin/firebase emulators:exec --only firestore "npm --prefix rules_tests test"` — PASS (49/49 tests passed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (422/422 tests passed)
@@ -345,7 +357,7 @@ Milestone P2.6-A exact-head validation:
 
 ## Next recommended action
 
-1. Await independent re-audit verification of PR #13 (`phase-2/p2.6-hardening`) covering P2.6-A audit remediation.
+1. Await independent re-audit verification of PR #13 (`phase-2/p2.6-hardening`) covering final targeted audit remediation.
 2. Implement Milestone P2.6-B: Flutter `CallableFirestoreMutationAdapter` connecting `FirestoreRestroomRepository` to `submitRestroom` callable backend with fail-closed semantics.
 3. Conduct Milestone P2.6-F: Accessibility audit of Phase 2 screens (touch targets >= 48×48 dp, semantics, 200% text scaling).
 4. Perform Milestone P2.6-G: Platform debug builds & release validation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).

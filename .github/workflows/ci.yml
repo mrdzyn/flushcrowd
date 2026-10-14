@@ -86,5 +86,8 @@ jobs:
       - name: Build Functions TypeScript
         run: npm --prefix functions run build
 
+      - name: Smoke Test Functions Package Entrypoint
+        run: APP_ENV=test node -e "require('./functions')"
+
       - name: Run Functions Tests in Emulator
         run: npm --prefix functions run test:emulators

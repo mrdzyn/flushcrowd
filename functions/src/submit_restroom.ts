@@ -1,7 +1,7 @@
 import * as admin from 'firebase-admin';
 import { onCall, HttpsError, CallableRequest } from 'firebase-functions/v2/https';
 import { validateAndNormalizePayload, ValidatedRestroomData } from './validation';
-import { getAppConfig } from './config';
+import { getAppConfig, AppConfig } from './config';
 
 export interface SubmitRestroomResponse {
   success: boolean;
@@ -168,8 +168,10 @@ export async function executeSubmitRestroom(
         );
       }
 
-      // Both public and private documents exist: verify ownership
+      // Both public and private documents exist: verify ownership and linkage invariants
       const privateData = privateSnap.data() as Record<string, unknown> | undefined;
+      const publicData = publicSnap.data() as Record<string, unknown>;
+
       if (privateData?.userUid !== uid) {
         throw new HttpsError(
           'already-exists',
@@ -177,8 +179,29 @@ export async function executeSubmitRestroom(
         );
       }
 
-      // Same UID: verify payload matches canonical original submission
-      const publicData = publicSnap.data() as Record<string, unknown>;
+      // Verify private contribution linkage invariants
+      const expectedPrivateId = `restroom_${validated.restroomId}`;
+      if (
+        privateData?.id !== expectedPrivateId ||
+        privateData?.contributionType !== 'restroom' ||
+        privateData?.resourceId !== validated.restroomId ||
+        privateData?.restroomId !== validated.restroomId
+      ) {
+        throw new HttpsError(
+          'already-exists',
+          'A contribution record for this ID exists but has invalid or mismatched linkage invariants.'
+        );
+      }
+
+      // Verify public document internal id field matches
+      if (publicData.id !== validated.restroomId) {
+        throw new HttpsError(
+          'already-exists',
+          'A public restroom record exists but its document ID does not match its internal ID.'
+        );
+      }
+
+      // Same UID & valid linkage: verify payload matches canonical original submission
       if (!matchesCanonicalSubmission(publicData, validated)) {
         throw new HttpsError(
           'already-exists',
@@ -256,30 +279,37 @@ export async function executeSubmitRestroom(
 }
 
 /**
- * Cloud Functions V2 HTTPS Callable endpoint.
+ * Factory creating Cloud Functions V2 HTTPS Callable endpoint with explicit configuration.
  */
-export const submitRestroom = onCall(
-  {
-    enforceAppCheck: getAppConfig().enforceAppCheck,
-  },
-  async (request: CallableRequest<unknown>): Promise<SubmitRestroomResponse> => {
-    const config = getAppConfig();
+export function createSubmitRestroom(config: AppConfig = getAppConfig()) {
+  return onCall(
+    {
+      enforceAppCheck: config.enforceAppCheck,
+    },
+    async (request: CallableRequest<unknown>): Promise<SubmitRestroomResponse> => {
+      const activeConfig = getAppConfig();
 
-    // 1. Authenticate caller
-    if (!request.auth || !request.auth.uid) {
-      throw new HttpsError('unauthenticated', 'User must be authenticated anonymously.');
+      // 1. Authenticate caller
+      if (!request.auth || !request.auth.uid) {
+        throw new HttpsError('unauthenticated', 'User must be authenticated anonymously.');
+      }
+      const uid = request.auth.uid;
+
+      // 2. Validate App Check (defense-in-depth handler guard)
+      if (activeConfig.enforceAppCheck && !request.app) {
+        throw new HttpsError(
+          'failed-precondition',
+          'App Check verification failed. Request must originate from an authentic application instance.'
+        );
+      }
+
+      const db = admin.firestore();
+      return await executeSubmitRestroom(db, uid, request.data);
     }
-    const uid = request.auth.uid;
+  );
+}
 
-    // 2. Validate App Check (enforced strictly in staging and production)
-    if (config.enforceAppCheck && !request.app) {
-      throw new HttpsError(
-        'failed-precondition',
-        'App Check verification failed. Request must originate from an authentic application instance.'
-      );
-    }
-
-    const db = admin.firestore();
-    return await executeSubmitRestroom(db, uid, request.data);
-  }
-);
+/**
+ * Cloud Functions V2 HTTPS Callable endpoint initialized with active environment configuration.
+ */
+export const submitRestroom = createSubmitRestroom();

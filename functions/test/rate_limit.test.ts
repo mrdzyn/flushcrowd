@@ -416,6 +416,111 @@ describe('P2.6-C — Comprehensive Emulator Test Suite for Rate Limiting & Abuse
     assert.equal(rateDoc.exists, false);
   });
 
+  it('Scenario 7e: Same UID, same ID, but private record has invalid or mismatched linkage invariants fails safely without consuming quota', async () => {
+    const uid = 'uid_linkage_test_user';
+    const rrId = 'rr_linkage_001';
+
+    // 1. Seed valid public restroom doc
+    await db.collection('restrooms').doc(rrId).set({
+      id: rrId,
+      name: 'Downtown Public Restroom',
+      latitude: 14.552,
+      longitude: 121.0205,
+      geohash: 'wdw4cc',
+      accessType: 'free',
+      status: 'unverified',
+      averageRating: 0.0,
+      ratingCount: 0,
+      verificationCount: 0,
+      negativeVerificationCount: 0,
+      lastVerifiedAt: null,
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    // 2. Corrupted linkage variation A: resourceId does not match restroomId
+    await db.collection('contributions').doc(`restroom_${rrId}`).set({
+      id: `restroom_${rrId}`,
+      contributionType: 'restroom',
+      resourceId: 'different_resource_id_mismatch',
+      restroomId: rrId,
+      userUid: uid,
+      moderationState: 'pending',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, getSamplePayload(rrId));
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        assert.match(err.message, /invalid or mismatched linkage invariants/);
+        return true;
+      }
+    );
+
+    // Verify rate limit doc was NEVER created (zero quota consumed)
+    let rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
+    assert.equal(rateDoc.exists, false);
+
+    // 3. Corrupted linkage variation B: contributionType is not 'restroom'
+    await db.collection('contributions').doc(`restroom_${rrId}`).set({
+      id: `restroom_${rrId}`,
+      contributionType: 'rating',
+      resourceId: rrId,
+      restroomId: rrId,
+      userUid: uid,
+      moderationState: 'pending',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, getSamplePayload(rrId));
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        assert.match(err.message, /invalid or mismatched linkage invariants/);
+        return true;
+      }
+    );
+
+    rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
+    assert.equal(rateDoc.exists, false);
+
+    // 4. Corrupted linkage variation C: id is not 'restroom_' + rrId
+    await db.collection('contributions').doc(`restroom_${rrId}`).set({
+      id: `wrong_prefix_${rrId}`,
+      contributionType: 'restroom',
+      resourceId: rrId,
+      restroomId: rrId,
+      userUid: uid,
+      moderationState: 'pending',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    await assert.rejects(
+      async () => {
+        await executeSubmitRestroom(db, uid, getSamplePayload(rrId));
+      },
+      (err: unknown) => {
+        assert.ok(err instanceof HttpsError);
+        assert.equal(err.code, 'already-exists');
+        assert.match(err.message, /invalid or mismatched linkage invariants/);
+        return true;
+      }
+    );
+
+    rateDoc = await db.collection('contributionRateLimits').doc(uid).get();
+    assert.equal(rateDoc.exists, false);
+  });
+
   // Scenario 8: Document ID Collision
   it('Scenario 8: Document ID Collision rejects attempts to claim an existing ID owned by another user', async () => {
     const aliceUid = 'uid_alice_owner';

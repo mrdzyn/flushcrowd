@@ -2,11 +2,12 @@
   "name": "flushcrowd-functions",
   "version": "1.0.0",
   "private": true,
-  "main": "lib/index.js",
+  "main": "lib/src/index.js",
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "pretest": "npm run build",
+    "smoke:entrypoint": "APP_ENV=test node -e \"require('.')\"",
+    "pretest": "npm run build && npm run smoke:entrypoint",
     "test": "node --test lib/test/*.test.js",
     "test:emulators": "firebase emulators:exec --only firestore \"npm test\""
   },
