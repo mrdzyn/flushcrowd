@@ -61,3 +61,33 @@ jobs:
 
       - name: Run Firestore Rules Tests in Emulator
         run: npm --prefix rules_tests run test:emulators
+
+  functions:
+    name: Cloud Functions Build & Emulator Tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Setup Java (for Firebase Emulator)
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Install Functions Dependencies
+        run: npm --prefix functions ci
+
+      - name: Build Functions TypeScript
+        run: npm --prefix functions run build
+
+      - name: Smoke Test Functions Package Entrypoint
+        run: APP_ENV=test node -e "require('./functions')"
+
+      - name: Run Functions Tests in Emulator
+        run: npm --prefix functions run test:emulators
