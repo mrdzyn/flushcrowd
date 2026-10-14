@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 Add Restroom
 - **Current milestone:** Milestone P2.6 Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation — ACTIVE (P2.6-B Flutter Callable Integration Complete)
 - **Current branch:** `phase-2/p2.6-b-callable-integration`
-- **Current PR:** P2.6-B Flutter Callable Integration
+- **Current PR:** #14 — P2.6-B Flutter Callable Integration (https://github.com/mrdzyn/flushcrowd/pull/14)
 - **Base:** `main` at `05ad76b3a20af18f83df69d552bb2c30f3958087` (following merge of PR #13)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13 at `05ad76b3a20af18f83df69d552bb2c30f3958087`]; P2.6-B [IMPLEMENTED & VALIDATED].
 
