@@ -23,8 +23,15 @@ abstract class MapCameraController {
   Future<void> moveCamera(CameraUpdate cameraUpdate);
 }
 
+/// Controller abstraction for retrieving visible bounds and zoom level.
+abstract class MapViewportController {
+  Future<LatLngBounds?> getVisibleRegion();
+  Future<double?> getZoomLevel();
+}
+
 /// Production adapter wrapping Google Maps SDK [GoogleMapController].
-class GoogleMapCameraController implements MapCameraController {
+class GoogleMapCameraController
+    implements MapCameraController, MapViewportController {
   final GoogleMapController _controller;
 
   GoogleMapCameraController(this._controller);
@@ -36,6 +43,12 @@ class GoogleMapCameraController implements MapCameraController {
   @override
   Future<void> moveCamera(CameraUpdate cameraUpdate) =>
       _controller.moveCamera(cameraUpdate);
+
+  @override
+  Future<LatLngBounds?> getVisibleRegion() => _controller.getVisibleRegion();
+
+  @override
+  Future<double?> getZoomLevel() => _controller.getZoomLevel();
 }
 
 /// Builder signature allowing test doubles to supply mock map widgets

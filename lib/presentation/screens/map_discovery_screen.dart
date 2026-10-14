@@ -44,11 +44,16 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   GoogleMapController? _googleMapController;
   MapCameraController? _mapCameraController;
   bool _isRecentering = false;
+  bool _isCameraMoving = false;
   MapDiscoveryNotifier? _discoveryNotifier;
   int? _lastExecutedFocusToken;
   MapFocusIntent? _pendingFocusExecution;
   int? _activeFailureToken;
   String? _activeFailureRestroomId;
+  int? _activeRecoveryToken;
+  String? _activeRecoveryRestroomId;
+  Completer<GeoBoundingBox?>? _cameraSettlementCompleter;
+  int? _settlementToken;
 
   @override
   void didChangeDependencies() {
@@ -65,8 +70,16 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
   @override
   void dispose() {
     _discoveryNotifier?.removeListener(_onNotifierChanged);
+    if (_cameraSettlementCompleter != null &&
+        !_cameraSettlementCompleter!.isCompleted) {
+      _cameraSettlementCompleter!.complete(null);
+    }
+    _cameraSettlementCompleter = null;
+    _settlementToken = null;
     _activeFailureToken = null;
     _activeFailureRestroomId = null;
+    _activeRecoveryToken = null;
+    _activeRecoveryRestroomId = null;
     super.dispose();
   }
 
@@ -81,7 +94,26 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             _activeFailureRestroomId != notifier.selectedRestroom?.id)) {
       _activeFailureToken = null;
       _activeFailureRestroomId = null;
-      ScaffoldMessenger.of(context).hideCurrentSnackBar();
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
+      });
+    }
+
+    // Invalidate and dismiss active submitted-restroom recovery snackbar if superseded
+    // by a newer focus or if the user explicitly selected another restroom.
+    if (_activeRecoveryToken != null &&
+        (_activeRecoveryToken != notifier.latestFocusToken ||
+            (notifier.selectedRestroom != null &&
+                _activeRecoveryRestroomId != notifier.selectedRestroom?.id))) {
+      _activeRecoveryToken = null;
+      _activeRecoveryRestroomId = null;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+        }
+      });
     }
 
     final intent = notifier.pendingFocusIntent;
@@ -122,10 +154,12 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       return;
     }
 
-    // Dismiss any active failure snackbar upon executing a focus intent.
-    if (_activeFailureToken != null) {
+    // Dismiss any active failure or recovery snackbar upon executing a focus intent.
+    if (_activeFailureToken != null || _activeRecoveryToken != null) {
       _activeFailureToken = null;
       _activeFailureRestroomId = null;
+      _activeRecoveryToken = null;
+      _activeRecoveryRestroomId = null;
       if (mounted) {
         ScaffoldMessenger.of(context).hideCurrentSnackBar();
       }
@@ -134,7 +168,10 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     // Mark token as executed immediately so no subsequent frame or race can re-enter.
     _lastExecutedFocusToken = intent.token;
 
-    final coords = intent.restroom.coordinates;
+    final coords = intent.coordinates;
+    final facilityName =
+        intent.facilityName ?? intent.restroom?.name ?? 'restroom';
+    final targetRestroomId = intent.targetRestroomId ?? intent.restroom?.id;
 
     // 1. Camera focus occurs before preview presentation when possible.
     bool cameraMoved = false;
@@ -164,7 +201,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       } catch (fallbackError) {
         // Do not silently swallow camera errors: log failure details
         debugPrint(
-          'MapDiscoveryScreen: Camera centering failed for restroom ${intent.restroom.id}: $e (fallback error: $fallbackError)',
+          'MapDiscoveryScreen: Camera centering failed for restroom $targetRestroomId: $e (fallback error: $fallbackError)',
         );
       }
     }
@@ -176,25 +213,244 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       return;
     }
 
-    // Consume the intent in notifier now that execution (or failure) is complete.
-    notifier.consumeFocusIntent(intent.token);
-
     if (cameraMoved) {
       // Camera moved successfully: notify target change and open preview if requested.
       widget.onCameraTargetChanged?.call(coords);
-      if (intent.openPreview) {
+
+      if (intent.forceRefresh) {
+        // Canonical Discovery Synchronization (P2.5-C / MAJOR-1):
+        // Coordinate with camera settlement and validate that the visible viewport contains coords.
+        GeoBoundingBox? settledBounds;
+        double? settledZoom;
+
+        // 1. Check if the camera has already settled and current visible region contains coords at target zoom
+        try {
+          final immediateBounds = await _getVisibleBoundingBox();
+          final immediateZoom = await _getZoomLevel();
+          final isZoomSettled =
+              immediateZoom != null &&
+              (immediateZoom - intent.zoom).abs() < 0.1;
+          if (immediateBounds != null &&
+              immediateBounds.contains(coords) &&
+              !_isCameraMoving &&
+              isZoomSettled) {
+            settledBounds = immediateBounds;
+            settledZoom = immediateZoom;
+          }
+        } catch (_) {}
+
+        // 2. If not immediately settled with valid containing bounds, await camera settlement
+        if (settledBounds == null) {
+          final completer = Completer<GeoBoundingBox?>();
+          _cameraSettlementCompleter = completer;
+          _settlementToken = intent.token;
+
+          // Safety timeout (3 seconds) to prevent hanging indefinitely
+          Timer? timeoutTimer;
+          timeoutTimer = Timer(const Duration(milliseconds: 3000), () {
+            if (!completer.isCompleted) {
+              completer.complete(null);
+            }
+          });
+
+          settledBounds = await completer.future;
+          timeoutTimer.cancel();
+          if (_cameraSettlementCompleter == completer) {
+            _cameraSettlementCompleter = null;
+            _settlementToken = null;
+          }
+          try {
+            settledZoom = await _getZoomLevel();
+          } catch (_) {}
+        }
+
+        // Stale intent guard after settlement wait:
+        if (!mounted) return;
+        if (notifier.pendingFocusIntent?.token != intent.token ||
+            notifier.latestFocusToken != intent.token) {
+          return;
+        }
+
+        // Consume intent now that settlement phase is verified
+        notifier.consumeFocusIntent(intent.token);
+
+        final isSettledZoomValid =
+            settledZoom != null && (settledZoom - intent.zoom).abs() < 0.1;
+
+        if (settledBounds == null ||
+            !settledBounds.contains(coords) ||
+            !isSettledZoomValid) {
+          // Viewport could not be verified to contain the coordinates at target zoom.
+          // NEVER use a speculative 500m fallback bounding box as proof of centering.
+          // Expose recoverable state.
+          _activeRecoveryToken = intent.token;
+          _activeRecoveryRestroomId = targetRestroomId;
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: Text(
+                'Restroom saved, but map could not confirm centering on $facilityName. Tap to retry.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Retry',
+                onPressed: () {
+                  if (!mounted || targetRestroomId == null) return;
+                  if (notifier.latestFocusToken != intent.token ||
+                      (notifier.selectedRestroom != null &&
+                          notifier.selectedRestroom?.id != targetRestroomId)) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    return;
+                  }
+                  _activeRecoveryToken = null;
+                  _activeRecoveryRestroomId = null;
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  notifier.focusOnSubmittedRestroom(
+                    coordinates: coords,
+                    restroomId: targetRestroomId,
+                    facilityName: facilityName,
+                    zoom: intent.zoom,
+                  );
+                },
+              ),
+            ),
+          );
+          return;
+        }
+
+        // Execute forced authoritative viewport refresh with verified bounds
+        await notifier.refreshCurrentViewport(
+          bounds: settledBounds,
+          zoom: settledZoom,
+        );
+
+        if (!mounted || notifier.latestFocusToken != intent.token) {
+          return;
+        }
+
+        // Handle discovery status:
+        if (notifier.status == DiscoveryStatus.error) {
+          _activeRecoveryToken = intent.token;
+          _activeRecoveryRestroomId = targetRestroomId;
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Restroom saved, but discovery refresh encountered an error. Tap Refresh to try again.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Refresh',
+                onPressed: () {
+                  if (!mounted || targetRestroomId == null) return;
+                  if (notifier.latestFocusToken != intent.token ||
+                      (notifier.selectedRestroom != null &&
+                          notifier.selectedRestroom?.id != targetRestroomId)) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    return;
+                  }
+                  _activeRecoveryToken = null;
+                  _activeRecoveryRestroomId = null;
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  notifier.focusOnSubmittedRestroom(
+                    coordinates: coords,
+                    restroomId: targetRestroomId,
+                    facilityName: facilityName,
+                    zoom: intent.zoom,
+                  );
+                },
+              ),
+            ),
+          );
+          return;
+        }
+
+        if (notifier.status == DiscoveryStatus.suppressed) {
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('Restroom saved. Zoom in to view it on the map.'),
+              duration: Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+            ),
+          );
+          return;
+        }
+
+        final matchingRestroom = targetRestroomId != null
+            ? notifier.discoveredRestrooms
+                  .where((r) => r.id == targetRestroomId)
+                  .firstOrNull
+            : null;
+
+        if (matchingRestroom != null) {
+          _activeRecoveryToken = null;
+          _activeRecoveryRestroomId = null;
+          notifier.selectRestroom(matchingRestroom);
+          if (intent.openPreview) {
+            final locationNotifier = context.read<LocationNotifier>();
+            _showRestroomPreviewSheet(
+              context,
+              matchingRestroom,
+              locationNotifier.currentCoordinates,
+            );
+          }
+        } else {
+          // Authoritative discovery did not return the new record.
+          // Never claim successful map refresh when not observed; offer explicit recovery.
+          _activeRecoveryToken = intent.token;
+          _activeRecoveryRestroomId = targetRestroomId;
+          ScaffoldMessenger.of(context).hideCurrentSnackBar();
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(
+              content: const Text(
+                'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+              ),
+              duration: const Duration(seconds: 6),
+              behavior: SnackBarBehavior.floating,
+              action: SnackBarAction(
+                label: 'Refresh',
+                onPressed: () {
+                  if (!mounted || targetRestroomId == null) return;
+                  if (notifier.latestFocusToken != intent.token ||
+                      (notifier.selectedRestroom != null &&
+                          notifier.selectedRestroom?.id != targetRestroomId)) {
+                    ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                    return;
+                  }
+                  _activeRecoveryToken = null;
+                  _activeRecoveryRestroomId = null;
+                  ScaffoldMessenger.of(context).hideCurrentSnackBar();
+                  notifier.focusOnSubmittedRestroom(
+                    coordinates: coords,
+                    restroomId: targetRestroomId,
+                    facilityName: facilityName,
+                    zoom: intent.zoom,
+                  );
+                },
+              ),
+            ),
+          );
+        }
+      } else if (intent.openPreview && intent.restroom != null) {
+        notifier.consumeFocusIntent(intent.token);
         final locationNotifier = context.read<LocationNotifier>();
         _showRestroomPreviewSheet(
           context,
-          intent.restroom,
+          intent.restroom!,
           locationNotifier.currentCoordinates,
         );
+      } else {
+        notifier.consumeFocusIntent(intent.token);
       }
     } else {
       // Camera operation failed: do not automatically open preview as though map navigation succeeded.
+      notifier.consumeFocusIntent(intent.token);
       // Track active failure state for safe, non-stale recovery controls.
       _activeFailureToken = intent.token;
-      _activeFailureRestroomId = intent.restroom.id;
+      _activeFailureRestroomId = targetRestroomId;
 
       // Provide an explicit, safe Retry action and allow user to intentionally view facility details.
       ScaffoldMessenger.of(context).showSnackBar(
@@ -203,8 +459,8 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('Could not center map on ${intent.restroom.name}.'),
-              if (intent.openPreview) ...[
+              Text('Could not center map on $facilityName.'),
+              if (intent.openPreview && intent.restroom != null) ...[
                 const SizedBox(height: 4),
                 TextButton(
                   style: TextButton.styleFrom(
@@ -224,7 +480,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                     // Stale recovery guard: View Details is valid only while this failed focus
                     // remains the relevant user selection and has not been superseded.
                     if (notifier.latestFocusToken != intent.token ||
-                        notifier.selectedRestroom?.id != intent.restroom.id) {
+                        notifier.selectedRestroom?.id != intent.restroom!.id) {
                       ScaffoldMessenger.of(context).hideCurrentSnackBar();
                       return;
                     }
@@ -234,7 +490,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
                     final locationNotifier = context.read<LocationNotifier>();
                     _showRestroomPreviewSheet(
                       context,
-                      intent.restroom,
+                      intent.restroom!,
                       locationNotifier.currentCoordinates,
                     );
                   },
@@ -252,18 +508,28 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
               // Stale recovery guard: Retry is valid only while this failed focus
               // remains the relevant user selection and has not been superseded.
               if (notifier.latestFocusToken != intent.token ||
-                  notifier.selectedRestroom?.id != intent.restroom.id) {
+                  (intent.restroom != null &&
+                      notifier.selectedRestroom?.id != intent.restroom!.id)) {
                 ScaffoldMessenger.of(context).hideCurrentSnackBar();
                 return;
               }
               _activeFailureToken = null;
               _activeFailureRestroomId = null;
               ScaffoldMessenger.of(context).hideCurrentSnackBar();
-              notifier.focusOnRestroom(
-                intent.restroom,
-                zoom: intent.zoom,
-                openPreview: intent.openPreview,
-              );
+              if (intent.forceRefresh && targetRestroomId != null) {
+                notifier.focusOnSubmittedRestroom(
+                  coordinates: coords,
+                  restroomId: targetRestroomId,
+                  facilityName: facilityName,
+                  zoom: intent.zoom,
+                );
+              } else if (intent.restroom != null) {
+                notifier.focusOnRestroom(
+                  intent.restroom!,
+                  zoom: intent.zoom,
+                  openPreview: intent.openPreview,
+                );
+              }
             },
           ),
         ),
@@ -311,23 +577,82 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
     );
   }
 
+  Future<LatLngBounds?> _getVisibleRegion() async {
+    if (_googleMapController != null) {
+      return _googleMapController!.getVisibleRegion();
+    }
+    final controller = _mapCameraController;
+    if (controller is MapViewportController) {
+      return (controller as MapViewportController).getVisibleRegion();
+    }
+    return null;
+  }
+
+  Future<GeoBoundingBox?> _getVisibleBoundingBox() async {
+    final bounds = await _getVisibleRegion();
+    if (bounds == null) return null;
+    return GeoBoundingBox(
+      southWest: Coordinates(
+        latitude: bounds.southwest.latitude,
+        longitude: bounds.southwest.longitude,
+      ),
+      northEast: Coordinates(
+        latitude: bounds.northeast.latitude,
+        longitude: bounds.northeast.longitude,
+      ),
+    );
+  }
+
+  Future<double?> _getZoomLevel() async {
+    if (_googleMapController != null) {
+      return _googleMapController!.getZoomLevel();
+    }
+    final controller = _mapCameraController;
+    if (controller is MapViewportController) {
+      return (controller as MapViewportController).getZoomLevel();
+    }
+    return null;
+  }
+
   Future<void> _handleCameraIdle() async {
-    if (_googleMapController == null || !mounted) return;
+    if (!mounted) return;
+    _isCameraMoving = false;
     final notifier = context.read<MapDiscoveryNotifier>();
     try {
-      final bounds = await _googleMapController!.getVisibleRegion();
-      final zoom = await _googleMapController!.getZoomLevel();
-      final geoBounds = GeoBoundingBox(
-        southWest: Coordinates(
-          latitude: bounds.southwest.latitude,
-          longitude: bounds.southwest.longitude,
-        ),
-        northEast: Coordinates(
-          latitude: bounds.northeast.latitude,
-          longitude: bounds.northeast.longitude,
-        ),
-      );
-      notifier.onCameraIdle(bounds: geoBounds, zoom: zoom);
+      final bounds = await _getVisibleRegion();
+      final zoom = await _getZoomLevel();
+      if (bounds != null && zoom != null) {
+        final geoBounds = GeoBoundingBox(
+          southWest: Coordinates(
+            latitude: bounds.southwest.latitude,
+            longitude: bounds.southwest.longitude,
+          ),
+          northEast: Coordinates(
+            latitude: bounds.northeast.latitude,
+            longitude: bounds.northeast.longitude,
+          ),
+        );
+
+        // Coordinate with pending camera settlement for submitted restroom focus
+        if (_cameraSettlementCompleter != null &&
+            !_cameraSettlementCompleter!.isCompleted &&
+            _settlementToken != null) {
+          final pendingIntent = notifier.pendingFocusIntent;
+          if (pendingIntent != null &&
+              pendingIntent.token == _settlementToken) {
+            final isZoomSettled = (zoom - pendingIntent.zoom).abs() < 0.1;
+            if (geoBounds.contains(pendingIntent.coordinates) &&
+                isZoomSettled) {
+              if (!_cameraSettlementCompleter!.isCompleted) {
+                _cameraSettlementCompleter!.complete(geoBounds);
+              }
+            }
+            return; // In-flight focus coordinates its own refresh; suppress regular idle discovery on intermediate bounds or zoom
+          }
+        }
+
+        notifier.onCameraIdle(bounds: geoBounds, zoom: zoom);
+      }
     } catch (_) {
       // Ignore map controller errors during teardown or unit testing
     }
@@ -515,6 +840,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
         },
         onCameraIdle: _handleCameraIdle,
         onCameraMoveStarted: () {
+          _isCameraMoving = true;
           context.read<MapDiscoveryNotifier>().onCameraMoveStarted();
         },
       );
@@ -533,6 +859,7 @@ class _MapDiscoveryScreenState extends State<MapDiscoveryScreen> {
       markers: markers,
       clusterManagers: {clusterManager},
       onCameraMoveStarted: () {
+        _isCameraMoving = true;
         context.read<MapDiscoveryNotifier>().onCameraMoveStarted();
       },
       onCameraMove: (position) {

@@ -21,6 +21,21 @@ FlushCrowd does **not** use a runtime dotenv package; `.env` is not loaded at ru
 1. **Compile-time Dart defines (`--dart-define`):**
    - `APP_ENV`: `development` | `staging` | `production` (default: `development`)
    - `ENABLE_APP_CHECK`: `true` | `false` (default: `true`)
+
+   To run the application with active staging contributions enabled:
+   ```bash
+   flutter run \
+     --dart-define=APP_ENV=staging
+   ```
+
+   **Staging Submission Safety Rules:**
+   - Under `Environment.fromString()`:
+     - Missing `APP_ENV` defaults to `development`.
+     - Explicit `development` maps to `development`.
+     - Unrecognized values map to `unknown`, not `development`.
+     - Neither `development` nor `unknown` permits contribution submission.
+   - Staging submissions strictly require both `APP_ENV=staging` and the verified Firebase project ID `flushcrowd-staging` (`AppConfig.isStagingSubmissionAllowed`). Mismatched or absent project configurations block writes and preserve the draft with a `Resume` action.
+   - Production submissions remain strictly blocked ahead of P2.6 server-enforced rate limiting.
 2. **Platform-native Maps keys:**
    - Android: `android/local.properties` -> `MAPS_API_KEY=<restricted-key>`
    - iOS: `ios/Flutter/Secrets.xcconfig` -> `GOOGLE_MAPS_API_KEY=<restricted-key>`
@@ -158,7 +173,12 @@ The human owner should follow this exact sequence in order:
 10. Configure local Maps keys without committing them:
     - Add `MAPS_API_KEY=<restricted-android-key>` to `android/local.properties`
     - Add `GOOGLE_MAPS_API_KEY=<restricted-ios-key>` to `ios/Flutter/Secrets.xcconfig`
-11. Build and run Android and iOS staging builds locally; verify native builds succeed and Google Maps render correctly.
+11. Build and run Android and iOS staging builds locally using the required compile-time flag:
+    ```bash
+    flutter run \
+      --dart-define=APP_ENV=staging
+    ```
+    Verify native builds succeed and Google Maps render correctly. Note that omitting `--dart-define=APP_ENV=staging` defaults to `development`, and passing unrecognized values maps to `unknown`; neither environment permits contribution submissions, failing closed until configured for verified staging.
 12. Verify Firebase SDK initializes successfully on both platforms without fallback error logs.
 13. Obtain explicit human owner approval before deploying Firestore security rules.
 14. Deploy audited Firestore Rules and indexes explicitly to staging:
