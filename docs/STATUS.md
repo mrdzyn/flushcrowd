@@ -9,7 +9,7 @@
 - **Current phase:** Phase 2 Add Restroom
 - **Current milestone:** Milestone P2.6-F/G Accessibility Audit, Remediation & Platform Release Validation — COMPLETED
 - **Current branch:** `phase-2/p2.6-fg-accessibility-platform-validation`
-- **Current PR:** TBD — P2.6-F/G Accessibility & Platform Validation
+- **Current PR:** #15 — P2.6-F/G Accessibility & Platform Validation (https://github.com/mrdzyn/flushcrowd/pull/15)
 - **Base:** `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9` (squash-merge of PR #14)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13]; P2.6-B [MERGED — PR #14]; P2.6-F [COMPLETED]; P2.6-G [COMPLETED].
 
