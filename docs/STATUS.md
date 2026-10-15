@@ -9,7 +9,8 @@
 - **Current phase:** Phase 2 Add Restroom
 - **Current milestone:** Milestone P2.6 Final QA & Security Cutover Preparation — COMPLETED & VALIDATED
 - **Current branch:** `phase-2/p2.6-final-qa-security-cutover`
-- **Current PR:** P2.6 Final QA & Security Cutover Preparation
+- **Current PR:** PR #16 (https://github.com/mrdzyn/flushcrowd/pull/16)
+- **Latest commit:** `9ea0fdce6a9ff7d6bb8b369e1ef34c6e357e29c2`
 - **Base:** `main` at `b1c54f7ad8587ddac041401889f159fd5baf8920` (merge of PR #15)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [COMPLETED & VALIDATED].
 
