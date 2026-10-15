@@ -12,6 +12,7 @@ import 'package:flushcrowd/core/errors/exceptions.dart';
 import 'package:flushcrowd/data/repositories/firestore_restroom_repository.dart';
 import 'package:flushcrowd/data/repositories/location_repository_impl.dart';
 import 'package:flushcrowd/data/services/firebase/restroom_submission_transport.dart';
+import 'package:flushcrowd/data/services/gis/geohash_service.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
 import 'package:flushcrowd/domain/models/coordinates.dart';
 import 'package:flushcrowd/domain/models/discovery_result.dart';
@@ -376,14 +377,18 @@ void main() {
 
         final callableTransport = CallableRestroomSubmissionTransport(
           callableInvoker: (payload) async {
+            final lat = (payload['latitude'] as num).toDouble();
+            final lng = (payload['longitude'] as num).toDouble();
             return {
               'success': true,
               'restroom': {
                 'id': payload['restroomId'],
                 'name': payload['name'],
-                'latitude': payload['latitude'],
-                'longitude': payload['longitude'],
-                'geohash': 'wdtw8z',
+                'latitude': lat,
+                'longitude': lng,
+                'geohash': GeohashService.encode(
+                  Coordinates(latitude: lat, longitude: lng),
+                ),
                 'accessType': payload['accessType'],
                 'status': 'unverified',
                 'averageRating': 0.0,
@@ -448,14 +453,119 @@ void main() {
         expect(find.text('Unverified'), findsOneWidget);
       },
     );
+
+    testWidgets(
+      '11. Independent map discovery verification (MINOR-1): when callable submission succeeds but discovery omits the facility, surfaces Refresh SnackBar without optimistic preview',
+      (tester) async {
+        final idGenerator = CountingRestroomIdGenerator(
+          'omitted_discovery_restroom_123',
+        );
+
+        final callableTransport = CallableRestroomSubmissionTransport(
+          callableInvoker: (payload) async {
+            final lat = (payload['latitude'] as num).toDouble();
+            final lng = (payload['longitude'] as num).toDouble();
+            return {
+              'success': true,
+              'restroom': {
+                'id': payload['restroomId'],
+                'name': payload['name'],
+                'latitude': lat,
+                'longitude': lng,
+                'geohash': GeohashService.encode(
+                  Coordinates(latitude: lat, longitude: lng),
+                ),
+                'accessType': payload['accessType'],
+                'status': 'unverified',
+                'averageRating': 0.0,
+                'ratingCount': 0,
+                'createdAt': {'_seconds': 1760000000, '_nanoseconds': 0},
+                'updatedAt': {'_seconds': 1760000000, '_nanoseconds': 0},
+              },
+            };
+          },
+        );
+
+        final repo = TestCallableIntegrationRepository(
+          submissionTransport: callableTransport,
+          returnSubmittedInDiscovery:
+              false, // Facility omitted by backend discovery
+        );
+
+        discoveryNotifier = MapDiscoveryNotifier(
+          restroomRepository: repo,
+          debounceDuration: Duration.zero,
+        );
+
+        await tester.pumpWidget(
+          createTestApp(
+            restroomRepo: repo,
+            locationRepo: locationRepo,
+            locationNotifier: locationNotifier,
+            discoveryNotifier: discoveryNotifier,
+            addFakeMap: addFakeMap,
+            discoveryFakeMap: discoveryFakeMap,
+            authNotifier: authNotifier,
+            formIdGenerator: idGenerator,
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        // 1. Open Add Restroom flow and enter draft
+        await navigateToAddForm(tester, name: 'Facility Absent From Discovery');
+
+        // 2. Submit form
+        await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
+        await tester.pumpAndSettle();
+
+        // Simulate camera settlement at zoom 16.5
+        expect(discoveryFakeMap.controller.lastRequestedZoom, equals(16.5));
+        discoveryFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        // 3. Verify that RestroomPreviewSheet is NOT shown (no optimistic preview)
+        expect(find.byType(RestroomPreviewSheet), findsNothing);
+
+        // 4. Verify recovery SnackBar is shown with 'Refresh' action
+        expect(
+          find.text(
+            'Restroom saved, but not yet visible on map. Tap Refresh to re-check.',
+          ),
+          findsOneWidget,
+        );
+        expect(find.text('Refresh'), findsOneWidget);
+
+        // 5. Now simulate the facility appearing in discovery backend
+        repo.returnSubmittedInDiscovery = true;
+
+        // 6. Tap 'Refresh' action
+        await tester.tap(find.text('Refresh'));
+        await tester.pumpAndSettle();
+
+        // Simulate camera movement/idle for refreshed search
+        discoveryFakeMap.simulateIdle();
+        await tester.pumpAndSettle();
+        await tester.pump(const Duration(milliseconds: 500));
+
+        // 7. Now the facility is found, and preview sheet opens
+        expect(find.byType(RestroomPreviewSheet), findsOneWidget);
+        expect(find.text('Facility Absent From Discovery'), findsWidgets);
+        expect(find.text('Unverified'), findsOneWidget);
+      },
+    );
   });
 }
 
 class TestCallableIntegrationRepository implements RestroomRepository {
   final RestroomSubmissionTransport submissionTransport;
   Restroom? lastSubmittedRestroom;
+  bool returnSubmittedInDiscovery;
 
-  TestCallableIntegrationRepository({required this.submissionTransport});
+  TestCallableIntegrationRepository({
+    required this.submissionTransport,
+    this.returnSubmittedInDiscovery = true,
+  });
 
   @override
   Future<Restroom> submitRestroom(CreateRestroomCommand command) async {
@@ -471,7 +581,7 @@ class TestCallableIntegrationRepository implements RestroomRepository {
   Future<DiscoveryResult<Restroom>> getViewportRestrooms(
     GeoBoundingBox bounds,
   ) async {
-    if (lastSubmittedRestroom != null) {
+    if (returnSubmittedInDiscovery && lastSubmittedRestroom != null) {
       return DiscoveryResult.complete(items: [lastSubmittedRestroom!]);
     }
     return DiscoveryResult.complete(items: const []);
@@ -482,7 +592,7 @@ class TestCallableIntegrationRepository implements RestroomRepository {
     Coordinates center, {
     double radiusMeters = 1500.0,
   }) async {
-    if (lastSubmittedRestroom != null) {
+    if (returnSubmittedInDiscovery && lastSubmittedRestroom != null) {
       return DiscoveryResult.complete(items: [lastSubmittedRestroom!]);
     }
     return DiscoveryResult.complete(items: const []);

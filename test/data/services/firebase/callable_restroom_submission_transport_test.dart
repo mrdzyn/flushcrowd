@@ -11,6 +11,7 @@ import 'package:flushcrowd/data/repositories/auth_repository_impl.dart';
 import 'package:flushcrowd/data/repositories/firestore_restroom_repository.dart';
 import 'package:flushcrowd/data/services/firebase/firestore_mutation_adapter.dart';
 import 'package:flushcrowd/data/services/firebase/restroom_submission_transport.dart';
+import 'package:flushcrowd/data/services/gis/geohash_service.dart';
 import 'package:flushcrowd/domain/commands/create_restroom_command.dart';
 import 'package:flushcrowd/domain/models/coordinates.dart';
 import 'package:flushcrowd/domain/models/enums.dart';
@@ -23,6 +24,8 @@ class FakeFirestoreMutationAdapter implements FirestoreMutationAdapter {
 
   bool throwOnBatchCommit = false;
   FirebaseException? batchCommitException;
+  FirebaseException? publicReadException;
+  FirebaseException? privateReadException;
 
   @override
   Future<void> commitRestroomSubmissionBatch({
@@ -55,6 +58,7 @@ class FakeFirestoreMutationAdapter implements FirestoreMutationAdapter {
 
   @override
   Future<FirestoreDocumentData?> getPublicRestroom(String restroomId) async {
+    if (publicReadException != null) throw publicReadException!;
     final doc = publicDocuments[restroomId];
     if (doc == null) return null;
     return FirestoreDocumentData(
@@ -67,6 +71,7 @@ class FakeFirestoreMutationAdapter implements FirestoreMutationAdapter {
   Future<FirestoreDocumentData?> getPrivateContribution(
     String contributionId,
   ) async {
+    if (privateReadException != null) throw privateReadException!;
     final doc = privateDocuments[contributionId];
     if (doc == null) return null;
     return FirestoreDocumentData(
@@ -109,6 +114,65 @@ void main() {
     restroomId: 'rr_test_callable_123',
     draft: testDraft,
   );
+
+  Map<String, dynamic> buildCanonicalPublicData(
+    String restroomId,
+    RestroomDraft draft,
+  ) {
+    final geohash = GeohashService.encode(draft.coordinates);
+    return {
+      'id': restroomId,
+      'name': draft.name,
+      'latitude': draft.coordinates.latitude,
+      'longitude': draft.coordinates.longitude,
+      'geohash': geohash,
+      'countryCode': draft.countryCode,
+      'region': draft.region,
+      'city': draft.city,
+      'buildingName': draft.buildingName,
+      'buildingSection': draft.buildingSection,
+      'floor': draft.floor,
+      'unitOrArea': draft.unitOrArea,
+      'landmark': draft.landmark,
+      'directionsNote': draft.directionsNote,
+      'accessInstructions': draft.accessInstructions,
+      'accessType': draft.accessType.value,
+      'feeAmount': draft.feeAmount,
+      'feeCurrency': draft.feeCurrency,
+      'male': draft.male,
+      'female': draft.female,
+      'allGender': draft.allGender,
+      'pwdAccessible': draft.pwdAccessible.toNullableBool(),
+      'babyChanging': draft.babyChanging.toNullableBool(),
+      'hasBidet': draft.hasBidet.toNullableBool(),
+      'hasToiletPaper': draft.hasToiletPaper.toNullableBool(),
+      'hasSoap': draft.hasSoap.toNullableBool(),
+      'hasHandDryer': draft.hasHandDryer.toNullableBool(),
+      'averageRating': 0.0,
+      'ratingCount': 0,
+      'verificationCount': 0,
+      'negativeVerificationCount': 0,
+      'status': 'unverified',
+      'createdAt': Timestamp.now(),
+      'updatedAt': Timestamp.now(),
+    };
+  }
+
+  Map<String, dynamic> buildCanonicalPrivateData(
+    String restroomId,
+    String uid,
+  ) {
+    return {
+      'id': 'restroom_$restroomId',
+      'contributionType': 'restroom',
+      'resourceId': restroomId,
+      'restroomId': restroomId,
+      'userUid': uid,
+      'moderationState': 'pending',
+      'createdAt': Timestamp.now(),
+      'updatedAt': Timestamp.now(),
+    };
+  }
 
   group('P2.6-B — CallableRestroomSubmissionTransport Unit Tests', () {
     test('1. Correct request serialization: omits sentinels, UIDs, aggregates, and status', () {
@@ -161,25 +225,10 @@ void main() {
           return {
             'success': true,
             'isIdempotentRetry': false,
-            'restroom': {
-              'id': payload['restroomId'],
-              'name': payload['name'],
-              'latitude': payload['latitude'],
-              'longitude': payload['longitude'],
-              'geohash': 'wdtw8z',
-              'accessType': payload['accessType'],
-              'feeAmount': payload['feeAmount'],
-              'feeCurrency': payload['feeCurrency'],
-              'male': payload['male'],
-              'female': payload['female'],
-              'allGender': payload['allGender'],
-              'pwdAccessible': payload['pwdAccessible'],
-              'status': 'unverified',
-              'averageRating': 0.0,
-              'ratingCount': 0,
-              'createdAt': {'_seconds': 1760000000, '_nanoseconds': 0},
-              'updatedAt': {'_seconds': 1760000000, '_nanoseconds': 0},
-            },
+            'restroom': buildCanonicalPublicData(
+              payload['restroomId'] as String,
+              testDraft,
+            ),
           };
         },
       );
@@ -288,25 +337,14 @@ void main() {
       );
     });
 
-    test('5. Network timeout and ambiguous completion', () async {
+    test('5. BLOCKER-1: Ambiguous callable completion integrity — requires verified public/private pairing', () async {
       final mutationAdapter = FakeFirestoreMutationAdapter();
 
-      // Case A: timeout occurs, point read finds committed document -> succeeds
-      mutationAdapter.publicDocuments['rr_test_callable_123'] = {
-        'id': 'rr_test_callable_123',
-        'name': 'Megamall Ground Floor Restroom',
-        'latitude': 14.5839,
-        'longitude': 121.0617,
-        'geohash': 'wdtw8z',
-        'accessType': 'paid',
-        'feeAmount': 10.0,
-        'feeCurrency': 'PHP',
-        'status': 'unverified',
-        'averageRating': 0.0,
-        'ratingCount': 0,
-        'createdAt': Timestamp.now(),
-        'updatedAt': Timestamp.now(),
-      };
+      // Case A: Complete successful reconciliation (both public and private documents match)
+      mutationAdapter.publicDocuments['rr_test_callable_123'] =
+          buildCanonicalPublicData('rr_test_callable_123', testDraft);
+      mutationAdapter.privateDocuments['restroom_rr_test_callable_123'] =
+          buildCanonicalPrivateData('rr_test_callable_123', 'anon_uid_999');
 
       final timeoutTransportSuccess = CallableRestroomSubmissionTransport(
         pointReadAdapter: mutationAdapter,
@@ -321,8 +359,9 @@ void main() {
       );
       expect(result.id, equals('rr_test_callable_123'));
       expect(result.name, equals('Megamall Ground Floor Restroom'));
+      expect(result.status, equals(RestroomStatus.unverified));
 
-      // Case B: timeout occurs, point read finds NO document -> throws unavailable
+      // Case B: Point read finds NO document -> throws unavailable
       final emptyAdapter = FakeFirestoreMutationAdapter();
       final timeoutTransportFailure = CallableRestroomSubmissionTransport(
         pointReadAdapter: emptyAdapter,
@@ -348,26 +387,147 @@ void main() {
         ),
       );
 
-      // Case C: timeout occurs, point read finds MISMATCHED document -> throws already-exists
-      final mismatchedAdapter = FakeFirestoreMutationAdapter();
-      mismatchedAdapter.publicDocuments['rr_test_callable_123'] = {
-        'id': 'rr_test_callable_123',
-        'name': 'Different Restroom Name Entirely',
-        'latitude': 14.5839,
-        'longitude': 121.0617,
-        'geohash': 'wdtw8z',
-        'accessType': 'free',
-        'status': 'unverified',
-      };
-      final timeoutTransportMismatch = CallableRestroomSubmissionTransport(
-        pointReadAdapter: mismatchedAdapter,
+      // Case C: Missing private contribution (orphaned public document) -> throws SubmissionInvariantException
+      final orphanedPublicAdapter = FakeFirestoreMutationAdapter();
+      orphanedPublicAdapter.publicDocuments['rr_test_callable_123'] =
+          buildCanonicalPublicData('rr_test_callable_123', testDraft);
+      // privateDocuments left empty
+
+      final orphanedPublicTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: orphanedPublicAdapter,
         callableInvoker: (payload) async {
           throw TimeoutException('Timed out');
         },
       );
 
       expect(
-        () => timeoutTransportMismatch.submitRestroom(
+        () => orphanedPublicTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<SubmissionInvariantException>().having(
+            (e) => e.message,
+            'message',
+            contains('private contribution is missing or unreadable'),
+          ),
+        ),
+      );
+
+      // Case D: Wrong contributor on private contribution -> throws SubmissionInvariantException
+      final wrongContributorAdapter = FakeFirestoreMutationAdapter();
+      wrongContributorAdapter.publicDocuments['rr_test_callable_123'] =
+          buildCanonicalPublicData('rr_test_callable_123', testDraft);
+      wrongContributorAdapter
+              .privateDocuments['restroom_rr_test_callable_123'] =
+          buildCanonicalPrivateData(
+            'rr_test_callable_123',
+            'wrong_contributor_uid',
+          );
+
+      final wrongContributorTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: wrongContributorAdapter,
+        callableInvoker: (payload) async {
+          throw TimeoutException('Timed out');
+        },
+      );
+
+      expect(
+        () => wrongContributorTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<SubmissionInvariantException>().having(
+            (e) => e.message,
+            'message',
+            contains('private contribution metadata mismatch'),
+          ),
+        ),
+      );
+
+      // Case E.1: Modified amenities in public document -> throws SubmissionInvariantException
+      final modifiedAmenityAdapter = FakeFirestoreMutationAdapter();
+      final modAmenityData = buildCanonicalPublicData(
+        'rr_test_callable_123',
+        testDraft,
+      );
+      modAmenityData['hasBidet'] = false; // testDraft has hasBidet: true
+      modifiedAmenityAdapter.publicDocuments['rr_test_callable_123'] =
+          modAmenityData;
+      modifiedAmenityAdapter.privateDocuments['restroom_rr_test_callable_123'] =
+          buildCanonicalPrivateData('rr_test_callable_123', 'anon_uid_999');
+
+      final modifiedAmenityTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: modifiedAmenityAdapter,
+        callableInvoker: (payload) async {
+          throw TimeoutException('Timed out');
+        },
+      );
+
+      expect(
+        () => modifiedAmenityTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<SubmissionInvariantException>().having(
+            (e) => e.message,
+            'message',
+            contains('stalls or amenities do not match'),
+          ),
+        ),
+      );
+
+      // Case E.2: Modified fee in public document -> throws SubmissionInvariantException
+      final modifiedFeeAdapter = FakeFirestoreMutationAdapter();
+      final modFeeData = buildCanonicalPublicData(
+        'rr_test_callable_123',
+        testDraft,
+      );
+      modFeeData['feeAmount'] = 25.0; // testDraft has feeAmount: 10.0
+      modifiedFeeAdapter.publicDocuments['rr_test_callable_123'] = modFeeData;
+      modifiedFeeAdapter.privateDocuments['restroom_rr_test_callable_123'] =
+          buildCanonicalPrivateData('rr_test_callable_123', 'anon_uid_999');
+
+      final modifiedFeeTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: modifiedFeeAdapter,
+        callableInvoker: (payload) async {
+          throw TimeoutException('Timed out');
+        },
+      );
+
+      expect(
+        () => modifiedFeeTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<SubmissionInvariantException>().having(
+            (e) => e.message,
+            'message',
+            contains('fee configuration does not match'),
+          ),
+        ),
+      );
+
+      // Case F.1: Failed reconciliation read (transient unavailable on public read) -> throws retryable RepositoryException
+      final publicReadFailAdapter = FakeFirestoreMutationAdapter();
+      publicReadFailAdapter.publicReadException = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'unavailable',
+        message: 'Simulated point read network loss',
+      );
+
+      final publicReadFailTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: publicReadFailAdapter,
+        callableInvoker: (payload) async {
+          throw TimeoutException('Timed out');
+        },
+      );
+
+      expect(
+        () => publicReadFailTransport.submitRestroom(
           command: testCommand,
           uid: 'anon_uid_999',
         ),
@@ -375,7 +535,225 @@ void main() {
           isA<RepositoryException>().having(
             (e) => e.code,
             'code',
-            'already-exists',
+            'unavailable',
+          ),
+        ),
+      );
+
+      // Case F.2: Failed reconciliation read (transient deadline-exceeded on private read) -> throws retryable RepositoryException
+      final privateReadFailAdapter = FakeFirestoreMutationAdapter();
+      privateReadFailAdapter.publicDocuments['rr_test_callable_123'] =
+          buildCanonicalPublicData('rr_test_callable_123', testDraft);
+      privateReadFailAdapter.privateReadException = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'deadline-exceeded',
+        message: 'Simulated private read timeout',
+      );
+
+      final privateReadFailTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: privateReadFailAdapter,
+        callableInvoker: (payload) async {
+          throw TimeoutException('Timed out');
+        },
+      );
+
+      expect(
+        () => privateReadFailTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'deadline-exceeded',
+          ),
+        ),
+      );
+
+      // Case F.3: Permission-denied on private contribution read -> throws SubmissionInvariantException
+      final permDeniedPrivateAdapter = FakeFirestoreMutationAdapter();
+      permDeniedPrivateAdapter.publicDocuments['rr_test_callable_123'] =
+          buildCanonicalPublicData('rr_test_callable_123', testDraft);
+      permDeniedPrivateAdapter.privateReadException = FirebaseException(
+        plugin: 'cloud_firestore',
+        code: 'permission-denied',
+        message: 'Missing permissions',
+      );
+
+      final permDeniedPrivateTransport = CallableRestroomSubmissionTransport(
+        pointReadAdapter: permDeniedPrivateAdapter,
+        callableInvoker: (payload) async {
+          throw TimeoutException('Timed out');
+        },
+      );
+
+      expect(
+        () => permDeniedPrivateTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<SubmissionInvariantException>().having(
+            (e) => e.message,
+            'message',
+            contains('Unable to verify the private contribution'),
+          ),
+        ),
+      );
+    });
+
+    test('5b. MAJOR-1: Callable response validation fails closed on invalid or malformed payload', () async {
+      // 1. success == false even with restroom payload -> throws submission-failed
+      final successFalseTransport = CallableRestroomSubmissionTransport(
+        callableInvoker: (payload) async {
+          return {
+            'success': false,
+            'restroom': buildCanonicalPublicData(
+              'rr_test_callable_123',
+              testDraft,
+            ),
+          };
+        },
+      );
+
+      await expectLater(
+        () => successFalseTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'submission-failed',
+          ),
+        ),
+      );
+
+      // 2. Mismatched restroom ID -> throws invalid-response
+      final wrongIdData = buildCanonicalPublicData('wrong_id_999', testDraft);
+      wrongIdData['id'] = 'wrong_id_999';
+      final wrongIdTransport = CallableRestroomSubmissionTransport(
+        callableInvoker: (payload) async {
+          return {'success': true, 'restroom': wrongIdData};
+        },
+      );
+
+      await expectLater(
+        () => wrongIdTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-response',
+          ),
+        ),
+      );
+
+      // 3. Altered coordinates -> throws invalid-response
+      final alteredCoordsData = buildCanonicalPublicData(
+        'rr_test_callable_123',
+        testDraft,
+      );
+      alteredCoordsData['latitude'] = 14.9999;
+      final alteredCoordsTransport = CallableRestroomSubmissionTransport(
+        callableInvoker: (payload) async {
+          return {'success': true, 'restroom': alteredCoordsData};
+        },
+      );
+
+      await expectLater(
+        () => alteredCoordsTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-response',
+          ),
+        ),
+      );
+
+      // 4. Altered name -> throws invalid-response
+      final alteredNameData = buildCanonicalPublicData(
+        'rr_test_callable_123',
+        testDraft,
+      );
+      alteredNameData['name'] = 'Altered Name Entirely';
+      final alteredNameTransport = CallableRestroomSubmissionTransport(
+        callableInvoker: (payload) async {
+          return {'success': true, 'restroom': alteredNameData};
+        },
+      );
+
+      await expectLater(
+        () => alteredNameTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-response',
+          ),
+        ),
+      );
+
+      // 5. Altered status -> throws invalid-response
+      final alteredStatusData = buildCanonicalPublicData(
+        'rr_test_callable_123',
+        testDraft,
+      );
+      alteredStatusData['status'] = 'active';
+      final alteredStatusTransport = CallableRestroomSubmissionTransport(
+        callableInvoker: (payload) async {
+          return {'success': true, 'restroom': alteredStatusData};
+        },
+      );
+
+      await expectLater(
+        () => alteredStatusTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-response',
+          ),
+        ),
+      );
+
+      // 6. Prohibited contributor UID in restroom payload -> throws invalid-response
+      final leakedUidData = buildCanonicalPublicData(
+        'rr_test_callable_123',
+        testDraft,
+      );
+      leakedUidData['userUid'] = 'anon_uid_999';
+      final leakedUidTransport = CallableRestroomSubmissionTransport(
+        callableInvoker: (payload) async {
+          return {'success': true, 'restroom': leakedUidData};
+        },
+      );
+
+      await expectLater(
+        () => leakedUidTransport.submitRestroom(
+          command: testCommand,
+          uid: 'anon_uid_999',
+        ),
+        throwsA(
+          isA<RepositoryException>().having(
+            (e) => e.code,
+            'code',
+            'invalid-response',
           ),
         ),
       );

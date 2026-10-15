@@ -317,6 +317,15 @@ class DirectFirestoreRestroomSubmissionTransport
       );
     }
 
+    if (publicDoc.data.containsKey('userUid') ||
+        publicDoc.data.containsKey('createdByUid') ||
+        publicDoc.data.containsKey('authorUid') ||
+        publicDoc.data.containsKey('uid')) {
+      throw const SubmissionInvariantException(
+        'Invariant violation: public restroom contains prohibited contributor UID.',
+      );
+    }
+
     final privateDocId = privateDoc.documentId;
     final contribId = privateDoc.data['id'] as String?;
     final contribType = privateDoc.data['contributionType'] as String?;
@@ -537,9 +546,9 @@ class CallableRestroomSubmissionTransport
         resultData = Map<String, dynamic>.from(response.data as Map);
       }
     } on FirebaseFunctionsException catch (e) {
-      resultData = await _handleFunctionsException(e, command);
+      resultData = await _handleFunctionsException(e, command, uid);
     } on TimeoutException catch (e) {
-      resultData = await _handleTimeout(e, command);
+      resultData = await _handleTimeout(e, command, uid);
     } catch (e) {
       if (e is AppException) rethrow;
       throw RepositoryException(
@@ -548,16 +557,10 @@ class CallableRestroomSubmissionTransport
       );
     }
 
-    final restroomRaw = resultData['restroom'];
-    if (restroomRaw is! Map) {
-      throw const RepositoryException(
-        'Callable response is missing the expected restroom payload.',
-        'invalid-response',
-      );
-    }
+    validateCallableResponse(resultData: resultData, command: command);
 
     final normalizedMap = _normalizeCallableRestroomMap(
-      Map<String, dynamic>.from(restroomRaw),
+      Map<String, dynamic>.from(resultData['restroom'] as Map),
     );
 
     return RestroomFirestoreCodec.fromFirestore(
@@ -569,6 +572,7 @@ class CallableRestroomSubmissionTransport
   Future<Map<String, dynamic>> _handleFunctionsException(
     FirebaseFunctionsException e,
     CreateRestroomCommand command,
+    String uid,
   ) async {
     final code = e.code.toLowerCase();
 
@@ -602,7 +606,11 @@ class CallableRestroomSubmissionTransport
     }
 
     if (code == 'unavailable' || code == 'deadline-exceeded') {
-      return await _verifyAmbiguousPointRead(command, fallbackException: e);
+      return await _verifyAmbiguousPointRead(
+        command: command,
+        uid: uid,
+        fallbackException: e,
+      );
     }
 
     throw RepositoryException(
@@ -614,9 +622,11 @@ class CallableRestroomSubmissionTransport
   Future<Map<String, dynamic>> _handleTimeout(
     TimeoutException e,
     CreateRestroomCommand command,
+    String uid,
   ) async {
     return await _verifyAmbiguousPointRead(
-      command,
+      command: command,
+      uid: uid,
       fallbackException: const RepositoryException(
         'Connection timed out. Please check your internet connection.',
         'unavailable',
@@ -624,8 +634,9 @@ class CallableRestroomSubmissionTransport
     );
   }
 
-  Future<Map<String, dynamic>> _verifyAmbiguousPointRead(
-    CreateRestroomCommand command, {
+  Future<Map<String, dynamic>> _verifyAmbiguousPointRead({
+    required CreateRestroomCommand command,
+    required String uid,
     required Object fallbackException,
   }) async {
     final adapter = pointReadAdapter;
@@ -633,19 +644,61 @@ class CallableRestroomSubmissionTransport
       try {
         final publicDoc = await adapter.getPublicRestroom(command.restroomId);
         if (publicDoc != null) {
-          if (matchesCanonicalCommand(publicDoc: publicDoc, command: command)) {
-            // Transaction successfully committed on server
-            return {'success': true, 'restroom': publicDoc.data};
-          } else {
-            throw const RepositoryException(
-              'A restroom with this ID already exists with different details.',
-              'already-exists',
+          FirestoreDocumentData? privateDoc;
+          try {
+            privateDoc = await adapter.getPrivateContribution(
+              'restroom_${command.restroomId}',
+            );
+          } on FirebaseException catch (e) {
+            if (e.code == 'permission-denied') {
+              throw const SubmissionInvariantException(
+                'Unable to verify the private contribution paired with this restroom.',
+              );
+            }
+            if (e.code == 'unavailable' || e.code == 'deadline-exceeded') {
+              throw RepositoryException(
+                e.message ??
+                    'Transient network error during reconciliation read.',
+                e.code,
+              );
+            }
+            rethrow;
+          }
+
+          if (privateDoc == null) {
+            throw const SubmissionInvariantException(
+              'Invariant violation: public restroom exists but private contribution is missing or unreadable.',
             );
           }
+
+          final normalized = command.draft.normalized();
+          final geohash = GeohashService.encode(normalized.coordinates);
+
+          DirectFirestoreRestroomSubmissionTransport.validateReconciliationPair(
+            restroomId: command.restroomId,
+            publicDoc: publicDoc,
+            privateDoc: privateDoc,
+            normalized: normalized,
+            geohash: geohash,
+            uid: uid,
+          );
+
+          return {'success': true, 'restroom': publicDoc.data};
         }
+      } on FirebaseException catch (e) {
+        if (e.code == 'unavailable' || e.code == 'deadline-exceeded') {
+          throw RepositoryException(
+            e.message ?? 'Transient network error during reconciliation read.',
+            e.code,
+          );
+        }
+        rethrow;
       } catch (err) {
+        if (err is SubmissionInvariantException) rethrow;
         if (err is RepositoryException) rethrow;
-        // Point read failed due to network; fall through to throw original failure
+        throw RepositoryException(
+          'Reconciliation failed following ambiguous submission error: $err',
+        );
       }
     }
 
@@ -665,16 +718,166 @@ class CallableRestroomSubmissionTransport
     );
   }
 
+  /// Authoritatively validates that a callable response conforms to the canonical
+  /// submission command and response invariants before decoding or updating UI state.
+  static void validateCallableResponse({
+    required Map<String, dynamic> resultData,
+    required CreateRestroomCommand command,
+  }) {
+    if (resultData['success'] != true) {
+      throw const RepositoryException(
+        'Callable response indicated submission failure.',
+        'submission-failed',
+      );
+    }
+
+    final restroomRaw = resultData['restroom'];
+    if (restroomRaw is! Map) {
+      throw const RepositoryException(
+        'Callable response is missing the expected restroom payload.',
+        'invalid-response',
+      );
+    }
+
+    final restroomMap = Map<String, dynamic>.from(restroomRaw);
+    final responseId = restroomMap['id'];
+    if (responseId is! String || responseId != command.restroomId) {
+      throw const RepositoryException(
+        'Callable response restroom ID does not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    final status = restroomMap['status'];
+    if (status != RestroomStatus.unverified.value) {
+      throw const RepositoryException(
+        'Callable response status must be unverified.',
+        'invalid-response',
+      );
+    }
+
+    final normalized = command.draft.normalized();
+
+    if (restroomMap['name'] != normalized.name) {
+      throw const RepositoryException(
+        'Callable response restroom name does not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    final lat = (restroomMap['latitude'] as num?)?.toDouble();
+    final lng = (restroomMap['longitude'] as num?)?.toDouble();
+    if (lat == null ||
+        lng == null ||
+        lat != normalized.coordinates.latitude ||
+        lng != normalized.coordinates.longitude) {
+      throw const RepositoryException(
+        'Callable response coordinates do not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    final geohash = GeohashService.encode(normalized.coordinates);
+    if (restroomMap['geohash'] != geohash) {
+      throw const RepositoryException(
+        'Callable response geohash does not match coordinates.',
+        'invalid-response',
+      );
+    }
+
+    if (restroomMap['accessType'] != normalized.accessType.value) {
+      throw const RepositoryException(
+        'Callable response accessType does not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    if (restroomMap['countryCode'] != normalized.countryCode ||
+        restroomMap['region'] != normalized.region ||
+        restroomMap['city'] != normalized.city ||
+        restroomMap['buildingName'] != normalized.buildingName ||
+        restroomMap['buildingSection'] != normalized.buildingSection ||
+        restroomMap['floor'] != normalized.floor ||
+        restroomMap['unitOrArea'] != normalized.unitOrArea ||
+        restroomMap['landmark'] != normalized.landmark ||
+        restroomMap['directionsNote'] != normalized.directionsNote ||
+        restroomMap['accessInstructions'] != normalized.accessInstructions) {
+      throw const RepositoryException(
+        'Callable response location details do not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    final feeAmount = (restroomMap['feeAmount'] as num?)?.toDouble();
+    if (feeAmount != normalized.feeAmount ||
+        restroomMap['feeCurrency'] != normalized.feeCurrency) {
+      throw const RepositoryException(
+        'Callable response fee configuration does not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    if (restroomMap['male'] != normalized.male ||
+        restroomMap['female'] != normalized.female ||
+        restroomMap['allGender'] != normalized.allGender ||
+        restroomMap['pwdAccessible'] !=
+            normalized.pwdAccessible.toNullableBool() ||
+        restroomMap['babyChanging'] !=
+            normalized.babyChanging.toNullableBool() ||
+        restroomMap['hasBidet'] != normalized.hasBidet.toNullableBool() ||
+        restroomMap['hasToiletPaper'] !=
+            normalized.hasToiletPaper.toNullableBool() ||
+        restroomMap['hasSoap'] != normalized.hasSoap.toNullableBool() ||
+        restroomMap['hasHandDryer'] !=
+            normalized.hasHandDryer.toNullableBool()) {
+      throw const RepositoryException(
+        'Callable response stalls or amenities do not match submission command.',
+        'invalid-response',
+      );
+    }
+
+    final avgRating = (restroomMap['averageRating'] as num?)?.toDouble();
+    final ratingCount = restroomMap['ratingCount'];
+    if (avgRating != 0.0 || ratingCount != 0) {
+      throw const RepositoryException(
+        'Callable response initial ratings must be zero.',
+        'invalid-response',
+      );
+    }
+
+    final verificationCount = restroomMap['verificationCount'];
+    final negativeVerificationCount = restroomMap['negativeVerificationCount'];
+    if ((verificationCount != null && verificationCount != 0) ||
+        (negativeVerificationCount != null && negativeVerificationCount != 0)) {
+      throw const RepositoryException(
+        'Callable response initial verifications must be zero.',
+        'invalid-response',
+      );
+    }
+
+    if (restroomMap.containsKey('userUid') ||
+        restroomMap.containsKey('createdByUid') ||
+        restroomMap.containsKey('authorUid') ||
+        restroomMap.containsKey('uid')) {
+      throw const RepositoryException(
+        'Callable response restroom payload contains prohibited contributor UID.',
+        'invalid-response',
+      );
+    }
+  }
+
   /// Verifies whether an existing public document exactly matches the canonical submission command.
   static bool matchesCanonicalCommand({
     required FirestoreDocumentData publicDoc,
     required CreateRestroomCommand command,
   }) {
     final normalized = command.draft.normalized();
+    final geohash = GeohashService.encode(normalized.coordinates);
     final data = publicDoc.data;
 
     if (publicDoc.documentId != command.restroomId ||
-        data['id'] != command.restroomId) {
+        data['id'] != command.restroomId ||
+        data['status'] != RestroomStatus.unverified.value) {
       return false;
     }
     if (data['name'] != normalized.name) return false;
@@ -682,11 +885,43 @@ class CallableRestroomSubmissionTransport
     final lat = (data['latitude'] as num?)?.toDouble();
     final lng = (data['longitude'] as num?)?.toDouble();
     if (lat != normalized.coordinates.latitude ||
-        lng != normalized.coordinates.longitude) {
+        lng != normalized.coordinates.longitude ||
+        data['geohash'] != geohash) {
       return false;
     }
 
     if (data['accessType'] != normalized.accessType.value) return false;
+
+    if (data['countryCode'] != normalized.countryCode ||
+        data['region'] != normalized.region ||
+        data['city'] != normalized.city ||
+        data['buildingName'] != normalized.buildingName ||
+        data['buildingSection'] != normalized.buildingSection ||
+        data['floor'] != normalized.floor ||
+        data['unitOrArea'] != normalized.unitOrArea ||
+        data['landmark'] != normalized.landmark ||
+        data['directionsNote'] != normalized.directionsNote ||
+        data['accessInstructions'] != normalized.accessInstructions) {
+      return false;
+    }
+
+    final feeAmount = (data['feeAmount'] as num?)?.toDouble();
+    if (feeAmount != normalized.feeAmount ||
+        data['feeCurrency'] != normalized.feeCurrency) {
+      return false;
+    }
+
+    if (data['male'] != normalized.male ||
+        data['female'] != normalized.female ||
+        data['allGender'] != normalized.allGender ||
+        data['pwdAccessible'] != normalized.pwdAccessible.toNullableBool() ||
+        data['babyChanging'] != normalized.babyChanging.toNullableBool() ||
+        data['hasBidet'] != normalized.hasBidet.toNullableBool() ||
+        data['hasToiletPaper'] != normalized.hasToiletPaper.toNullableBool() ||
+        data['hasSoap'] != normalized.hasSoap.toNullableBool() ||
+        data['hasHandDryer'] != normalized.hasHandDryer.toNullableBool()) {
+      return false;
+    }
 
     return true;
   }
