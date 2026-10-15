@@ -71,7 +71,9 @@ class TriStateAmenitySelector extends StatelessWidget {
           Row(
             children: [
               if (icon != null) ...[
-                Icon(icon, size: 20, color: AppColors.primary),
+                ExcludeSemantics(
+                  child: Icon(icon, size: 20, color: AppColors.primary),
+                ),
                 const SizedBox(width: AppSpacing.sm),
               ],
               Expanded(
@@ -180,6 +182,7 @@ class _TriStateOptionButton extends StatelessWidget {
       button: true,
       selected: isSelected,
       label: '$parentLabel, $label',
+      excludeSemantics: true,
       child: Material(
         color: backgroundColor,
         shape: RoundedRectangleBorder(
@@ -208,7 +211,7 @@ class _TriStateOptionButton extends StatelessWidget {
                     child: Text(
                       label,
                       textAlign: TextAlign.center,
-                      maxLines: 1,
+                      maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: AppTypography.labelMedium.copyWith(
                         color: textColor,

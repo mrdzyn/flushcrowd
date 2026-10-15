@@ -287,46 +287,51 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
   }
 
   Widget _buildErrorSummaryBanner() {
-    return Container(
-      padding: const EdgeInsets.all(AppSpacing.md),
-      decoration: BoxDecoration(
-        color: AppColors.errorContainer,
-        borderRadius: AppRadii.lgBorder,
-        border: Border.all(color: AppColors.error),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const Icon(
-                Icons.error_outline_rounded,
-                color: AppColors.onErrorContainer,
-                size: 20,
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Text(
-                'Please fix the following errors:',
-                style: AppTypography.titleMedium.copyWith(
-                  color: AppColors.onErrorContainer,
-                  fontWeight: FontWeight.w700,
+    return Semantics(
+      liveRegion: true,
+      child: Container(
+        padding: const EdgeInsets.all(AppSpacing.md),
+        decoration: BoxDecoration(
+          color: AppColors.errorContainer,
+          borderRadius: AppRadii.lgBorder,
+          border: Border.all(color: AppColors.error),
+        ),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                const ExcludeSemantics(
+                  child: Icon(
+                    Icons.error_outline_rounded,
+                    color: AppColors.onErrorContainer,
+                    size: 20,
+                  ),
                 ),
-              ),
-            ],
-          ),
-          const SizedBox(height: AppSpacing.xs),
-          for (final error in _notifier.errors)
-            Padding(
-              padding: const EdgeInsets.only(left: 28.0, top: 2.0),
-              child: Text(
-                '• $error',
-                style: AppTypography.bodySmall.copyWith(
-                  color: AppColors.onErrorContainer,
-                  fontWeight: FontWeight.w500,
+                const SizedBox(width: AppSpacing.sm),
+                Text(
+                  'Please fix the following errors:',
+                  style: AppTypography.titleMedium.copyWith(
+                    color: AppColors.onErrorContainer,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
-              ),
+              ],
             ),
-        ],
+            const SizedBox(height: AppSpacing.xs),
+            for (final error in _notifier.errors)
+              Padding(
+                padding: const EdgeInsets.only(left: 28.0, top: 2.0),
+                child: Text(
+                  '• $error',
+                  style: AppTypography.bodySmall.copyWith(
+                    color: AppColors.onErrorContainer,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ),
+          ],
+        ),
       ),
     );
   }
@@ -350,6 +355,7 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
         ),
         const SizedBox(height: AppSpacing.md),
         DropdownButtonFormField<AccessType>(
+          isExpanded: true,
           initialValue: _notifier.accessType,
           decoration: const InputDecoration(
             labelText: 'Access Type',
@@ -612,44 +618,87 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
         ),
         if (isPaid) ...[
           const SizedBox(height: AppSpacing.md),
-          Row(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Expanded(
-                flex: 3,
-                child: TextFormField(
-                  controller: _feeAmountController,
-                  keyboardType: const TextInputType.numberWithOptions(
-                    decimal: true,
-                  ),
-                  decoration: InputDecoration(
-                    labelText: 'Fee Amount *',
-                    hintText: 'e.g., 10.00',
-                    errorText: _notifier.feeAmountError,
-                    border: const OutlineInputBorder(
-                      borderRadius: AppRadii.mdBorder,
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final textScaler = MediaQuery.textScalerOf(context);
+              final isHighTextScale = textScaler.scale(1.0) >= 1.5;
+              final isNarrow = constraints.maxWidth < 320;
+
+              if (isHighTextScale || isNarrow) {
+                return Column(
+                  children: [
+                    TextFormField(
+                      controller: _feeAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Fee Amount *',
+                        hintText: 'e.g., 10.00',
+                        errorText: _notifier.feeAmountError,
+                        border: const OutlineInputBorder(
+                          borderRadius: AppRadii.mdBorder,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: AppSpacing.md),
+                    TextFormField(
+                      controller: _feeCurrencyController,
+                      textCapitalization: TextCapitalization.characters,
+                      maxLength: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Currency *',
+                        hintText: 'PHP, USD',
+                        errorText: _notifier.feeCurrencyError,
+                        border: const OutlineInputBorder(
+                          borderRadius: AppRadii.mdBorder,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              }
+
+              return Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    flex: 3,
+                    child: TextFormField(
+                      controller: _feeAmountController,
+                      keyboardType: const TextInputType.numberWithOptions(
+                        decimal: true,
+                      ),
+                      decoration: InputDecoration(
+                        labelText: 'Fee Amount *',
+                        hintText: 'e.g., 10.00',
+                        errorText: _notifier.feeAmountError,
+                        border: const OutlineInputBorder(
+                          borderRadius: AppRadii.mdBorder,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-              const SizedBox(width: AppSpacing.sm),
-              Expanded(
-                flex: 2,
-                child: TextFormField(
-                  controller: _feeCurrencyController,
-                  textCapitalization: TextCapitalization.characters,
-                  maxLength: 3,
-                  decoration: InputDecoration(
-                    labelText: 'Currency *',
-                    hintText: 'PHP, USD',
-                    errorText: _notifier.feeCurrencyError,
-                    border: const OutlineInputBorder(
-                      borderRadius: AppRadii.mdBorder,
+                  const SizedBox(width: AppSpacing.sm),
+                  Expanded(
+                    flex: 2,
+                    child: TextFormField(
+                      controller: _feeCurrencyController,
+                      textCapitalization: TextCapitalization.characters,
+                      maxLength: 3,
+                      decoration: InputDecoration(
+                        labelText: 'Currency *',
+                        hintText: 'PHP, USD',
+                        errorText: _notifier.feeCurrencyError,
+                        border: const OutlineInputBorder(
+                          borderRadius: AppRadii.mdBorder,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-              ),
-            ],
+                ],
+              );
+            },
           ),
         ],
       ],
@@ -702,13 +751,18 @@ class _FormCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              Icon(icon, size: 20, color: AppColors.primary),
+              ExcludeSemantics(
+                child: Icon(icon, size: 20, color: AppColors.primary),
+              ),
               const SizedBox(width: AppSpacing.sm),
               Expanded(
-                child: Text(
-                  title,
-                  style: AppTypography.titleMedium.copyWith(
-                    fontWeight: FontWeight.w700,
+                child: Semantics(
+                  header: true,
+                  child: Text(
+                    title,
+                    style: AppTypography.titleMedium.copyWith(
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ),

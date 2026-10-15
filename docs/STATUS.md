@@ -7,24 +7,35 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6 Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation — ACTIVE (P2.6-B PR #14 Audit Remediation Complete)
-- **Current branch:** `phase-2/p2.6-b-callable-integration`
-- **Current PR:** #14 — P2.6-B Flutter Callable Integration (https://github.com/mrdzyn/flushcrowd/pull/14)
-- **Base:** `main` at `05ad76b3a20af18f83df69d552bb2c30f3958087` (following merge of PR #13)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13 at `05ad76b3a20af18f83df69d552bb2c30f3958087`]; P2.6-B [AUDIT REMEDIATED & VALIDATED].
+- **Current milestone:** Milestone P2.6-F/G Accessibility Audit, Remediation & Platform Release Validation — COMPLETED
+- **Current branch:** `phase-2/p2.6-fg-accessibility-platform-validation`
+- **Current PR:** TBD — P2.6-F/G Accessibility & Platform Validation
+- **Base:** `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9` (squash-merge of PR #14)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13]; P2.6-B [MERGED — PR #14]; P2.6-F [COMPLETED]; P2.6-G [COMPLETED].
 
 ## Current objective
 
-Implement and validate **P2.6** on branch `phase-2/p2.6-b-callable-integration`, following `docs/tasks/P2.6-hardening-rate-limit.md`, canonical `docs/03-privacy-security.md`, and `docs/09-phase-2-add-restroom.md`:
+Complete and validate **P2.6-F** (Accessibility audit & remediation) and **P2.6-G** (Platform compilation & release validation) on branch `phase-2/p2.6-fg-accessibility-platform-validation`, based on `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9`:
 
-- **P2.6-A — Rate-Limiting Backend & Direct-Write Bypass Prevention:** [MERGED — PR #13] Scaffolded TypeScript Firebase Functions V2 (`functions/`) and implemented `submitRestroom` callable backend with rate limiting (10/24h, 3/10m), OCC concurrency, stable-ID idempotency, ID collision protection, zero contributor UID leakage, and direct-write bypass prevention.
-- **P2.6-B — Flutter Callable Integration:** [AUDIT REMEDIATED] Introduced `RestroomSubmissionTransport` boundary, implemented `CallableRestroomSubmissionTransport` targeting `us-central1`, integrated with `FirestoreRestroomRepository`, preserved existing staging direct-write default (`useCallableSubmission == false`) until explicit cutover, kept production writes strictly blocked (`production-writes-blocked`), mapped callable exceptions with stable draft preservation, and verified map refresh / preview UX. Remediated PR #14 independent audit findings:
-  * **BLOCKER-1 (Ambiguous callable completion integrity):** Refactored `_verifyAmbiguousPointRead()` to require verified public/private document pairing (`contributions/restroom_{id}`), correct contributor UID (`userUid == uid`), stable ID matching, and full canonical submission consistency via `validateReconciliationPair`. Reject missing, unreadable (permission-denied), orphaned, conflicting, or mismatched records.
-  * **MAJOR-1 (Callable response validation):** Implemented `validateCallableResponse()` enforcing `success == true`, matching restroom ID, matching canonical submitted fields, valid types, and status `unverified`. Fail closed on malformed/unsuccessful response without triggering success UI, draft clearing, or map refresh.
-  * **MINOR-1 (Independent map discovery verification):** Extended presentation tests in `test/presentation/p2_6_callable_integration_test.dart` (Test 11) verifying that successful callable submission does not optimistically inject the facility into discovery results and surfaces the established `Refresh` recovery SnackBar.
-  * 436/436 total Flutter tests pass.
-- **P2.6-F — Accessibility (a11y) Audit:** Audit touch targets (>= 48×48 dp), semantic labels, contrast (>= 4.5:1), and dynamic text scaling (200%) across Phase 2 screens.
-- **P2.6-G — Platform Compilation & Release Validation:** Validate `flutter build apk --debug`, `flutter build ios --debug --no-codesign`, full Flutter test suite (436 tests), Firestore rules tests (49 tests), and functions emulator tests (20 tests).
+- **P2.6-F — Accessibility (a11y) Audit & Remediation:** [COMPLETED]
+  * **Touch Targets (>= 48x48 dp):** Migrated `LooPrimaryButton` and `LooSecondaryButton` from fixed `SizedBox(height: ...)` to `ConstrainedBox(constraints: BoxConstraints(minHeight: ...))` with 16x12 padding; verified `MapRecenterButton` (48x48) and `TriStateOptionButton` (minHeight 48.0, width >= 48.0).
+  * **Screen Reader Semantics & Announcements:**
+    - `TriStateAmenitySelector`: Option button sets `excludeSemantics: true` with clean announcement `"$title, $option"` and selection flag; decorative title icon excluded from semantics; `maxLines: 2` allows text wrapping without ellipsis at 200% scale.
+    - `AddRestroomFormScreen`: Added `Semantics(header: true)` on card titles for heading navigation; excluded decorative icons from semantics; wrapped validation error banner in `Semantics(liveRegion: true)` for immediate TalkBack/VoiceOver announcement on failure.
+    - `DuplicateWarningSheet`: Excluded decorative warning icon, added `Semantics(header: true)` on warning header, added explicit `label: 'View existing restroom: ${restroom.name}'` on candidate card action button.
+    - `MainShellScreen`: Excluded submission progress `CircularProgressIndicator` from semantics so only 'Submitting restroom...' is announced without raw progress control stutter.
+  * **Color Contrast (WCAG 2.1 AA >= 4.5:1):** Remediated `DuplicateWarningSheet` access badge from `AppColors.textSecondary` (4.28:1) to `AppColors.textPrimary` (12.4:1 contrast ratio against `surfaceVariant`).
+  * **200% Text Scaling Stability:**
+    - `AddRestroomLocationScreen`: AppBar bottom instruction banner calculates dynamic preferred size adapting to `textScaler`; coordinate readout row migrated from rigid Row to responsive `Wrap`, eliminating 3.7px right overflow.
+    - `AddRestroomFormScreen`: `DropdownButtonFormField` configured with `isExpanded: true`; fee amount and currency fields utilize `LayoutBuilder` stacking into a `Column` when text scale is high (>= 1.5) or narrow, preventing overflow.
+  * **Automated Accessibility Tests:** Added 12 new dedicated widget tests in `test/presentation/p2_6_accessibility_test.dart` locking in touch targets, semantics, contrast, and 200% text scaling stability.
+- **P2.6-G — Platform Compilation & Release Validation:** [COMPLETED]
+  * `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 83.1s)
+  * `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 77.1s)
+  * Full Flutter test suite: 448/448 tests passed (0 failures).
+  * Functions smoke and App Check isolated tests: 4/4 tests passed.
+  * Firestore rules emulator test suite: 49/49 tests passed.
+  * Cloud Functions emulator test suite: 20/20 tests passed.
 
 The active specifications are:
 
@@ -346,7 +357,15 @@ Owner-confirmed staging infrastructure state:
   - Ambiguous network timeout verification via complete public/private document pair verification (`contributions/restroom_{id}` and `restrooms/{id}`) matching canonical command and contributor UID via `validateReconciliationPair`.
   - Authoritative callable response validation (`validateCallableResponse`) checking `success == true`, ID match, canonical attributes match, valid types, and status `unverified`.
   - Full UX preservation: single-flight submission lock, duplicate advisory notes, draft recovery with preserved stable ID, Resume dialog action, authoritative map refresh at zoom 16.5, single Unverified preview bottom sheet, and independent discovery verification without false optimistic preview.
-  - Added 14 new automated tests across unit and presentation suites; full suite of 436 tests passing cleanly.
+  - Milestone P2.6-F/G (Accessibility Audit & Platform Release Validation):
+  - ACTIVE / COMPLETED on branch `phase-2/p2.6-fg-accessibility-platform-validation` based on `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9`.
+  - Audited and remediated 5 screens/components: `AddRestroomLocationScreen`, `AddRestroomFormScreen`, `TriStateAmenitySelector`, `DuplicateWarningSheet`, `MainShellScreen`, and button primitives (`LooPrimaryButton`, `LooSecondaryButton`).
+  - Enforced minimum 48x48 dp touch targets with flexible `ConstrainedBox` container scaling.
+  - Corrected screen reader semantics, header roles, live regions, and excluded decorative icons.
+  - Remediated contrast on `DuplicateWarningSheet` access badge from 4.28:1 to 12.4:1 (`AppColors.textPrimary`).
+  - Fixed 200% text scaling across all Phase 2 screens; resolved 3.7px RenderFlex overflow on location screen coordinate readout via responsive `Wrap`.
+  - Added dedicated test suite `test/presentation/p2_6_accessibility_test.dart` (12 tests).
+  - Executed full suite of 448 Flutter tests, 49 Firestore rules tests, 20 Functions emulator tests, and verified `flutter build apk --debug` and `flutter build ios --debug --no-codesign`.
 
 ## Current owner actions / external dependencies
 
@@ -355,27 +374,32 @@ Owner-confirmed staging infrastructure state:
 3. Production Android signing remains a later release-readiness action.
 4. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
 5. Deploy `submitRestroom` Cloud Function to live staging environment prior to flipping `useCallableSubmission: true` in staging.
+6. Conduct physical device VoiceOver (iOS) and TalkBack (Android) qualitative testing of Phase 2 contribution workflow.
 
 ## Current validation status
 
-Milestone P2.6-B exact-head validation:
+Milestone P2.6-F/G exact-head validation:
 
-- `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (436/436 tests passed)
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
+- `flutter analyze` — PASS (0 issues found)
+- `flutter test` — PASS (448/448 tests passed, +12 new accessibility tests)
+- `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (12/12 a11y tests passed)
 - Functions package entrypoint smoke test: `npm --prefix functions run smoke:entrypoint` — PASS
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
 - Functions isolated App Check test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (4/4 tests passed)
-- Staging / Physical Device Callable Submission: NOT RUN (pending Cloud Functions deployment to live Firebase staging project)
+- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (49/49 tests passed)
+- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (20/20 tests passed)
+- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 83.1s)
+- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 77.1s)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Push PR #14 audit remediation commit to `phase-2/p2.6-b-callable-integration`.
-2. Await independent audit re-review on PR #14.
-3. Conduct Milestone P2.6-F: Accessibility audit of Phase 2 screens (touch targets >= 48×48 dp, semantics, 200% text scaling).
-3. Perform Milestone P2.6-G: Platform debug builds & release validation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
+1. Push `phase-2/p2.6-fg-accessibility-platform-validation` branch to remote origin.
+2. Open Pull Request on GitHub against `main`.
+3. Submit for independent audit review.
+4. Conduct manual physical device screen-reader QA (VoiceOver / TalkBack) with owner.
 
 ## Handoff template
 

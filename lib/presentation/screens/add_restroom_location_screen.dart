@@ -441,6 +441,9 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
     final formattedCoordinates =
         '${_selectedCoordinates.latitude.toStringAsFixed(5)}, ${_selectedCoordinates.longitude.toStringAsFixed(5)}';
 
+    final textScaler = MediaQuery.textScalerOf(context);
+    final bannerHeight = textScaler.scale(24.0) + 20.0;
+
     return Scaffold(
       backgroundColor: AppColors.background,
       appBar: AppBar(
@@ -457,7 +460,7 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
           style: AppTypography.titleLarge,
         ),
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(44),
+          preferredSize: Size.fromHeight(bannerHeight),
           child: Container(
             width: double.infinity,
             color: AppColors.primaryLight.withValues(alpha: 0.5),
@@ -467,10 +470,12 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.touch_app_outlined,
-                  size: 18,
-                  color: AppColors.primary,
+                const ExcludeSemantics(
+                  child: Icon(
+                    Icons.touch_app_outlined,
+                    size: 18,
+                    color: AppColors.primary,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
@@ -662,10 +667,14 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Coordinate readout row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
                     Icons.pin_drop_outlined,
