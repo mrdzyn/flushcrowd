@@ -309,11 +309,13 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
                   ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
-                Text(
-                  'Please fix the following errors:',
-                  style: AppTypography.titleMedium.copyWith(
-                    color: AppColors.onErrorContainer,
-                    fontWeight: FontWeight.w700,
+                Expanded(
+                  child: Text(
+                    'Please fix the following errors:',
+                    style: AppTypography.titleMedium.copyWith(
+                      color: AppColors.onErrorContainer,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
               ],

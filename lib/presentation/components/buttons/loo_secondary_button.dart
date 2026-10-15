@@ -26,7 +26,7 @@ class LooSecondaryButton extends StatelessWidget {
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
+          foregroundColor: AppColors.primaryDark,
           side: const BorderSide(color: AppColors.border, width: 1.5),
           shape: const RoundedRectangleBorder(
             borderRadius: AppRadii.pillBorder,
@@ -39,7 +39,7 @@ class LooSecondaryButton extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 20, color: AppColors.primary),
+              Icon(icon, size: 20, color: AppColors.primaryDark),
               const SizedBox(width: 8),
             ],
             Flexible(
@@ -47,7 +47,7 @@ class LooSecondaryButton extends StatelessWidget {
                 label,
                 textAlign: TextAlign.center,
                 style: AppTypography.labelLarge.copyWith(
-                  color: AppColors.primary,
+                  color: AppColors.primaryDark,
                 ),
               ),
             ),

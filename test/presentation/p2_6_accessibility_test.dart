@@ -1,3 +1,5 @@
+import 'dart:math' as math;
+
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flushcrowd/core/theme/app_colors.dart';
@@ -14,6 +16,48 @@ import 'package:flushcrowd/presentation/components/inputs/tri_state_amenity_sele
 import 'package:flushcrowd/presentation/components/map/map_recenter_button.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_form_screen.dart';
 import 'package:flushcrowd/presentation/screens/add_restroom_location_screen.dart';
+
+/// Linearize an 8-bit sRGB channel normalized to [0.0, 1.0] per WCAG 2.1 specs.
+double _linearizeSrgbChannel(double c) {
+  return c <= 0.04045
+      ? c / 12.92
+      : math.pow((c + 0.055) / 1.055, 2.4).toDouble();
+}
+
+/// Computes the WCAG relative luminance L = 0.2126*R + 0.7152*G + 0.0722*B.
+double calculateRelativeLuminance(Color color) {
+  final r = _linearizeSrgbChannel(color.r);
+  final g = _linearizeSrgbChannel(color.g);
+  final b = _linearizeSrgbChannel(color.b);
+  return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+}
+
+/// Computes the WCAG contrast ratio (L1 + 0.05) / (L2 + 0.05).
+double calculateContrastRatio(Color foreground, Color background) {
+  final l1 = calculateRelativeLuminance(foreground);
+  final l2 = calculateRelativeLuminance(background);
+  final lighter = math.max(l1, l2);
+  final darker = math.min(l1, l2);
+  return (lighter + 0.05) / (darker + 0.05);
+}
+
+/// Configures the actual Flutter test viewport and registers teardown reset.
+void configureTestViewport(
+  WidgetTester tester, {
+  required double width,
+  double height = 844.0,
+  double devicePixelRatio = 1.0,
+}) {
+  tester.view.physicalSize = Size(
+    width * devicePixelRatio,
+    height * devicePixelRatio,
+  );
+  tester.view.devicePixelRatio = devicePixelRatio;
+  addTearDown(() {
+    tester.view.resetPhysicalSize();
+    tester.view.resetDevicePixelRatio();
+  });
+}
 
 Restroom _createTestRestroom({
   required String id,
@@ -73,6 +117,27 @@ Widget _wrapWithScale({
   );
 }
 
+Widget _buildLocationScreen({ValueChanged<Coordinates>? onLocationConfirmed}) {
+  return AddRestroomLocationScreen(
+    initialCoordinates: Coordinates(latitude: 14.5839, longitude: 121.0617),
+    locationRepository: InMemoryLocationRepository(
+      initialCoordinates: Coordinates(latitude: 14.5839, longitude: 121.0617),
+    ),
+    onLocationConfirmed: onLocationConfirmed,
+    mapBuilder:
+        ({
+          required BuildContext context,
+          required initialCameraPosition,
+          onCameraIdle,
+          onCameraMove,
+          onCameraMoveStarted,
+          onMapCreated,
+        }) {
+          return const SizedBox.expand(child: ColoredBox(color: Colors.grey));
+        },
+  );
+}
+
 void main() {
   group('P2.6-F — Milestone Accessibility Verification', () {
     group('1. Touch Targets (Minimum 48 x 48 dp)', () {
@@ -126,6 +191,103 @@ void main() {
         expect(size.width, greaterThanOrEqualTo(48.0));
         expect(size.height, greaterThanOrEqualTo(48.0));
       });
+
+      testWidgets(
+        'AddRestroomLocationScreen Confirm Pin, My Location, and Back actions meet >= 48x48dp',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(child: _buildLocationScreen()),
+          );
+          await tester.pumpAndSettle();
+
+          // 1. Back button in AppBar
+          final backFinder = find.byTooltip('Back');
+          expect(backFinder, findsOneWidget);
+          final backSize = tester.getSize(backFinder);
+          expect(backSize.width, greaterThanOrEqualTo(48.0));
+          expect(backSize.height, greaterThanOrEqualTo(48.0));
+
+          // 2. My Location button
+          final recenterFinder = find.byType(MapRecenterButton);
+          expect(recenterFinder, findsOneWidget);
+          final recenterSize = tester.getSize(recenterFinder);
+          expect(recenterSize.width, greaterThanOrEqualTo(48.0));
+          expect(recenterSize.height, greaterThanOrEqualTo(48.0));
+
+          // 3. Confirm Pin Location action ("Continue" button)
+          final confirmFinder = find.widgetWithText(
+            LooPrimaryButton,
+            'Continue',
+          );
+          expect(confirmFinder, findsOneWidget);
+          final confirmSize = tester.getSize(confirmFinder);
+          expect(confirmSize.width, greaterThanOrEqualTo(48.0));
+          expect(confirmSize.height, greaterThanOrEqualTo(48.0));
+        },
+      );
+
+      testWidgets(
+        'AddRestroomFormScreen Access Type selection dropdown meets >= 48dp height',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(
+              child: AddRestroomFormScreen(
+                coordinates: Coordinates(
+                  latitude: 14.5839,
+                  longitude: 121.0617,
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final dropdownFinder = find.byType(
+            DropdownButtonFormField<AccessType>,
+          );
+          expect(dropdownFinder, findsOneWidget);
+          final dropdownSize = tester.getSize(dropdownFinder);
+          expect(dropdownSize.height, greaterThanOrEqualTo(48.0));
+          expect(dropdownSize.width, greaterThanOrEqualTo(48.0));
+        },
+      );
+
+      testWidgets(
+        'DuplicateWarningSheet actions meet minimum 48x48dp targets',
+        (tester) async {
+          final candidate = _createCandidate(
+            id: 'cand_target',
+            name: 'Terminal 1 Restroom',
+            accessType: AccessType.paid,
+          );
+
+          await tester.pumpWidget(
+            _wrapWithScale(
+              child: DuplicateWarningSheet(candidates: [candidate]),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // 1. "No, It's a Different Restroom" primary button
+          final proceedFinder = find.widgetWithText(
+            LooPrimaryButton,
+            "No, It's a Different Restroom",
+          );
+          expect(proceedFinder, findsOneWidget);
+          final proceedSize = tester.getSize(proceedFinder);
+          expect(proceedSize.height, greaterThanOrEqualTo(48.0));
+          expect(proceedSize.width, greaterThanOrEqualTo(48.0));
+
+          // 2. "View Existing Restroom" secondary button
+          final viewFinder = find.widgetWithText(
+            LooSecondaryButton,
+            'View Existing Restroom',
+          );
+          expect(viewFinder, findsOneWidget);
+          final viewSize = tester.getSize(viewFinder);
+          expect(viewSize.height, greaterThanOrEqualTo(48.0));
+          expect(viewSize.width, greaterThanOrEqualTo(48.0));
+        },
+      );
 
       testWidgets(
         'TriStateAmenitySelector options satisfy minimum touch dimensions',
@@ -335,7 +497,113 @@ void main() {
       );
     });
 
-    group('3. Color Contrast Ratios (WCAG AA >= 4.5:1)', () {
+    group('3. Color Contrast Ratios (WCAG AA >= 4.5:1 Mathematical Proof)', () {
+      test('WCAG relative luminance calculations meet >= 4.5:1 contrast', () {
+        // 1. LooSecondaryButton foreground (AppColors.primaryDark) on white surface
+        final primaryDarkOnSurface = calculateContrastRatio(
+          AppColors.primaryDark,
+          AppColors.surface,
+        );
+        expect(
+          primaryDarkOnSurface,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'AppColors.primaryDark on white must meet WCAG AA normal text (actual: ${primaryDarkOnSurface.toStringAsFixed(2)}:1)',
+        );
+        expect(primaryDarkOnSurface, greaterThanOrEqualTo(7.0));
+
+        // 2. LooSecondaryButton foreground (AppColors.primaryDark) on canvas background
+        final primaryDarkOnBackground = calculateContrastRatio(
+          AppColors.primaryDark,
+          AppColors.background,
+        );
+        expect(
+          primaryDarkOnBackground,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'AppColors.primaryDark on AppColors.background must meet WCAG AA (actual: ${primaryDarkOnBackground.toStringAsFixed(2)}:1)',
+        );
+
+        // 3. AppColors.textPrimary on surface and background
+        final textPrimaryOnSurface = calculateContrastRatio(
+          AppColors.textPrimary,
+          AppColors.surface,
+        );
+        final textPrimaryOnBackground = calculateContrastRatio(
+          AppColors.textPrimary,
+          AppColors.background,
+        );
+        expect(textPrimaryOnSurface, greaterThanOrEqualTo(15.0));
+        expect(textPrimaryOnBackground, greaterThanOrEqualTo(15.0));
+
+        // 4. AppColors.textSecondary on surface (used for informative descriptions)
+        final textSecondaryOnSurface = calculateContrastRatio(
+          AppColors.textSecondary,
+          AppColors.surface,
+        );
+        expect(
+          textSecondaryOnSurface,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'AppColors.textSecondary on AppColors.surface must meet WCAG AA (actual: ${textSecondaryOnSurface.toStringAsFixed(2)}:1)',
+        );
+
+        // 5. Error text (AppColors.onErrorContainer) on error banner background (AppColors.errorContainer)
+        final errorTextContrast = calculateContrastRatio(
+          AppColors.onErrorContainer,
+          AppColors.errorContainer,
+        );
+        expect(
+          errorTextContrast,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'Error text on error container must meet WCAG AA (actual: ${errorTextContrast.toStringAsFixed(2)}:1)',
+        );
+        expect(errorTextContrast, greaterThanOrEqualTo(6.5));
+
+        // 6. Selected TriState text (AppColors.primaryDark) on primaryLight container
+        final primaryDarkOnPrimaryLight = calculateContrastRatio(
+          AppColors.primaryDark,
+          AppColors.primaryLight,
+        );
+        expect(
+          primaryDarkOnPrimaryLight,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'Selected text on primaryLight container must meet WCAG AA (actual: ${primaryDarkOnPrimaryLight.toStringAsFixed(2)}:1)',
+        );
+      });
+
+      testWidgets(
+        'LooSecondaryButton renders text and icon using AppColors.primaryDark',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(
+              child: Scaffold(
+                backgroundColor: AppColors.surface,
+                body: Center(
+                  child: LooSecondaryButton(
+                    label: 'Secondary Action',
+                    icon: Icons.map_outlined,
+                    onPressed: () {},
+                  ),
+                ),
+              ),
+            ),
+          );
+
+          // Verify text styling uses primaryDark
+          final textWidget = tester.widget<Text>(find.text('Secondary Action'));
+          expect(textWidget.style?.color, equals(AppColors.primaryDark));
+
+          // Verify icon uses primaryDark
+          final iconWidget = tester.widget<Icon>(
+            find.byIcon(Icons.map_outlined),
+          );
+          expect(iconWidget.color, equals(AppColors.primaryDark));
+        },
+      );
+
       testWidgets(
         'DuplicateWarningSheet access badge uses high-contrast textPrimary',
         (tester) async {
@@ -358,168 +626,236 @@ void main() {
           expect(badgeTextWidget.style?.color, equals(AppColors.textPrimary));
         },
       );
+
+      testWidgets(
+        'AddRestroomFormScreen coordinate card uses accessible primaryDark header',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(
+              child: AddRestroomFormScreen(
+                coordinates: Coordinates(
+                  latitude: 14.5839,
+                  longitude: 121.0617,
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          final headerText = tester.widget<Text>(
+            find.text('Selected Entrance Location'),
+          );
+          expect(headerText.style?.color, equals(AppColors.primaryDark));
+        },
+      );
     });
 
-    group(
-      '4. 200% Text Scaling Layout Stability (Zero RenderFlex Overflows)',
-      () {
+    group('4. Multi-Viewport & 200% Text Scaling Layout Stability (Zero RenderFlex Overflows)', () {
+      const testWidths = [320.0, 375.0, 390.0];
+
+      for (final width in testWidths) {
         testWidgets(
-          'TriStateAmenitySelector renders without overflow at 200% text scale',
+          'AddRestroomLocationScreen with multiline instruction banner renders without overflow at ${width.toInt()}px width and 200% scale',
           (tester) async {
+            configureTestViewport(tester, width: width, height: 844.0);
+
             await tester.pumpWidget(
-              _wrapWithScale(
-                textScale: 2.0,
-                child: Scaffold(
-                  body: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: TriStateAmenitySelector(
-                      title: 'Accessible Stall for Persons with Disabilities',
-                      subtitle: 'Includes grab bars and wider doorway entrance',
-                      value: TriStateAmenity.unknown,
-                      onChanged: (_) {},
-                    ),
+              MaterialApp(
+                home: MediaQuery(
+                  data: const MediaQueryData(
+                    textScaler: TextScaler.linear(2.0),
                   ),
+                  child: _buildLocationScreen(),
                 ),
               ),
             );
             await tester.pumpAndSettle();
 
-            expect(tester.takeException(), isNull);
-            expect(find.text('Unspecified'), findsOneWidget);
-          },
-        );
-
-        testWidgets(
-          'LooPrimaryButton and LooSecondaryButton scale cleanly at 200% text scale',
-          (tester) async {
-            await tester.pumpWidget(
-              _wrapWithScale(
-                textScale: 2.0,
-                child: Scaffold(
-                  body: Padding(
-                    padding: const EdgeInsets.all(16.0),
-                    child: Column(
-                      children: [
-                        LooPrimaryButton(
-                          label: 'Submit Restroom to Community Directory',
-                          onPressed: () {},
-                        ),
-                        const SizedBox(height: 16),
-                        LooSecondaryButton(
-                          label: 'View Existing Restroom Facilities Nearby',
-                          onPressed: () {},
-                        ),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
+            expect(
+              tester.takeException(),
+              isNull,
+              reason: 'Zero RenderFlex overflow on ${width.toInt()}px width',
             );
-            await tester.pumpAndSettle();
-
-            expect(tester.takeException(), isNull);
+            expect(find.text('Pinpoint the restroom'), findsOneWidget);
+            expect(
+              find.textContaining(
+                'Move the map so the marker is exactly where',
+              ),
+              findsOneWidget,
+            );
+            expect(find.byType(MapRecenterButton), findsOneWidget);
+            expect(
+              find.widgetWithText(LooPrimaryButton, 'Continue'),
+              findsOneWidget,
+            );
           },
         );
 
         testWidgets(
-          'AddRestroomLocationScreen layout remains stable at 200% text scale',
+          'AddRestroomFormScreen renders validation error state and paid-fee fields without overflow at ${width.toInt()}px width and 200% scale',
           (tester) async {
+            configureTestViewport(tester, width: width, height: 844.0);
+
             await tester.pumpWidget(
-              _wrapWithScale(
-                textScale: 2.0,
-                child: AddRestroomLocationScreen(
-                  initialCoordinates: Coordinates(
-                    latitude: 14.5839,
-                    longitude: 121.0617,
+              MaterialApp(
+                home: MediaQuery(
+                  data: const MediaQueryData(
+                    textScaler: TextScaler.linear(2.0),
                   ),
-                  locationRepository: InMemoryLocationRepository(
-                    initialCoordinates: Coordinates(
+                  child: AddRestroomFormScreen(
+                    coordinates: Coordinates(
                       latitude: 14.5839,
                       longitude: 121.0617,
                     ),
                   ),
-                  mapBuilder:
-                      ({
-                        required BuildContext context,
-                        required initialCameraPosition,
-                        onCameraIdle,
-                        onCameraMove,
-                        onCameraMoveStarted,
-                        onMapCreated,
-                      }) {
-                        return const SizedBox.expand(
-                          child: ColoredBox(color: Colors.grey),
-                        );
-                      },
                 ),
               ),
             );
             await tester.pumpAndSettle();
 
-            expect(tester.takeException(), isNull);
-            expect(find.text('Pinpoint the restroom'), findsOneWidget);
-            expect(find.byType(MapRecenterButton), findsOneWidget);
-          },
-        );
-
-        testWidgets(
-          'AddRestroomFormScreen renders without overflow at 200% text scale (Free & Paid)',
-          (tester) async {
-            await tester.pumpWidget(
-              _wrapWithScale(
-                textScale: 2.0,
-                child: AddRestroomFormScreen(
-                  coordinates: Coordinates(
-                    latitude: 14.5839,
-                    longitude: 121.0617,
-                  ),
-                ),
-              ),
-            );
+            // Trigger validation error state
+            await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
             await tester.pumpAndSettle();
 
-            expect(tester.takeException(), isNull);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason:
+                  'Zero RenderFlex overflow with error banner on ${width.toInt()}px width',
+            );
+            expect(
+              find.text('Please fix the following errors:'),
+              findsOneWidget,
+            );
 
-            // Switch to Paid to render fee amount and currency layout
+            // Scroll to Access Type dropdown to bring it into view and select Paid Access
+            await tester.scrollUntilVisible(
+              find.text('Free (Public Access)'),
+              100,
+              scrollable: find.byType(Scrollable).first,
+            );
             await tester.tap(find.text('Free (Public Access)'));
             await tester.pumpAndSettle();
 
             await tester.tap(find.text('Paid (Fee Required)').last);
             await tester.pumpAndSettle();
 
-            expect(tester.takeException(), isNull);
+            // Scroll down to fee inputs
+            await tester.scrollUntilVisible(
+              find.text('Fee Amount *'),
+              100,
+              scrollable: find.byType(Scrollable).first,
+            );
+
+            expect(
+              tester.takeException(),
+              isNull,
+              reason:
+                  'Zero RenderFlex overflow with fee fields on ${width.toInt()}px width',
+            );
             expect(find.text('Fee Amount *'), findsOneWidget);
             expect(find.text('Currency *'), findsOneWidget);
           },
         );
 
         testWidgets(
-          'DuplicateWarningSheet renders cleanly at 200% text scale',
+          'DuplicateWarningSheet renders long content without overflow at ${width.toInt()}px width and 200% scale',
           (tester) async {
+            configureTestViewport(tester, width: width, height: 844.0);
+
             final candidates = [
               _createCandidate(
-                id: 'c1',
-                name: 'Grand Shopping Complex East Wing Public Restroom',
-                buildingName: 'Grand Shopping Complex East Wing',
-                floor: 'Level 3 East Wing Near Cinema',
+                id: 'c_long',
+                name: 'Grand Central Shopping Mall East Terminal Restroom Facility',
+                buildingName:
+                    'Grand Central Shopping Mall East Terminal Complex',
+                floor: 'Level 3 East Wing Concourse Near Gate 12',
                 accessType: AccessType.paid,
               ),
             ];
 
             await tester.pumpWidget(
-              _wrapWithScale(
-                textScale: 2.0,
-                child: DuplicateWarningSheet(candidates: candidates),
+              MaterialApp(
+                home: MediaQuery(
+                  data: const MediaQueryData(
+                    textScaler: TextScaler.linear(2.0),
+                  ),
+                  child: DuplicateWarningSheet(candidates: candidates),
+                ),
               ),
             );
             await tester.pumpAndSettle();
 
-            expect(tester.takeException(), isNull);
+            expect(
+              tester.takeException(),
+              isNull,
+              reason:
+                  'Zero RenderFlex overflow on duplicate sheet for ${width.toInt()}px width',
+            );
             expect(find.text('Similar restrooms found nearby'), findsOneWidget);
             expect(find.text("No, It's a Different Restroom"), findsOneWidget);
+            expect(find.text('View Existing Restroom'), findsOneWidget);
           },
         );
-      },
-    );
+      }
+
+      testWidgets(
+        'TriStateAmenitySelector renders without overflow at 200% text scale',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(
+              textScale: 2.0,
+              child: Scaffold(
+                body: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: TriStateAmenitySelector(
+                    title: 'Accessible Stall for Persons with Disabilities',
+                    subtitle: 'Includes grab bars and wider doorway entrance',
+                    value: TriStateAmenity.unknown,
+                    onChanged: (_) {},
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+          expect(find.text('Unspecified'), findsOneWidget);
+        },
+      );
+
+      testWidgets(
+        'LooPrimaryButton and LooSecondaryButton scale cleanly at 200% text scale',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(
+              textScale: 2.0,
+              child: Scaffold(
+                body: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Column(
+                    children: [
+                      LooPrimaryButton(
+                        label: 'Submit Restroom to Community Directory',
+                        onPressed: () {},
+                      ),
+                      const SizedBox(height: 16),
+                      LooSecondaryButton(
+                        label: 'View Existing Restroom Facilities Nearby',
+                        onPressed: () {},
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          expect(tester.takeException(), isNull);
+        },
+      );
+    });
   });
 }

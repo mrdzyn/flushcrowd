@@ -7,33 +7,34 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6-F/G Accessibility Audit, Remediation & Platform Release Validation — COMPLETED
+- **Current milestone:** Milestone P2.6-F/G Accessibility Audit, Remediation & Platform Release Validation — REMEDIATED & VALIDATED
 - **Current branch:** `phase-2/p2.6-fg-accessibility-platform-validation`
 - **Current PR:** #15 — P2.6-F/G Accessibility & Platform Validation (https://github.com/mrdzyn/flushcrowd/pull/15)
 - **Base:** `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9` (squash-merge of PR #14)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13]; P2.6-B [MERGED — PR #14]; P2.6-F [COMPLETED]; P2.6-G [COMPLETED].
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13]; P2.6-B [MERGED — PR #14]; P2.6-F [REMEDIATED & PASS]; P2.6-G [VALIDATED & PASS].
 
 ## Current objective
 
-Complete and validate **P2.6-F** (Accessibility audit & remediation) and **P2.6-G** (Platform compilation & release validation) on branch `phase-2/p2.6-fg-accessibility-platform-validation`, based on `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9`:
+Remediate PR #15 audit findings (**0 BLOCKER / 2 MAJOR / 1 MINOR**) and validate **P2.6-F** (Accessibility audit & remediation) and **P2.6-G** (Platform compilation & release validation) on branch `phase-2/p2.6-fg-accessibility-platform-validation`:
 
-- **P2.6-F — Accessibility (a11y) Audit & Remediation:** [COMPLETED]
-  * **Touch Targets (>= 48x48 dp):** Migrated `LooPrimaryButton` and `LooSecondaryButton` from fixed `SizedBox(height: ...)` to `ConstrainedBox(constraints: BoxConstraints(minHeight: ...))` with 16x12 padding; verified `MapRecenterButton` (48x48) and `TriStateOptionButton` (minHeight 48.0, width >= 48.0).
-  * **Screen Reader Semantics & Announcements:**
-    - `TriStateAmenitySelector`: Option button sets `excludeSemantics: true` with clean announcement `"$title, $option"` and selection flag; decorative title icon excluded from semantics; `maxLines: 2` allows text wrapping without ellipsis at 200% scale.
-    - `AddRestroomFormScreen`: Added `Semantics(header: true)` on card titles for heading navigation; excluded decorative icons from semantics; wrapped validation error banner in `Semantics(liveRegion: true)` for immediate TalkBack/VoiceOver announcement on failure.
-    - `DuplicateWarningSheet`: Excluded decorative warning icon, added `Semantics(header: true)` on warning header, added explicit `label: 'View existing restroom: ${restroom.name}'` on candidate card action button.
-    - `MainShellScreen`: Excluded submission progress `CircularProgressIndicator` from semantics so only 'Submitting restroom...' is announced without raw progress control stutter.
-  * **Color Contrast (WCAG 2.1 AA >= 4.5:1):** Remediated `DuplicateWarningSheet` access badge from `AppColors.textSecondary` (4.28:1) to `AppColors.textPrimary` (12.4:1 contrast ratio against `surfaceVariant`).
-  * **200% Text Scaling Stability:**
-    - `AddRestroomLocationScreen`: AppBar bottom instruction banner calculates dynamic preferred size adapting to `textScaler`; coordinate readout row migrated from rigid Row to responsive `Wrap`, eliminating 3.7px right overflow.
-    - `AddRestroomFormScreen`: `DropdownButtonFormField` configured with `isExpanded: true`; fee amount and currency fields utilize `LayoutBuilder` stacking into a `Column` when text scale is high (>= 1.5) or narrow, preventing overflow.
-  * **Automated Accessibility Tests:** Added 12 new dedicated widget tests in `test/presentation/p2_6_accessibility_test.dart` locking in touch targets, semantics, contrast, and 200% text scaling stability.
-- **P2.6-G — Platform Compilation & Release Validation:** [COMPLETED]
-  * `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 83.1s)
-  * `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 77.1s)
-  * Full Flutter test suite: 448/448 tests passed (0 failures).
-  * Functions smoke and App Check isolated tests: 4/4 tests passed.
+- **MAJOR-1 Remediated — Multi-Viewport Mobile Testing (320, 375, 390 logical px at 200% text scale):**
+  * Updated `test/presentation/p2_6_accessibility_test.dart` to configure the actual Flutter test viewport using `tester.view.physicalSize` and `tester.view.devicePixelRatio` with `addTearDown` resets.
+  * Remediated `AddRestroomLocationScreen` instruction banner: moved from `AppBar.bottom` with rigid `PreferredSize` into a responsive `Column` above the map `Stack`, eliminating layout overflow under multiline text wrapping at 200% scaling.
+  * Remediated `AddRestroomLocationScreen` coordinates readout row: wrapped `Text('Coordinates')` in `Flexible` to prevent sub-pixel RenderFlex overflow on 320px screens.
+  * Remediated `AddRestroomFormScreen` validation error banner: wrapped `Text('Please fix the following errors:')` in `Expanded`, allowing it to wrap cleanly across multiple lines.
+  * Tested validation error states, long instructions, paid-fee fields, and duplicate warnings across 320px, 375px, and 390px viewports with zero layout overflow.
+- **MAJOR-2 Remediated — Contrast Compliance (WCAG 2.1 AA >= 4.5:1 Mathematical Proof):**
+  * Implemented programmatic WCAG relative luminance ($L = 0.2126R + 0.7152G + 0.0722B$) and contrast ratio calculations.
+  * Remediated `LooSecondaryButton`: updated foreground text and icon color from `AppColors.primary` (4.42:1 against white — fails 4.5:1) to `AppColors.primaryDark` (7.13:1 on white surface and 6.85:1 on canvas background — passes WCAG AA).
+  * Audited visible text on surfaces and added automated mathematical assertions for `primaryDark`, `textPrimary`, `textSecondary`, `onErrorContainer`, and selected amenity states.
+- **MINOR-1 Remediated — Touch Targets & Physical Device Reporting:**
+  * Enforced minimum 48×48 dp touch target on `AddRestroomLocationScreen` Back button via `leadingWidth: 56.0` and `BoxConstraints(minWidth: 48, minHeight: 48)`.
+  * Added automated touch target tests verifying >= 48×48 dp for Confirm Pin action, My Location button, Back button, Access Type dropdown, and Duplicate Warning actions.
+  * Explicitly reported physical-device VoiceOver (iOS) and TalkBack (Android) qualitative testing as `NOT RUN` pending human QA.
+- **P2.6-G — Platform Compilation & Release Validation:**
+  * `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 16.6s)
+  * `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 29.2s)
+  * Full Flutter test suite: 460/460 tests passed (+24 dedicated a11y tests, 0 failures).
   * Firestore rules emulator test suite: 49/49 tests passed.
   * Cloud Functions emulator test suite: 20/20 tests passed.
 
@@ -378,28 +379,28 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-Milestone P2.6-F/G exact-head validation:
+Milestone P2.6-F/G remediation exact-head validation:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (448/448 tests passed, +12 new accessibility tests)
-- `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (12/12 a11y tests passed)
+- `flutter test` — PASS (460/460 tests passed, +24 dedicated accessibility tests)
+- `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (24/24 a11y tests passed across 320, 375, 390px viewports at 200% scaling)
 - Functions package entrypoint smoke test: `npm --prefix functions run smoke:entrypoint` — PASS
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
 - Functions isolated App Check test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (4/4 tests passed)
 - Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (49/49 tests passed)
 - Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (20/20 tests passed)
-- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 83.1s)
-- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 77.1s)
+- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 16.6s)
+- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 29.2s)
+- Physical device VoiceOver / TalkBack QA — NOT RUN (pending physical device QA by human owner)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
 1. Push `phase-2/p2.6-fg-accessibility-platform-validation` branch to remote origin.
-2. Open Pull Request on GitHub against `main`.
-3. Submit for independent audit review.
-4. Conduct manual physical device screen-reader QA (VoiceOver / TalkBack) with owner.
+2. Request re-review on PR #15 from independent auditor.
+3. Conduct manual physical device screen-reader QA (VoiceOver / TalkBack) with owner.
 
 ## Handoff template
 
