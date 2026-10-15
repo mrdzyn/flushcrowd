@@ -196,4 +196,42 @@ describe('P2.6-C — App Check Callable Initialization Contract', () => {
       }
     }
   });
+
+  it('Staging environment strictly validates project ID flushcrowd-staging in live runtime', () => {
+    const savedAppEnv = process.env.APP_ENV;
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedGcloud = process.env.GCLOUD_PROJECT;
+    const savedEmulator = process.env.FUNCTIONS_EMULATOR;
+    const savedFirestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+
+    try {
+      process.env.APP_ENV = 'staging';
+      delete process.env.NODE_ENV;
+      delete process.env.FUNCTIONS_EMULATOR;
+      delete process.env.FIRESTORE_EMULATOR_HOST;
+
+      // When GCLOUD_PROJECT is incorrect, it must fail closed
+      process.env.GCLOUD_PROJECT = 'wrong-project-id';
+      assert.throws(
+        () => getAppConfig(),
+        /Staging environment targeted invalid project "wrong-project-id"/
+      );
+
+      // When GCLOUD_PROJECT is 'flushcrowd-staging', it succeeds
+      process.env.GCLOUD_PROJECT = 'flushcrowd-staging';
+      const config = getAppConfig();
+      assert.equal(config.appEnv, 'staging');
+      assert.equal(config.enforceAppCheck, true);
+    } finally {
+      process.env.APP_ENV = savedAppEnv;
+      if (savedNodeEnv !== undefined) process.env.NODE_ENV = savedNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (savedGcloud !== undefined) process.env.GCLOUD_PROJECT = savedGcloud;
+      else delete process.env.GCLOUD_PROJECT;
+      if (savedEmulator !== undefined) process.env.FUNCTIONS_EMULATOR = savedEmulator;
+      else delete process.env.FUNCTIONS_EMULATOR;
+      if (savedFirestoreHost !== undefined) process.env.FIRESTORE_EMULATOR_HOST = savedFirestoreHost;
+      else delete process.env.FIRESTORE_EMULATOR_HOST;
+    }
+  });
 });

@@ -284,6 +284,7 @@ export async function executeSubmitRestroom(
 export function createSubmitRestroom(config: AppConfig = getAppConfig()) {
   return onCall(
     {
+      region: 'us-central1',
       enforceAppCheck: config.enforceAppCheck,
     },
     async (request: CallableRequest<unknown>): Promise<SubmitRestroomResponse> => {

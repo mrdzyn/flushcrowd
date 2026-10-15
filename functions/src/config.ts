@@ -50,6 +50,28 @@ export function getAppConfig(): AppConfig {
     enforceAppCheck = process.env.ENFORCE_APP_CHECK === 'true';
   }
 
+  // Explicit project ID validation: staging runtime must target 'flushcrowd-staging'
+  const runtimeProjectId =
+    process.env.GCLOUD_PROJECT ??
+    process.env.PROJECT_ID ??
+    (process.env.FIREBASE_CONFIG
+      ? (() => {
+          try {
+            return JSON.parse(process.env.FIREBASE_CONFIG).projectId;
+          } catch {
+            return undefined;
+          }
+        })()
+      : undefined);
+
+  if (!isTestOrEmulator && appEnv === 'staging') {
+    if (runtimeProjectId && runtimeProjectId !== 'flushcrowd-staging') {
+      throw new Error(
+        `FATAL: Staging environment targeted invalid project "${runtimeProjectId}". Expected "flushcrowd-staging".`
+      );
+    }
+  }
+
   return {
     appEnv,
     enforceAppCheck,

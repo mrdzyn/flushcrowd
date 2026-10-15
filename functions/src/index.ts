@@ -1,4 +1,8 @@
 import * as admin from 'firebase-admin';
+import { setGlobalOptions } from 'firebase-functions/v2';
+
+// Set default Cloud Functions region
+setGlobalOptions({ region: 'us-central1' });
 
 // Initialize Firebase Admin SDK if not already initialized
 if (admin.apps.length === 0) {
