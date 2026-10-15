@@ -110,25 +110,30 @@ class DuplicateWarningSheet extends StatelessWidget {
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  Container(
-                    padding: const EdgeInsets.all(AppSpacing.xs),
-                    decoration: BoxDecoration(
-                      color: AppColors.warning.withValues(alpha: 0.15),
-                      shape: BoxShape.circle,
-                    ),
-                    child: const Icon(
-                      Icons.warning_amber_rounded,
-                      color: AppColors.warning,
-                      size: 24,
+                  ExcludeSemantics(
+                    child: Container(
+                      padding: const EdgeInsets.all(AppSpacing.xs),
+                      decoration: BoxDecoration(
+                        color: AppColors.warning.withValues(alpha: 0.15),
+                        shape: BoxShape.circle,
+                      ),
+                      child: const Icon(
+                        Icons.warning_amber_rounded,
+                        color: AppColors.warning,
+                        size: 24,
+                      ),
                     ),
                   ),
                   const SizedBox(width: AppSpacing.sm),
                   Expanded(
-                    child: Text(
-                      'Similar restrooms found nearby',
-                      style: AppTypography.titleLarge.copyWith(
-                        color: AppColors.textPrimary,
-                        fontWeight: FontWeight.bold,
+                    child: Semantics(
+                      header: true,
+                      child: Text(
+                        'Similar restrooms found nearby',
+                        style: AppTypography.titleLarge.copyWith(
+                          color: AppColors.textPrimary,
+                          fontWeight: FontWeight.bold,
+                        ),
                       ),
                     ),
                   ),
@@ -249,7 +254,7 @@ class _CandidateCard extends StatelessWidget {
                 child: Text(
                   _formatAccessType(restroom.accessType),
                   style: AppTypography.labelSmall.copyWith(
-                    color: AppColors.textSecondary,
+                    color: AppColors.textPrimary,
                     fontWeight: FontWeight.w600,
                   ),
                 ),
@@ -268,11 +273,15 @@ class _CandidateCard extends StatelessWidget {
           const SizedBox(height: AppSpacing.md),
 
           // Action button: "View Existing Restroom"
-          LooSecondaryButton(
-            label: 'View Existing Restroom',
-            icon: Icons.visibility_outlined,
-            height: 48.0,
-            onPressed: onView,
+          Semantics(
+            button: true,
+            label: 'View existing restroom: ${restroom.name}',
+            child: LooSecondaryButton(
+              label: 'View Existing Restroom',
+              icon: Icons.visibility_outlined,
+              height: 48.0,
+              onPressed: onView,
+            ),
           ),
         ],
       ),

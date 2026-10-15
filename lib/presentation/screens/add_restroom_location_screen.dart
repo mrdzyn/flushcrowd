@@ -447,18 +447,30 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
         backgroundColor: AppColors.surface,
         foregroundColor: AppColors.textPrimary,
         elevation: 0,
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back_rounded),
-          tooltip: 'Back',
-          onPressed: () => Navigator.of(context).maybePop(),
+        leadingWidth: 56.0,
+        leading: Center(
+          child: SizedBox(
+            width: 48.0,
+            height: 48.0,
+            child: IconButton(
+              constraints: const BoxConstraints(
+                minWidth: 48.0,
+                minHeight: 48.0,
+              ),
+              icon: const Icon(Icons.arrow_back_rounded),
+              tooltip: 'Back',
+              onPressed: () => Navigator.of(context).maybePop(),
+            ),
+          ),
         ),
         title: const Text(
           'Pinpoint the restroom',
           style: AppTypography.titleLarge,
         ),
-        bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(44),
-          child: Container(
+      ),
+      body: Column(
+        children: [
+          Container(
             width: double.infinity,
             color: AppColors.primaryLight.withValues(alpha: 0.5),
             padding: const EdgeInsets.symmetric(
@@ -467,10 +479,12 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
             ),
             child: Row(
               children: [
-                const Icon(
-                  Icons.touch_app_outlined,
-                  size: 18,
-                  color: AppColors.primary,
+                const ExcludeSemantics(
+                  child: Icon(
+                    Icons.touch_app_outlined,
+                    size: 18,
+                    color: AppColors.primaryDark,
+                  ),
                 ),
                 const SizedBox(width: AppSpacing.sm),
                 Expanded(
@@ -485,52 +499,54 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
               ],
             ),
           ),
-        ),
-      ),
-      body: Stack(
-        children: [
-          // 1. Google Map Layer
-          _buildMap(),
-
-          // 2. Fixed Center Target Pin Overlay
-          Positioned.fill(
-            child: IgnorePointer(
-              child: Center(
-                child: Semantics(
-                  label: 'Map center target pin',
-                  child: _buildCenterTargetIndicator(),
-                ),
-              ),
-            ),
-          ),
-
-          // 3. Floating Location Button & Bottom Action Sheet
-          Positioned(
-            left: 0,
-            right: 0,
-            bottom: 0,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.end,
+          Expanded(
+            child: Stack(
               children: [
-                // "Use my location" button
-                Padding(
-                  padding: const EdgeInsets.only(
-                    right: AppSpacing.screenHorizontal,
-                    bottom: AppSpacing.md,
-                  ),
-                  child: Semantics(
-                    button: true,
-                    label: 'Use my location',
-                    child: MapRecenterButton(
-                      isLoading: _isLocating,
-                      onPressed: _recenterOnUser,
+                // 1. Google Map Layer
+                _buildMap(),
+
+                // 2. Fixed Center Target Pin Overlay
+                Positioned.fill(
+                  child: IgnorePointer(
+                    child: Center(
+                      child: Semantics(
+                        label: 'Map center target pin',
+                        child: _buildCenterTargetIndicator(),
+                      ),
                     ),
                   ),
                 ),
 
-                // Bottom Confirmation Card
-                _buildBottomCard(formattedCoordinates),
+                // 3. Floating Location Button & Bottom Action Sheet
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: 0,
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      // "Use my location" button
+                      Padding(
+                        padding: const EdgeInsets.only(
+                          right: AppSpacing.screenHorizontal,
+                          bottom: AppSpacing.md,
+                        ),
+                        child: Semantics(
+                          button: true,
+                          label: 'Use my location',
+                          child: MapRecenterButton(
+                            isLoading: _isLocating,
+                            onPressed: _recenterOnUser,
+                          ),
+                        ),
+                      ),
+
+                      // Bottom Confirmation Card
+                      _buildBottomCard(formattedCoordinates),
+                    ],
+                  ),
+                ),
               ],
             ),
           ),
@@ -662,10 +678,14 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           // Coordinate readout row
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          Wrap(
+            alignment: WrapAlignment.spaceBetween,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            spacing: AppSpacing.sm,
+            runSpacing: AppSpacing.xs,
             children: [
               Row(
+                mainAxisSize: MainAxisSize.min,
                 children: [
                   const Icon(
                     Icons.pin_drop_outlined,
@@ -673,10 +693,12 @@ class AddRestroomLocationScreenState extends State<AddRestroomLocationScreen> {
                     color: AppColors.textSecondary,
                   ),
                   const SizedBox(width: AppSpacing.xs),
-                  Text(
-                    'Coordinates',
-                    style: AppTypography.labelMedium.copyWith(
-                      color: AppColors.textSecondary,
+                  Flexible(
+                    child: Text(
+                      'Coordinates',
+                      style: AppTypography.labelMedium.copyWith(
+                        color: AppColors.textSecondary,
+                      ),
                     ),
                   ),
                 ],

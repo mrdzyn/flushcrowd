@@ -23,9 +23,8 @@ class LooPrimaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
-      width: double.infinity,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height, minWidth: double.infinity),
       child: ElevatedButton(
         onPressed: isLoading ? null : onPressed,
         style: ElevatedButton.styleFrom(
@@ -36,6 +35,7 @@ class LooPrimaryButton extends StatelessWidget {
             borderRadius: AppRadii.pillBorder,
           ),
           elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         ),
         child: isLoading
             ? const SizedBox(
@@ -56,10 +56,13 @@ class LooPrimaryButton extends StatelessWidget {
                     Icon(icon, size: 20, color: AppColors.textOnPrimary),
                     const SizedBox(width: 8),
                   ],
-                  Text(
-                    label,
-                    style: AppTypography.labelLarge.copyWith(
-                      color: AppColors.textOnPrimary,
+                  Flexible(
+                    child: Text(
+                      label,
+                      textAlign: TextAlign.center,
+                      style: AppTypography.labelLarge.copyWith(
+                        color: AppColors.textOnPrimary,
+                      ),
                     ),
                   ),
                 ],

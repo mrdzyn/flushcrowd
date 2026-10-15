@@ -21,31 +21,34 @@ class LooSecondaryButton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return SizedBox(
-      height: height,
-      width: double.infinity,
+    return ConstrainedBox(
+      constraints: BoxConstraints(minHeight: height, minWidth: double.infinity),
       child: OutlinedButton(
         onPressed: onPressed,
         style: OutlinedButton.styleFrom(
-          foregroundColor: AppColors.primary,
+          foregroundColor: AppColors.primaryDark,
           side: const BorderSide(color: AppColors.border, width: 1.5),
           shape: const RoundedRectangleBorder(
             borderRadius: AppRadii.pillBorder,
           ),
           elevation: 0,
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
         ),
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           mainAxisSize: MainAxisSize.min,
           children: [
             if (icon != null) ...[
-              Icon(icon, size: 20, color: AppColors.primary),
+              Icon(icon, size: 20, color: AppColors.primaryDark),
               const SizedBox(width: 8),
             ],
-            Text(
-              label,
-              style: AppTypography.labelLarge.copyWith(
-                color: AppColors.primary,
+            Flexible(
+              child: Text(
+                label,
+                textAlign: TextAlign.center,
+                style: AppTypography.labelLarge.copyWith(
+                  color: AppColors.primaryDark,
+                ),
               ),
             ),
           ],

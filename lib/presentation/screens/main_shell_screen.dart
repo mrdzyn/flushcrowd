@@ -369,16 +369,18 @@ class _MainShellScreenState extends State<MainShellScreen> {
         const SnackBar(
           content: Row(
             children: [
-              SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
+              ExcludeSemantics(
+                child: SizedBox(
+                  width: 18,
+                  height: 18,
+                  child: CircularProgressIndicator(
+                    strokeWidth: 2,
+                    color: Colors.white,
+                  ),
                 ),
               ),
               SizedBox(width: 14),
-              Text('Submitting restroom...'),
+              Expanded(child: Text('Submitting restroom...')),
             ],
           ),
           duration: Duration(days: 1),
