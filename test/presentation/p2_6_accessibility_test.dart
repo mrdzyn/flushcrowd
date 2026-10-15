@@ -101,18 +101,16 @@ DuplicateCandidate _createCandidate({
   );
 }
 
-Widget _wrapWithScale({
-  required Widget child,
-  double textScale = 1.0,
-  Size size = const Size(390, 844),
-}) {
+Widget _wrapWithScale({required Widget child, double textScale = 1.0}) {
   return MaterialApp(
-    home: MediaQuery(
-      data: MediaQueryData(
-        size: size,
-        textScaler: TextScaler.linear(textScale),
-      ),
-      child: child,
+    home: Builder(
+      builder: (context) {
+        final inherited = MediaQuery.of(context);
+        return MediaQuery(
+          data: inherited.copyWith(textScaler: TextScaler.linear(textScale)),
+          child: child,
+        );
+      },
     ),
   );
 }
@@ -572,6 +570,18 @@ void main() {
           reason:
               'Selected text on primaryLight container must meet WCAG AA (actual: ${primaryDarkOnPrimaryLight.toStringAsFixed(2)}:1)',
         );
+        // 7. Gender stall error text (AppColors.onErrorContainer) on white surface (AppColors.surface)
+        final genderStallErrorOnWhite = calculateContrastRatio(
+          AppColors.onErrorContainer,
+          AppColors.surface,
+        );
+        expect(
+          genderStallErrorOnWhite,
+          greaterThanOrEqualTo(4.5),
+          reason:
+              'Gender stall error text on white surface must meet WCAG AA (actual: ${genderStallErrorOnWhite.toStringAsFixed(2)}:1)',
+        );
+        expect(genderStallErrorOnWhite, greaterThanOrEqualTo(7.0));
       });
 
       testWidgets(
@@ -648,6 +658,77 @@ void main() {
           expect(headerText.style?.color, equals(AppColors.primaryDark));
         },
       );
+
+      testWidgets(
+        'AddRestroomFormScreen renders gender-stall validation error text with compliant contrast (>= 4.5:1)',
+        (tester) async {
+          await tester.pumpWidget(
+            _wrapWithScale(
+              child: AddRestroomFormScreen(
+                coordinates: Coordinates(
+                  latitude: 14.5839,
+                  longitude: 121.0617,
+                ),
+              ),
+              textScale: 1.0,
+            ),
+          );
+          await tester.pumpAndSettle();
+
+          // Scroll to Male Stalls and tap 'No' to trigger invalid configuration
+          final maleStallsFinder = find.widgetWithText(
+            TriStateAmenitySelector,
+            'Male Stalls',
+          );
+          await tester.scrollUntilVisible(
+            maleStallsFinder,
+            100,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.tap(
+            find.descendant(of: maleStallsFinder, matching: find.text('No')),
+          );
+          await tester.pumpAndSettle();
+
+          // Scroll to Continue button and tap to trigger validation
+          final continueButton = find.widgetWithText(
+            LooPrimaryButton,
+            'Continue',
+          );
+          await tester.scrollUntilVisible(
+            continueButton,
+            100,
+            scrollable: find.byType(Scrollable).first,
+          );
+          await tester.tap(continueButton);
+          await tester.pumpAndSettle();
+
+          // Verify the rendered error text widget
+          final errorTextFinder = find.text(
+            'Select applicable gender stalls or leave all unspecified',
+          );
+          expect(errorTextFinder, findsOneWidget);
+
+          final errorTextWidget = tester.widget<Text>(errorTextFinder);
+          expect(
+            errorTextWidget.style?.color,
+            equals(AppColors.onErrorContainer),
+          );
+
+          // Assert WCAG AA contrast ratio of the actual rendered text color against white surface
+          final contrast = calculateContrastRatio(
+            errorTextWidget.style!.color!,
+            AppColors.surface,
+          );
+          expect(
+            contrast,
+            greaterThanOrEqualTo(4.5),
+            reason:
+                'Rendered gender-stall error text must meet WCAG AA contrast (actual: ${contrast.toStringAsFixed(2)}:1)',
+          );
+          expect(contrast, greaterThanOrEqualTo(7.0));
+        },
+      );
     });
 
     group('4. Multi-Viewport & 200% Text Scaling Layout Stability (Zero RenderFlex Overflows)', () {
@@ -660,16 +741,15 @@ void main() {
             configureTestViewport(tester, width: width, height: 844.0);
 
             await tester.pumpWidget(
-              MaterialApp(
-                home: MediaQuery(
-                  data: const MediaQueryData(
-                    textScaler: TextScaler.linear(2.0),
-                  ),
-                  child: _buildLocationScreen(),
-                ),
-              ),
+              _wrapWithScale(child: _buildLocationScreen(), textScale: 2.0),
             );
             await tester.pumpAndSettle();
+
+            final mq = tester.element(find.byType(AddRestroomLocationScreen));
+            final mqData = MediaQuery.of(mq);
+            expect(mqData.size.width, equals(width));
+            expect(mqData.size.height, equals(844.0));
+            expect(mqData.textScaler, equals(const TextScaler.linear(2.0)));
 
             expect(
               tester.takeException(),
@@ -697,21 +777,23 @@ void main() {
             configureTestViewport(tester, width: width, height: 844.0);
 
             await tester.pumpWidget(
-              MaterialApp(
-                home: MediaQuery(
-                  data: const MediaQueryData(
-                    textScaler: TextScaler.linear(2.0),
-                  ),
-                  child: AddRestroomFormScreen(
-                    coordinates: Coordinates(
-                      latitude: 14.5839,
-                      longitude: 121.0617,
-                    ),
+              _wrapWithScale(
+                child: AddRestroomFormScreen(
+                  coordinates: Coordinates(
+                    latitude: 14.5839,
+                    longitude: 121.0617,
                   ),
                 ),
+                textScale: 2.0,
               ),
             );
             await tester.pumpAndSettle();
+
+            final mq = tester.element(find.byType(AddRestroomFormScreen));
+            final mqData = MediaQuery.of(mq);
+            expect(mqData.size.width, equals(width));
+            expect(mqData.size.height, equals(844.0));
+            expect(mqData.textScaler, equals(const TextScaler.linear(2.0)));
 
             // Trigger validation error state
             await tester.tap(find.widgetWithText(LooPrimaryButton, 'Continue'));
@@ -775,16 +857,28 @@ void main() {
             ];
 
             await tester.pumpWidget(
-              MaterialApp(
-                home: MediaQuery(
-                  data: const MediaQueryData(
-                    textScaler: TextScaler.linear(2.0),
-                  ),
-                  child: DuplicateWarningSheet(candidates: candidates),
+              _wrapWithScale(
+                child: Scaffold(
+                  body: DuplicateWarningSheet(candidates: candidates),
                 ),
+                textScale: 2.0,
               ),
             );
             await tester.pumpAndSettle();
+
+            // Assert real MediaQuery dimensions
+            final mq = tester.element(find.byType(DuplicateWarningSheet));
+            final mqData = MediaQuery.of(mq);
+            expect(mqData.size.width, equals(width));
+            expect(mqData.size.height, equals(844.0));
+            expect(mqData.textScaler, equals(const TextScaler.linear(2.0)));
+
+            // Assert nonzero rendered height and bounded by 85% of screen height
+            final sheetBox = tester.renderObject(
+              find.byType(DuplicateWarningSheet),
+            ) as RenderBox;
+            expect(sheetBox.size.height, greaterThan(0.0));
+            expect(sheetBox.size.height, lessThanOrEqualTo(844.0 * 0.85 + 0.1));
 
             expect(
               tester.takeException(),
@@ -793,8 +887,34 @@ void main() {
                   'Zero RenderFlex overflow on duplicate sheet for ${width.toInt()}px width',
             );
             expect(find.text('Similar restrooms found nearby'), findsOneWidget);
-            expect(find.text("No, It's a Different Restroom"), findsOneWidget);
-            expect(find.text('View Existing Restroom'), findsOneWidget);
+
+            // Verify warning-sheet actions remain visible, scrollable and accessible at 200% scaling
+            final viewExistingFinder = find.widgetWithText(
+              LooSecondaryButton,
+              'View Existing Restroom',
+            );
+            await tester.scrollUntilVisible(
+              viewExistingFinder,
+              100,
+              scrollable: find.byType(Scrollable).first,
+            );
+            expect(viewExistingFinder, findsOneWidget);
+            final viewExistingBox =
+                tester.renderObject(viewExistingFinder) as RenderBox;
+            expect(viewExistingBox.size.height, greaterThanOrEqualTo(48.0));
+
+            final proceedFinder = find.widgetWithText(
+              LooPrimaryButton,
+              "No, It's a Different Restroom",
+            );
+            await tester.scrollUntilVisible(
+              proceedFinder,
+              100,
+              scrollable: find.byType(Scrollable).first,
+            );
+            expect(proceedFinder, findsOneWidget);
+            final proceedBox = tester.renderObject(proceedFinder) as RenderBox;
+            expect(proceedBox.size.height, greaterThanOrEqualTo(48.0));
           },
         );
       }

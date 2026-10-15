@@ -529,7 +529,7 @@ class _AddRestroomFormScreenState extends State<AddRestroomFormScreen> {
           Text(
             _notifier.genderStallsError!,
             style: AppTypography.bodySmall.copyWith(
-              color: AppColors.error,
+              color: AppColors.onErrorContainer,
               fontWeight: FontWeight.w600,
             ),
           ),

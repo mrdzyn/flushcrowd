@@ -15,28 +15,25 @@
 
 ## Current objective
 
-Remediate PR #15 audit findings (**0 BLOCKER / 2 MAJOR / 1 MINOR**) and validate **P2.6-F** (Accessibility audit & remediation) and **P2.6-G** (Platform compilation & release validation) on branch `phase-2/p2.6-fg-accessibility-platform-validation`:
+Remediate PR #15 audit findings (**0 BLOCKER / 2 MAJOR / 0 MINOR**) and validate **P2.6-F** (Accessibility audit & remediation) and **P2.6-G** (Platform compilation & release validation) on branch `phase-2/p2.6-fg-accessibility-platform-validation`:
 
-- **MAJOR-1 Remediated — Multi-Viewport Mobile Testing (320, 375, 390 logical px at 200% text scale):**
-  * Updated `test/presentation/p2_6_accessibility_test.dart` to configure the actual Flutter test viewport using `tester.view.physicalSize` and `tester.view.devicePixelRatio` with `addTearDown` resets.
-  * Remediated `AddRestroomLocationScreen` instruction banner: moved from `AppBar.bottom` with rigid `PreferredSize` into a responsive `Column` above the map `Stack`, eliminating layout overflow under multiline text wrapping at 200% scaling.
-  * Remediated `AddRestroomLocationScreen` coordinates readout row: wrapped `Text('Coordinates')` in `Flexible` to prevent sub-pixel RenderFlex overflow on 320px screens.
-  * Remediated `AddRestroomFormScreen` validation error banner: wrapped `Text('Please fix the following errors:')` in `Expanded`, allowing it to wrap cleanly across multiple lines.
-  * Tested validation error states, long instructions, paid-fee fields, and duplicate warnings across 320px, 375px, and 390px viewports with zero layout overflow.
-- **MAJOR-2 Remediated — Contrast Compliance (WCAG 2.1 AA >= 4.5:1 Mathematical Proof):**
-  * Implemented programmatic WCAG relative luminance ($L = 0.2126R + 0.7152G + 0.0722B$) and contrast ratio calculations.
-  * Remediated `LooSecondaryButton`: updated foreground text and icon color from `AppColors.primary` (4.42:1 against white — fails 4.5:1) to `AppColors.primaryDark` (7.13:1 on white surface and 6.85:1 on canvas background — passes WCAG AA).
-  * Audited visible text on surfaces and added automated mathematical assertions for `primaryDark`, `textPrimary`, `textSecondary`, `onErrorContainer`, and selected amenity states.
-- **MINOR-1 Remediated — Touch Targets & Physical Device Reporting:**
-  * Enforced minimum 48×48 dp touch target on `AddRestroomLocationScreen` Back button via `leadingWidth: 56.0` and `BoxConstraints(minWidth: 48, minHeight: 48)`.
-  * Added automated touch target tests verifying >= 48×48 dp for Confirm Pin action, My Location button, Back button, Access Type dropdown, and Duplicate Warning actions.
-  * Explicitly reported physical-device VoiceOver (iOS) and TalkBack (Android) qualitative testing as `NOT RUN` pending human QA.
+- **MAJOR-1 Remediated — Preserve Real MediaQuery Dimensions in Multi-Viewport Tests (320, 375, 390 dp at 200% scale):**
+  * Updated `test/presentation/p2_6_accessibility_test.dart` to use `_wrapWithScale(child: ..., textScale: 2.0)`, copying inherited `MediaQueryData` rather than instantiating a text-scale-only `MediaQueryData` with default `Size.zero`.
+  * Verified screen dimensions in tests match actual viewport (`width` × 844.0 dp) and scale (`TextScaler.linear(2.0)`).
+  * Asserted `DuplicateWarningSheet` nonzero rendered height (`sheetBox.size.height > 0.0`) and constraint adherence (`<= 844.0 * 0.85`).
+  * Verified warning-sheet actions ("View Existing Restroom" `LooSecondaryButton` and "No, It's a Different Restroom" `LooPrimaryButton`) remain visible, scrollable, and accessible with >= 48dp target height under 200% text scaling.
+  * Preserved `configureTestViewport` `physicalSize` and `devicePixelRatio` reset behavior in `addTearDown`.
+- **MAJOR-2 Remediated — Gender Stall Validation Error Contrast Compliance (WCAG 2.1 AA >= 4.5:1):**
+  * In `AddRestroomFormScreen`, replaced `AppColors.error` (`#EF4444`, 3.5:1 — fails 4.5:1) with `AppColors.onErrorContainer` (`#991B1B`, 8.24:1 against white — passes WCAG AA >= 4.5:1 and AAA >= 7.0:1) for `_notifier.genderStallsError`.
+  * Added mathematical WCAG relative luminance contrast calculation assertion for `onErrorContainer` on `surface`.
+  * Added rendered widget test covering the actual invalid gender configuration state and verifying WCAG AA contrast ratio of the rendered text.
 - **P2.6-G — Platform Compilation & Release Validation:**
-  * `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 16.6s)
-  * `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 29.2s)
-  * Full Flutter test suite: 460/460 tests passed (+24 dedicated a11y tests, 0 failures).
+  * `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 15.3s)
+  * `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 27.2s)
+  * Full Flutter test suite: 461/461 tests passed (+25 dedicated a11y tests, 0 failures).
   * Firestore rules emulator test suite: 49/49 tests passed.
   * Cloud Functions emulator test suite: 20/20 tests passed.
+  * Physical device VoiceOver / TalkBack QA: NOT RUN (pending physical device QA by human owner).
 
 The active specifications are:
 
@@ -383,15 +380,15 @@ Milestone P2.6-F/G remediation exact-head validation:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (460/460 tests passed, +24 dedicated accessibility tests)
-- `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (24/24 a11y tests passed across 320, 375, 390px viewports at 200% scaling)
+- `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
+- `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (25/25 a11y tests passed across 320, 375, 390px viewports at 200% scaling)
 - Functions package entrypoint smoke test: `npm --prefix functions run smoke:entrypoint` — PASS
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
 - Functions isolated App Check test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (4/4 tests passed)
 - Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (49/49 tests passed)
 - Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (20/20 tests passed)
-- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 16.6s)
-- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 29.2s)
+- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 15.3s)
+- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 27.2s)
 - Physical device VoiceOver / TalkBack QA — NOT RUN (pending physical device QA by human owner)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
