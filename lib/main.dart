@@ -37,7 +37,7 @@ Future<void> main() async {
     await appCheckService.initialize();
 
     authRepository = FirebaseAuthRepositoryImpl();
-    restroomRepository = FirestoreRestroomRepository();
+    restroomRepository = FirestoreRestroomRepository(appConfig: config);
   } catch (e) {
     // If Firebase configuration files (google-services.json / GoogleService-Info.plist)
     // are not yet provided in the local dev environment, fall back to in-memory repositories.

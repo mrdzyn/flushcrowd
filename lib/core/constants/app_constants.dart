@@ -48,6 +48,7 @@ class AppConstants {
 
   // Firebase project configuration
   static const String stagingFirebaseProjectId = 'flushcrowd-staging';
+  static const String defaultCloudFunctionsRegion = 'us-central1';
 
   // Support & legal destinations
   // NOTE: External destinations are pending verification and configuration by the project owner.

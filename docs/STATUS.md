@@ -2,25 +2,29 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-14
+- **Last updated:** 2026-10-15
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6 Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation — ACTIVE (P2.6-A Backend Checkpoint Complete)
-- **Current branch:** `phase-2/p2.6-hardening`
-- **Current PR:** #13 — P2.6-A rate-limiting backend & direct-write bypass prevention (https://github.com/mrdzyn/flushcrowd/pull/13)
-- **Base:** `main` at `ce208ee6be4364ad5fd39364d596725548c525b9` (following owner merge of PR #12)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED; Explore Tab Hotfix MERGED — PR #9]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main at `9cc4b9b779d510de7b73561804443cc21f6454f9`]; P2.4 [MERGED — PR #10 at `91ee2612ac5c855da0719a346dc6d16ea7e4d6ee`]; P2.5 [MERGED — PR #12 at `ce208ee6be4364ad5fd39364d596725548c525b9`]; P2.6 [ACTIVE — P2.6-A BACKEND IMPLEMENTED & TESTED].
+- **Current milestone:** Milestone P2.6 Production Abuse Rate-Limiting Gate, Accessibility Audit & Release Validation — ACTIVE (P2.6-B PR #14 Audit Remediation Complete)
+- **Current branch:** `phase-2/p2.6-b-callable-integration`
+- **Current PR:** #14 — P2.6-B Flutter Callable Integration (https://github.com/mrdzyn/flushcrowd/pull/14)
+- **Base:** `main` at `05ad76b3a20af18f83df69d552bb2c30f3958087` (following merge of PR #13)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13 at `05ad76b3a20af18f83df69d552bb2c30f3958087`]; P2.6-B [AUDIT REMEDIATED & VALIDATED].
 
 ## Current objective
 
-Implement and validate **P2.6** on branch `phase-2/p2.6-hardening`, following `docs/tasks/P2.6-hardening-rate-limit.md`, canonical `docs/03-privacy-security.md`, and `docs/09-phase-2-add-restroom.md`:
+Implement and validate **P2.6** on branch `phase-2/p2.6-b-callable-integration`, following `docs/tasks/P2.6-hardening-rate-limit.md`, canonical `docs/03-privacy-security.md`, and `docs/09-phase-2-add-restroom.md`:
 
-- **P2.6-A — Rate-Limiting Backend & Direct-Write Bypass Prevention:** Scaffold TypeScript Firebase Functions V2 (`functions/`) and implement `submitRestroom` callable backend with strict server-side validation, authoritative geohash derivation, transactional OCC concurrency on `/contributionRateLimits/{uid}`, locked rate limits (10/24h, 3/10m), timestamp pruning, stable-ID idempotency retry, ID collision defense, zero contributor UID leakage in public documents, and direct-write bypass prevention proof. (10/10 emulator test scenarios PASS).
-- **P2.6-B — Flutter Mutation Adapter & Fail-Closed Integrity:** Implement `CallableFirestoreMutationAdapter` in Flutter calling `submitRestroom` callable function; fail closed on all backend errors without direct write fallback; preserve draft commands and user input.
+- **P2.6-A — Rate-Limiting Backend & Direct-Write Bypass Prevention:** [MERGED — PR #13] Scaffolded TypeScript Firebase Functions V2 (`functions/`) and implemented `submitRestroom` callable backend with rate limiting (10/24h, 3/10m), OCC concurrency, stable-ID idempotency, ID collision protection, zero contributor UID leakage, and direct-write bypass prevention.
+- **P2.6-B — Flutter Callable Integration:** [AUDIT REMEDIATED] Introduced `RestroomSubmissionTransport` boundary, implemented `CallableRestroomSubmissionTransport` targeting `us-central1`, integrated with `FirestoreRestroomRepository`, preserved existing staging direct-write default (`useCallableSubmission == false`) until explicit cutover, kept production writes strictly blocked (`production-writes-blocked`), mapped callable exceptions with stable draft preservation, and verified map refresh / preview UX. Remediated PR #14 independent audit findings:
+  * **BLOCKER-1 (Ambiguous callable completion integrity):** Refactored `_verifyAmbiguousPointRead()` to require verified public/private document pairing (`contributions/restroom_{id}`), correct contributor UID (`userUid == uid`), stable ID matching, and full canonical submission consistency via `validateReconciliationPair`. Reject missing, unreadable (permission-denied), orphaned, conflicting, or mismatched records.
+  * **MAJOR-1 (Callable response validation):** Implemented `validateCallableResponse()` enforcing `success == true`, matching restroom ID, matching canonical submitted fields, valid types, and status `unverified`. Fail closed on malformed/unsuccessful response without triggering success UI, draft clearing, or map refresh.
+  * **MINOR-1 (Independent map discovery verification):** Extended presentation tests in `test/presentation/p2_6_callable_integration_test.dart` (Test 11) verifying that successful callable submission does not optimistically inject the facility into discovery results and surfaces the established `Refresh` recovery SnackBar.
+  * 436/436 total Flutter tests pass.
 - **P2.6-F — Accessibility (a11y) Audit:** Audit touch targets (>= 48×48 dp), semantic labels, contrast (>= 4.5:1), and dynamic text scaling (200%) across Phase 2 screens.
-- **P2.6-G — Platform Compilation & Release Validation:** Validate `flutter build apk --debug`, `flutter build ios --debug --no-codesign`, full Flutter test suite (422+ tests), Firestore rules tests (49 tests), and functions emulator tests (10 scenarios).
+- **P2.6-G — Platform Compilation & Release Validation:** Validate `flutter build apk --debug`, `flutter build ios --debug --no-codesign`, full Flutter test suite (436 tests), Firestore rules tests (49 tests), and functions emulator tests (20 tests).
 
 The active specifications are:
 
@@ -326,13 +330,23 @@ Owner-confirmed staging infrastructure state:
   - All 42 P2.5 automated regression tests passed; 422 total Flutter tests passed; 49/49 Firestore rules tests passed.
   - Owner physical-device QA: PASS on Samsung SM-G998B Android and iPhone (Johnmikel Xavier) for add restroom and duplicate advisory sheet.
   - Pending Pre-Production Staging Verification: Cross-device query sync, camera settlement to zoom 16.5 & preview rendering, and Firestore Console document pair integrity.
-- Milestone P2.6:
-  - ACTIVE on branch `phase-2/p2.6-hardening` based on `main` at `ce208ee6be4364ad5fd39364d596725548c525b9`.
-  - PR #13 opened; final targeted audit remediation complete addressing BLOCKER-1, MAJOR-1, and MINOR-1:
-    * BLOCKER-1: Package entrypoint corrected to `lib/src/index.js`, `smoke:entrypoint` script added, CI smoke test step added.
-    * MAJOR-1: Private contribution linkage invariants validation (`id`, `contributionType`, `resourceId`, `restroomId`, `userUid`, and public `id`) enforced in `executeSubmitRestroom`, verified via Scenario 7e.
-    * MINOR-1: Dedicated isolated test suite in `functions/test/app_check_init.test.ts` verifying SDK-level transport rejection (HTTP 401 `UNAUTHENTICATED`) before handler execution in staging and production.
-  - All 20 tests across 2 suites (`app_check_init.test.ts` 4/4 passed, `rate_limit.test.ts` 16/16 passed) pass cleanly under Firestore emulator.
+- Milestone P2.6-A:
+  - SQUASH-MERGED into `main` at `05ad76b3a20af18f83df69d552bb2c30f3958087` (PR #13).
+  - Backend rate limiting with Cloud Functions V2 (`submitRestroom`), 10/24h and 3/10m rolling limits, OCC transactional rate-limit tracking, stable-ID idempotency reconciliation, ID collision rejection, and direct-write bypass prevention.
+- Milestone P2.6-B:
+  - ACTIVE on branch `phase-2/p2.6-b-callable-integration` based on `main` at `05ad76b3a20af18f83df69d552bb2c30f3958087`.
+  - Added `cloud_functions: ^6.5.0` dependency; defined `AppConstants.defaultCloudFunctionsRegion = 'us-central1'`.
+  - Added `useCallableSubmission` flag to `AppConfig` (defaults to `false`, configurable via compile-time define or constructor).
+  - Introduced `RestroomSubmissionTransport` boundary with `DirectFirestoreRestroomSubmissionTransport` and `CallableRestroomSubmissionTransport`.
+  - Implemented `CallableRestroomSubmissionTransport` serializing commands without sentinels, contributor UIDs, trusted aggregates, or status (backend authoritative).
+  - Preserved existing staging direct-write default for zero disruption until explicit cutover.
+  - Enforced `production-writes-blocked` in `FirestoreRestroomRepository`.
+  - Zero direct-write fallback: failed callable never falls back to direct Firestore writes.
+  - Comprehensive exception mapping (`resource-exhausted` -> `rate-limited`, `unauthenticated`, `permission-denied`/`failed-precondition` -> `app-check-failed`, `already-exists`, `unavailable`/`deadline-exceeded`).
+  - Ambiguous network timeout verification via complete public/private document pair verification (`contributions/restroom_{id}` and `restrooms/{id}`) matching canonical command and contributor UID via `validateReconciliationPair`.
+  - Authoritative callable response validation (`validateCallableResponse`) checking `success == true`, ID match, canonical attributes match, valid types, and status `unverified`.
+  - Full UX preservation: single-flight submission lock, duplicate advisory notes, draft recovery with preserved stable ID, Resume dialog action, authoritative map refresh at zoom 16.5, single Unverified preview bottom sheet, and independent discovery verification without false optimistic preview.
+  - Added 14 new automated tests across unit and presentation suites; full suite of 436 tests passing cleanly.
 
 ## Current owner actions / external dependencies
 
@@ -340,27 +354,28 @@ Owner-confirmed staging infrastructure state:
 2. Configure GCP billing budget alerts for Cloud Functions V2 / Artifact Registry.
 3. Production Android signing remains a later release-readiness action.
 4. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
+5. Deploy `submitRestroom` Cloud Function to live staging environment prior to flipping `useCallableSubmission: true` in staging.
 
 ## Current validation status
 
-Milestone P2.6-A exact-head validation:
+Milestone P2.6-B exact-head validation:
 
-- TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
-- Package entrypoint smoke test: `APP_ENV=test node -e "require('./functions')"` & `npm --prefix functions run smoke:entrypoint` — PASS
-- Functions emulator test suites: `npm --prefix functions run test:emulators` — PASS (20/20 tests passed across 2 suites: `app_check_init.test.ts` 4/4, `rate_limit.test.ts` 16/16)
-- Firestore Security Rules emulator test suite: `./rules_tests/node_modules/.bin/firebase emulators:exec --only firestore "npm --prefix rules_tests test"` — PASS (49/49 tests passed)
 - `flutter analyze` — PASS (0 issues found)
-- `flutter test` — PASS (422/422 tests passed)
+- `flutter test` — PASS (436/436 tests passed)
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
+- Functions package entrypoint smoke test: `npm --prefix functions run smoke:entrypoint` — PASS
+- TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
+- Functions isolated App Check test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (4/4 tests passed)
+- Staging / Physical Device Callable Submission: NOT RUN (pending Cloud Functions deployment to live Firebase staging project)
 - `git diff --check` — PASS
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Await independent re-audit verification of PR #13 (`phase-2/p2.6-hardening`) covering final targeted audit remediation.
-2. Implement Milestone P2.6-B: Flutter `CallableFirestoreMutationAdapter` connecting `FirestoreRestroomRepository` to `submitRestroom` callable backend with fail-closed semantics.
+1. Push PR #14 audit remediation commit to `phase-2/p2.6-b-callable-integration`.
+2. Await independent audit re-review on PR #14.
 3. Conduct Milestone P2.6-F: Accessibility audit of Phase 2 screens (touch targets >= 48×48 dp, semantics, 200% text scaling).
-4. Perform Milestone P2.6-G: Platform debug builds & release validation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
+3. Perform Milestone P2.6-G: Platform debug builds & release validation (`flutter build apk --debug`, `flutter build ios --debug --no-codesign`).
 
 ## Handoff template
 
