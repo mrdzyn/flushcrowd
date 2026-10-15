@@ -197,7 +197,75 @@ describe('P2.6-C — App Check Callable Initialization Contract', () => {
     }
   });
 
-  it('Staging environment strictly validates project ID flushcrowd-staging in live runtime', () => {
+  it('Live runtime strictly fails closed when APP_ENV is missing', () => {
+    const savedAppEnv = process.env.APP_ENV;
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedEmulator = process.env.FUNCTIONS_EMULATOR;
+    const savedFirestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+
+    try {
+      delete process.env.APP_ENV;
+      delete process.env.NODE_ENV;
+      delete process.env.FUNCTIONS_EMULATOR;
+      delete process.env.FIRESTORE_EMULATOR_HOST;
+
+      assert.throws(
+        () => getAppConfig(),
+        /FATAL: APP_ENV environment variable is missing/
+      );
+    } finally {
+      if (savedAppEnv !== undefined) process.env.APP_ENV = savedAppEnv;
+      else delete process.env.APP_ENV;
+      if (savedNodeEnv !== undefined) process.env.NODE_ENV = savedNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (savedEmulator !== undefined) process.env.FUNCTIONS_EMULATOR = savedEmulator;
+      else delete process.env.FUNCTIONS_EMULATOR;
+      if (savedFirestoreHost !== undefined) process.env.FIRESTORE_EMULATOR_HOST = savedFirestoreHost;
+      else delete process.env.FIRESTORE_EMULATOR_HOST;
+    }
+  });
+
+  it('Live staging runtime strictly rejects missing project identity', () => {
+    const savedAppEnv = process.env.APP_ENV;
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedGcloud = process.env.GCLOUD_PROJECT;
+    const savedProjectId = process.env.PROJECT_ID;
+    const savedFirebaseConfig = process.env.FIREBASE_CONFIG;
+    const savedEmulator = process.env.FUNCTIONS_EMULATOR;
+    const savedFirestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+
+    try {
+      process.env.APP_ENV = 'staging';
+      delete process.env.NODE_ENV;
+      delete process.env.FUNCTIONS_EMULATOR;
+      delete process.env.FIRESTORE_EMULATOR_HOST;
+      delete process.env.GCLOUD_PROJECT;
+      delete process.env.PROJECT_ID;
+      delete process.env.FIREBASE_CONFIG;
+
+      assert.throws(
+        () => getAppConfig(),
+        /FATAL: Live staging environment is missing project identity/
+      );
+    } finally {
+      if (savedAppEnv !== undefined) process.env.APP_ENV = savedAppEnv;
+      else delete process.env.APP_ENV;
+      if (savedNodeEnv !== undefined) process.env.NODE_ENV = savedNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (savedGcloud !== undefined) process.env.GCLOUD_PROJECT = savedGcloud;
+      else delete process.env.GCLOUD_PROJECT;
+      if (savedProjectId !== undefined) process.env.PROJECT_ID = savedProjectId;
+      else delete process.env.PROJECT_ID;
+      if (savedFirebaseConfig !== undefined) process.env.FIREBASE_CONFIG = savedFirebaseConfig;
+      else delete process.env.FIREBASE_CONFIG;
+      if (savedEmulator !== undefined) process.env.FUNCTIONS_EMULATOR = savedEmulator;
+      else delete process.env.FUNCTIONS_EMULATOR;
+      if (savedFirestoreHost !== undefined) process.env.FIRESTORE_EMULATOR_HOST = savedFirestoreHost;
+      else delete process.env.FIRESTORE_EMULATOR_HOST;
+    }
+  });
+
+  it('Live staging runtime strictly rejects mismatched project identity', () => {
     const savedAppEnv = process.env.APP_ENV;
     const savedNodeEnv = process.env.NODE_ENV;
     const savedGcloud = process.env.GCLOUD_PROJECT;
@@ -210,24 +278,97 @@ describe('P2.6-C — App Check Callable Initialization Contract', () => {
       delete process.env.FUNCTIONS_EMULATOR;
       delete process.env.FIRESTORE_EMULATOR_HOST;
 
-      // When GCLOUD_PROJECT is incorrect, it must fail closed
-      process.env.GCLOUD_PROJECT = 'wrong-project-id';
+      process.env.GCLOUD_PROJECT = 'wrong-staging-project';
       assert.throws(
         () => getAppConfig(),
-        /Staging environment targeted invalid project "wrong-project-id"/
+        /Staging environment targeted invalid project "wrong-staging-project"/
       );
+    } finally {
+      if (savedAppEnv !== undefined) process.env.APP_ENV = savedAppEnv;
+      else delete process.env.APP_ENV;
+      if (savedNodeEnv !== undefined) process.env.NODE_ENV = savedNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (savedGcloud !== undefined) process.env.GCLOUD_PROJECT = savedGcloud;
+      else delete process.env.GCLOUD_PROJECT;
+      if (savedEmulator !== undefined) process.env.FUNCTIONS_EMULATOR = savedEmulator;
+      else delete process.env.FUNCTIONS_EMULATOR;
+      if (savedFirestoreHost !== undefined) process.env.FIRESTORE_EMULATOR_HOST = savedFirestoreHost;
+      else delete process.env.FIRESTORE_EMULATOR_HOST;
+    }
+  });
 
-      // When GCLOUD_PROJECT is 'flushcrowd-staging', it succeeds
+  it('Live staging runtime succeeds and enforces App Check when targeted to flushcrowd-staging', () => {
+    const savedAppEnv = process.env.APP_ENV;
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedGcloud = process.env.GCLOUD_PROJECT;
+    const savedEmulator = process.env.FUNCTIONS_EMULATOR;
+    const savedFirestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+
+    try {
+      process.env.APP_ENV = 'staging';
+      delete process.env.NODE_ENV;
+      delete process.env.FUNCTIONS_EMULATOR;
+      delete process.env.FIRESTORE_EMULATOR_HOST;
+
       process.env.GCLOUD_PROJECT = 'flushcrowd-staging';
       const config = getAppConfig();
       assert.equal(config.appEnv, 'staging');
       assert.equal(config.enforceAppCheck, true);
     } finally {
-      process.env.APP_ENV = savedAppEnv;
+      if (savedAppEnv !== undefined) process.env.APP_ENV = savedAppEnv;
+      else delete process.env.APP_ENV;
       if (savedNodeEnv !== undefined) process.env.NODE_ENV = savedNodeEnv;
       else delete process.env.NODE_ENV;
       if (savedGcloud !== undefined) process.env.GCLOUD_PROJECT = savedGcloud;
       else delete process.env.GCLOUD_PROJECT;
+      if (savedEmulator !== undefined) process.env.FUNCTIONS_EMULATOR = savedEmulator;
+      else delete process.env.FUNCTIONS_EMULATOR;
+      if (savedFirestoreHost !== undefined) process.env.FIRESTORE_EMULATOR_HOST = savedFirestoreHost;
+      else delete process.env.FIRESTORE_EMULATOR_HOST;
+    }
+  });
+
+  it('Live production runtime strictly rejects missing project identity and staging crossover', () => {
+    const savedAppEnv = process.env.APP_ENV;
+    const savedNodeEnv = process.env.NODE_ENV;
+    const savedGcloud = process.env.GCLOUD_PROJECT;
+    const savedProjectId = process.env.PROJECT_ID;
+    const savedFirebaseConfig = process.env.FIREBASE_CONFIG;
+    const savedEmulator = process.env.FUNCTIONS_EMULATOR;
+    const savedFirestoreHost = process.env.FIRESTORE_EMULATOR_HOST;
+
+    try {
+      process.env.APP_ENV = 'production';
+      delete process.env.NODE_ENV;
+      delete process.env.FUNCTIONS_EMULATOR;
+      delete process.env.FIRESTORE_EMULATOR_HOST;
+      delete process.env.GCLOUD_PROJECT;
+      delete process.env.PROJECT_ID;
+      delete process.env.FIREBASE_CONFIG;
+
+      // Missing project identity must fail closed
+      assert.throws(
+        () => getAppConfig(),
+        /FATAL: Live production environment is missing project identity/
+      );
+
+      // Crossover with staging project must be rejected
+      process.env.GCLOUD_PROJECT = 'flushcrowd-staging';
+      assert.throws(
+        () => getAppConfig(),
+        /Production environment targeted staging project "flushcrowd-staging"/
+      );
+    } finally {
+      if (savedAppEnv !== undefined) process.env.APP_ENV = savedAppEnv;
+      else delete process.env.APP_ENV;
+      if (savedNodeEnv !== undefined) process.env.NODE_ENV = savedNodeEnv;
+      else delete process.env.NODE_ENV;
+      if (savedGcloud !== undefined) process.env.GCLOUD_PROJECT = savedGcloud;
+      else delete process.env.GCLOUD_PROJECT;
+      if (savedProjectId !== undefined) process.env.PROJECT_ID = savedProjectId;
+      else delete process.env.PROJECT_ID;
+      if (savedFirebaseConfig !== undefined) process.env.FIREBASE_CONFIG = savedFirebaseConfig;
+      else delete process.env.FIREBASE_CONFIG;
       if (savedEmulator !== undefined) process.env.FUNCTIONS_EMULATOR = savedEmulator;
       else delete process.env.FUNCTIONS_EMULATOR;
       if (savedFirestoreHost !== undefined) process.env.FIRESTORE_EMULATOR_HOST = savedFirestoreHost;

@@ -64,11 +64,30 @@ export function getAppConfig(): AppConfig {
         })()
       : undefined);
 
-  if (!isTestOrEmulator && appEnv === 'staging') {
-    if (runtimeProjectId && runtimeProjectId !== 'flushcrowd-staging') {
-      throw new Error(
-        `FATAL: Staging environment targeted invalid project "${runtimeProjectId}". Expected "flushcrowd-staging".`
-      );
+  if (!isTestOrEmulator) {
+    if (appEnv === 'staging') {
+      if (!runtimeProjectId) {
+        throw new Error(
+          'FATAL: Live staging environment is missing project identity (GCLOUD_PROJECT, PROJECT_ID, or FIREBASE_CONFIG.projectId). ' +
+          'Expected "flushcrowd-staging".'
+        );
+      }
+      if (runtimeProjectId !== 'flushcrowd-staging') {
+        throw new Error(
+          `FATAL: Staging environment targeted invalid project "${runtimeProjectId}". Expected "flushcrowd-staging".`
+        );
+      }
+    } else if (appEnv === 'production') {
+      if (!runtimeProjectId) {
+        throw new Error(
+          'FATAL: Live production environment is missing project identity (GCLOUD_PROJECT, PROJECT_ID, or FIREBASE_CONFIG.projectId).'
+        );
+      }
+      if (runtimeProjectId === 'flushcrowd-staging') {
+        throw new Error(
+          'FATAL: Production environment targeted staging project "flushcrowd-staging". Refusing to initialize.'
+        );
+      }
     }
   }
 

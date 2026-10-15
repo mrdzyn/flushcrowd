@@ -7,8 +7,9 @@
     "build": "tsc",
     "build:watch": "tsc --watch",
     "smoke:entrypoint": "APP_ENV=test node -e \"require('.')\"",
-    "pretest": "npm run build && npm run smoke:entrypoint",
-    "test": "node --test lib/test/*.test.js",
+    "smoke:staging": "node --env-file=.env.flushcrowd-staging -e \"process.env.GCLOUD_PROJECT='flushcrowd-staging'; require('.')\"",
+    "pretest": "npm run build && npm run smoke:entrypoint && npm run smoke:staging",
+    "test": "APP_ENV=test node --test lib/test/*.test.js",
     "test:emulators": "firebase emulators:exec --only firestore \"npm test\""
   },
   "engines": {

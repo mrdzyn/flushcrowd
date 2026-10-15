@@ -26,6 +26,8 @@ The server-side rate-limiting backend is located in the `functions/` directory, 
 - **Package Entrypoint:** `functions/package.json` declares `"main": "lib/src/index.js"`.
 - **Predeploy Hook:** `firebase.json` executes `npm --prefix "$RESOURCE_DIR" run build` prior to deployment.
 - **Entrypoint Verification:** Validated via `npm run smoke:entrypoint` (`APP_ENV=test node -e "require('.')"`).
+- **Persistent Non-Secret Staging Environment:** `functions/.env.flushcrowd-staging` declares `APP_ENV=staging`. In Firebase Functions 2nd Gen, Firebase CLI automatically loads this project-specific `.env` file during deployment to `flushcrowd-staging`, injects it into the Cloud Run container environment, and provides it during local CLI discovery.
+- **Staging Discovery Smoke Test:** Validated via `npm run smoke:staging` (`node --env-file=.env.flushcrowd-staging -e "process.env.GCLOUD_PROJECT='flushcrowd-staging'; require('.')"`).
 - **Target Function:** `submitRestroom` HTTPS Callable Function.
 
 ### 2.2 Target Firebase Project & Explicit Region
@@ -36,10 +38,12 @@ The server-side rate-limiting backend is located in the `functions/` directory, 
   * Declared in Flutter client: `AppConstants.defaultCloudFunctionsRegion = 'us-central1'` in `lib/core/constants/app_constants.dart`.
 - **Targeting Rule:** All Firebase deployment commands must explicitly include `--project flushcrowd-staging`. Never rely on `.firebaserc` or ambient defaults.
 
-### 2.3 Runtime Environment & Staging Project ID Verification
+### 2.3 Runtime Environment & Fail-Closed Project Identity Verification
 In `functions/src/config.ts`, `getAppConfig()` enforces:
-1. `APP_ENV=staging` must be provided in the runtime environment.
-2. In live runtime (non-emulator, non-test), `functions/src/config.ts` verifies that `process.env.GCLOUD_PROJECT` or `FIREBASE_CONFIG` matches `flushcrowd-staging`. If mismatched, it fails closed with `FATAL: Staging environment targeted invalid project`.
+1. `APP_ENV=staging` must be provided in the runtime environment. Unconfigured environments fail closed with `FATAL: APP_ENV environment variable is missing`.
+2. In live staging runtime (non-emulator, non-test), `functions/src/config.ts` fails closed if project identity (`GCLOUD_PROJECT`, `PROJECT_ID`, or `FIREBASE_CONFIG.projectId`) is missing (`FATAL: Live staging environment is missing project identity`) or does not match `flushcrowd-staging` (`FATAL: Staging environment targeted invalid project`).
+3. App Check enforcement is fail-closed: attempts to set `ENFORCE_APP_CHECK=false` in staging or production are strictly rejected (`FATAL: Cannot disable App Check in staging/production`).
+4. Live production runtime fails closed if project identity is missing or if it attempts to execute against `flushcrowd-staging`.
 
 ### 2.4 App Check Reconciliation & Mobile Debug Token Plan
 - **The App Check Contradiction:**
@@ -67,9 +71,12 @@ In `functions/src/config.ts`, `getAppConfig()` enforces:
 
 ## 3. Task 2 — Security Rules Cutover Candidate
 
-### 3.1 Version-Controlled Rules Cutover Candidate
+### 3.1 Version-Controlled Rules Cutover Candidate & Deployment Configuration
 - **Active Staging Rules:** `firestore.rules` (preserves authenticated direct batch writes for staging parity and testing).
-- **Cutover Candidate Rules:** `firestore.production.rules` (version-controlled in repository root).
+- **Cutover Candidate Rules:** `firestore.production.rules` (version-controlled in repository root, denying direct client writes).
+- **Default Deployment Configuration:** `firebase.json` specifies `"rules": "firestore.rules"` to protect ongoing staging development.
+- **Dedicated Cutover Configuration:** `firebase.cutover.json` specifies `"rules": "firestore.production.rules"` for explicit, deterministic lockdown deployment (`firebase deploy --config firebase.cutover.json ...`).
+- **Configuration Parity Verification:** Validated via automated test suite `rules_tests/test/firebase_config.test.js`, proving that default configuration selects staging rules, cutover configuration selects production rules, and non-rules configurations (functions, emulators) remain strictly in sync.
 
 ### 3.2 Cutover Candidate Rules Specifications
 Under `firestore.production.rules`:
@@ -91,22 +98,32 @@ Under `firestore.production.rules`:
    ```
 4. All existing Phase 0/1/2 rules for ratings, rating ownership, verifications, reports, and default deny remain 100% intact.
 
-### 3.3 Emulator Test Suite
-The emulator test suite in `rules_tests/test/production_rules_cutover.test.js` tests the cutover candidate against the Firestore emulator:
-- **Test 1:** Direct client public restroom `setDoc` is rejected (`assertFails`).
-- **Test 2:** Direct client contribution `setDoc` is rejected (`assertFails`).
-- **Test 3:** Direct client batch write cannot bypass restrictions (`assertFails`).
-- **Test 4:** Authorized Admin SDK writes succeed for public restrooms, private contributions, and rate-limit documents (`assertSucceeds`).
-- **Test 5:** Legitimate public discovery reads (single document and spatial geohash range queries) succeed for unauthenticated and authenticated clients (`assertSucceeds`).
-- **Test 6:** Private contributor ownership, client update/delete blocks, and rate-limit privacy remain strictly enforced (`assertFails`).
+### 3.3 Emulator & Configuration Test Suite
+The emulator test suite validates both security behavior and configuration selection (61 total tests):
+- `rules_tests/test/production_rules_cutover.test.js` (6 cutover behaviors):
+  * **Test 1:** Direct client public restroom `setDoc` is rejected (`assertFails`).
+  * **Test 2:** Direct client contribution `setDoc` is rejected (`assertFails`).
+  * **Test 3:** Direct client batch write cannot bypass restrictions (`assertFails`).
+  * **Test 4:** Authorized Admin SDK writes succeed for public restrooms, private contributions, and rate-limit documents (`assertSucceeds`).
+  * **Test 5:** Legitimate public discovery reads (single document and spatial geohash range queries) succeed for unauthenticated and authenticated clients (`assertSucceeds`).
+  * **Test 6:** Private contributor ownership, client update/delete blocks, and rate-limit privacy remain strictly enforced (`assertFails`).
+- `rules_tests/test/firebase_config.test.js` (6 configuration-level automated checks):
+  * Default `firebase.json` selects `firestore.rules`.
+  * Cutover `firebase.cutover.json` selects `firestore.production.rules`.
+  * Configuration parity between default and cutover files.
+  * Staging rules contain direct-write functions.
+  * Production candidate rules deny client creates and rate-limit access.
+  * Staging `.env.flushcrowd-staging` provisions `APP_ENV=staging`.
 
 ---
 
 ## 4. Task 3 — Physical Device QA Acceptance Runbook
 
 ### Target Physical Devices:
-- **Device 1 (Android):** Samsung Galaxy S21 Ultra 5G (`SM-G998B`), Android 14 / One UI 6.
-- **Device 2 (iOS):** iPhone 12 Pro Max (`A2411` / `Model`), iOS 17 or 18.
+- **Device 1 (Android):** Samsung Galaxy S21 Ultra 5G (`SM-G998B`).
+  * *Operational Requirement:* The QA tester must inspect and record the actual Android OS version and One UI version on testing day via **Settings -> About phone -> Software information** (e.g. Android 14 / One UI 6.1) rather than assuming a static version.
+- **Device 2 (iOS):** iPhone 12 Pro Max (`A2411`).
+  * *Operational Requirement:* The QA tester must inspect and record the actual iOS version on testing day via **Settings -> General -> About** (e.g. iOS 17.x / 18.x) rather than assuming a static version.
 
 ---
 
@@ -213,12 +230,16 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 2. Verify Billing Budget ($25/mo) with alert thresholds.
 3. Verify Firebase Anonymous Authentication is enabled.
 4. Build functions locally: `npm --prefix functions run build`.
-5. Run emulator tests:
-   * `npm --prefix functions run test:emulators` (21/21 PASS)
-   * `npm --prefix rules_tests run test:emulators` (55/55 PASS)
+5. Run package discovery smoke tests:
+   * `npm --prefix functions run smoke:entrypoint` (PASS)
+   * `npm --prefix functions run smoke:staging` (PASS — validates `.env.flushcrowd-staging` loading)
+6. Run emulator and configuration test suites:
+   * `npm --prefix functions run test:emulators` (25/25 PASS: 9 App Check/env preflight + 16 rate-limiting scenarios)
+   * `npm --prefix rules_tests run test:emulators` (61/61 PASS: 49 staging rules + 6 production cutover + 6 configuration checks)
 
 ### Stage 2: Deploy Staging Cloud Function (Requires Human Approval)
 - **Gate 2 Approval:** Obtain written signoff from human owner.
+- **Environment Provenance:** `functions/.env.flushcrowd-staging` provides persistent, non-secret `APP_ENV=staging`. The Firebase CLI automatically loads this project-specific configuration during deployment to `flushcrowd-staging` and injects it into the Cloud Run container runtime.
 - **Deployment Command:**
   ```bash
   firebase deploy \
@@ -227,7 +248,8 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
   ```
 - **Post-Deploy Verification:**
   * Verify in Google Cloud Console -> Cloud Run -> `submitRestroom` is provisioned in `us-central1`.
-  * Verify environment variable `APP_ENV=staging`.
+  * Verify environment variable `APP_ENV=staging` is present in the Cloud Run service configuration.
+  * Verify runtime project identity matches `flushcrowd-staging`.
 
 ### Stage 3: Mobile Staging Testing on Physical Devices
 - Build staging apps for Samsung SM-G998B and iPhone 12 Pro Max:
@@ -247,49 +269,60 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 
 ### Stage 4: Staging Security Rules Lockdown (Requires Human Approval)
 - **Gate 4 Approval:** Obtain written signoff to lock down staging direct writes.
+- **Preflight Configuration Verification:**
+  Run automated configuration check:
+  ```bash
+  npm --prefix rules_tests test test/firebase_config.test.js
+  ```
+  Confirms `firebase.cutover.json` explicitly targets `firestore.production.rules` while `firebase.json` targets `firestore.rules`.
 - **Deployment Command:**
-  Deploy candidate rules to staging Firestore:
+  Deploy candidate rules to staging Firestore using the dedicated cutover configuration:
   ```bash
   firebase deploy \
+    --config firebase.cutover.json \
     --project flushcrowd-staging \
-    --only firestore:rules \
-    --rules firestore.production.rules
+    --only firestore:rules
   ```
-  *(Or copy `firestore.production.rules` to `firestore.rules` after approval).*
-- **Verification:**
-  1. Direct client SDK write attempts to `/restrooms` on physical device fail with `PERMISSION_DENIED`.
-  2. Callable submissions through `submitRestroom` succeed.
+- **Post-Deploy Verification:**
+  1. Direct client SDK write attempt to `/restrooms/{id}` fails with `PERMISSION_DENIED`.
+  2. Direct client SDK write attempt to `/contributions/{id}` fails with `PERMISSION_DENIED`.
+  3. Callable submission through `submitRestroom` succeeds and creates both records.
+- **Abort Criteria:**
+  If a direct client SDK write succeeds after deploying cutover rules, the restrictive rules were not applied. **IMMEDIATELY ABORT** and execute Rollback R.3 (Emergency Rules Rollback).
 
 ### Stage 5: Rollback Procedures (If Anomaly Detected)
 
-#### Rollback R.1 — Immediate Mobile Client Rollback
-If callable submission encounters client issues:
-1. Re-run or rebuild client without `USE_CALLABLE_SUBMISSION=true` (defaults to false):
-   ```bash
-   flutter run --dart-define=APP_ENV=staging
-   ```
-2. Client reverts to direct batch writes (if rules permit) or displays user-friendly recovery messaging while preserving drafts.
+#### Order of Rollback Operations:
+1. **R.1 — Client Draft Preservation & Submission Suspension (First Line of Defense):**
+   If mobile client issues, unexpected UI errors, or submission failures occur:
+   - Contributor drafts remain fully preserved locally via `DraftPreservationService` with the `"Resume"` action.
+   - If required to prevent user disruption, suspend submissions via app-level configuration (`isSubmissionsEnabled: false` or maintenance toggle) while preserving all drafts.
+   - No data loss occurs.
+2. **R.2 — Cloud Function Revision Rollback (Primary Backend Defense):**
+   If `submitRestroom` exhibits an unexpected error spike, regression, or failure:
+   - In Google Cloud Console -> Cloud Run -> `submitRestroom` -> **Revisions**, route 100% of traffic back to the previously verified stable revision.
+   - Or execute via Google Cloud CLI:
+     ```bash
+     gcloud run services update-traffic submit-restroom \
+       --to-revisions=<PREVIOUS_STABLE_REVISION>=100 \
+       --region=us-central1 \
+       --project=flushcrowd-staging
+     ```
+3. **R.3 — Emergency Staging Rules Rollback (Exceptional Staging-Only Action):**
+   If candidate cutover rules cause unexpected operational disruption during staging testing:
+   - Re-deploy the staging rules using the default configuration:
+     ```bash
+     firebase deploy \
+       --config firebase.json \
+       --project flushcrowd-staging \
+       --only firestore:rules
+     ```
+   - Confirm that staging direct batch writes are restored for debugging.
 
-#### Rollback R.2 — Firestore Security Rules Rollback
-If candidate production rules cause unexpected client disruption:
-1. Immediately re-deploy the staging rules (`firestore.rules`):
-   ```bash
-   firebase deploy \
-     --project flushcrowd-staging \
-     --only firestore:rules
-   ```
-2. Confirm client batch writes are re-enabled in staging.
-
-#### Rollback R.3 — Cloud Function Rollback or Teardown
-If `submitRestroom` exhibits severe regression or error spikes:
-1. In Google Cloud Console -> Cloud Run, roll back traffic to previous revision, or:
-2. Delete function endpoint:
-   ```bash
-   firebase functions:delete submitRestroom \
-     --project flushcrowd-staging \
-     --region us-central1 \
-     --force
-   ```
+> [!CAUTION]
+> **RESTRICTED TO STAGING ONLY — NEVER RE-ENABLE DIRECT WRITES IN PRODUCTION.**
+> Restoring permissive rules (`firestore.rules`) re-enables direct client batch writes and re-opens the rate-limit and App Check bypass. It is an exceptional, owner-authorized debugging procedure valid ONLY in `flushcrowd-staging`.
+> **Under no circumstances shall direct client writes ever be described or used as a production rollback fallback.** Production operates exclusively through the callable function backend. In production, any incident is resolved by Cloud Run revision rollback (R.2) or client submission suspension (R.1).
 
 ---
 
@@ -297,13 +330,14 @@ If `submitRestroom` exhibits severe regression or error spikes:
 
 | Checkpoint | Requirement | Status |
 | :--- | :--- | :--- |
-| **Backend Discovery** | `firebase.json` codebase & predeploy configured | Verified |
+| **Backend Discovery** | `firebase.json` codebase, predeploy & `.env.flushcrowd-staging` | Verified |
 | **Region Parity** | `us-central1` explicit in backend & client | Verified |
-| **Project Guard** | `getAppConfig()` verifies `flushcrowd-staging` | Verified & Tested |
+| **Project Guard** | `getAppConfig()` fail-closed on missing/mismatched identity | Verified & Tested |
 | **App Check Sync** | Contradiction resolved via debug-token plan | Documented |
 | **Rules Candidate** | `firestore.production.rules` closes direct writes | Authored & Validated |
-| **Rules Testing** | 6 candidate scenarios in `rules_tests` | 55/55 PASS |
-| **Functions Testing** | 21 callable scenarios in `functions/test` | 21/21 PASS |
-| **Physical QA Runbook** | Checklists for SM-G998B & iPhone 12 Pro Max | Documented |
-| **Rollout / Rollback** | Step-by-step gates and rollback commands | Documented |
+| **Cutover Configuration** | `firebase.cutover.json` deterministic selection | Verified & Tested |
+| **Rules Testing** | 61 scenarios in `rules_tests` (49 staging + 6 cutover + 6 config) | 61/61 PASS |
+| **Functions Testing** | 25 callable & preflight scenarios in `functions/test` | 25/25 PASS |
+| **Physical QA Runbook** | Checklists for SM-G998B & iPhone 12 Pro Max with test-day OS recording | Documented |
+| **Rollout / Rollback** | Step-by-step gates, explicit sequencing & production non-bypass invariants | Documented |
 | **Live Gate** | No live deployment or merge without human approval | LOCKED |

@@ -10,7 +10,7 @@
 - **Current milestone:** Milestone P2.6 Final QA & Security Cutover Preparation — COMPLETED & VALIDATED
 - **Current branch:** `phase-2/p2.6-final-qa-security-cutover`
 - **Current PR:** PR #16 (https://github.com/mrdzyn/flushcrowd/pull/16)
-- **Latest commit:** `9ea0fdce6a9ff7d6bb8b369e1ef34c6e357e29c2`
+- **Latest commit:** `e34067436b495df12344df0499866fe251d46b18`
 - **Base:** `main` at `b1c54f7ad8587ddac041401889f159fd5baf8920` (merge of PR #15)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [COMPLETED & VALIDATED].
 
@@ -18,25 +18,26 @@
 
 Prepare Phase 2 for final physical-device acceptance and a separately approved staged Firebase security cutover (**PREPARATION ONLY** — zero live deployments, rules activations, production enablements, or unauthorized PR merges):
 
-- **Task 1 — Cloud Functions V2 Deployment Readiness:**
-  * Prepared documented deployment configuration in `docs/10-deployment-readiness-and-cutover-runbook.md`.
-  * Verified explicit region targeting (`us-central1`) across backend (`onCall`, `setGlobalOptions`) and Flutter client (`AppConstants.defaultCloudFunctionsRegion`).
-  * Updated `firebase.json` with `functions` codebase declaration, ignore rules, predeploy hooks, and emulator ports.
-  * Enhanced `functions/src/config.ts` with explicit live runtime project ID validation (`flushcrowd-staging`).
-  * Resolved App Check contradiction: clarified that Firestore monitoring mode in staging applies project-wide to Firestore reads, while backend `submitRestroom` callable strictly enforces App Check; physical test devices register mobile debug tokens in Firebase Console to satisfy verification without weakening security.
-  * Documented Blaze billing prerequisite, Google Artifact Registry storage charges (~$0.05–$0.20/mo), and Google Cloud Billing budget alerts ($25/mo with 50%, 90%, 100% thresholds).
-- **Task 2 — Security Rules Cutover Candidate & Emulator Verification:**
-  * Authored and version-controlled `firestore.production.rules` via `firestore-rules-author` subagent.
-  * Production candidate strictly denies direct client SDK `create`, `update`, and `delete` against `/restrooms` and `/contributions`, while keeping `/contributionRateLimits` strictly private to the Admin SDK.
-  * Created emulator test suite in `rules_tests/test/production_rules_cutover.test.js` validating all 6 required cutover scenarios (direct restroom create rejection, direct contribution create rejection, batch bypass rejection, Admin SDK success, public discovery reads preservation, and contributor privacy preservation). All 55 rules tests pass (49 staging + 6 production cutover).
-  * Preserved active staging rules `firestore.rules` completely untouched for continued local/staging direct-write testing.
-- **Task 3 — Physical Device QA Acceptance Runbook:**
+- **Task 1 — Cloud Functions V2 Deployment Readiness (Remediated per PR #16 Audit):**
+  * Provisioned explicit, persistent, non-secret staging environment configuration in `functions/.env.flushcrowd-staging` declaring `APP_ENV=staging`, automatically loaded by Firebase CLI and deployed to Cloud Run.
+  * Added staging discovery smoke test `npm run smoke:staging` verifying environment loading prior to deployment.
+  * Hardened `functions/src/config.ts` with strictly fail-closed project identity validation: rejects missing `APP_ENV`, missing project identity, mismatched project identity, attempts to disable App Check in staging/production, and production crossover to staging.
+  * Added unit test suite in `functions/test/app_check_init.test.ts` verifying all negative preflight conditions (9/9 passing).
+  * Documented deployment readiness, explicit region targeting (`us-central1`), Blaze billing prerequisite, and GCP billing budget alerts ($25/mo).
+- **Task 2 — Security Rules Cutover Candidate & Deterministic Configuration (Remediated per PR #16 Audit):**
+  * Created dedicated, version-controlled `firebase.cutover.json` specifying `"rules": "firestore.production.rules"` for explicit cutover deployment (`firebase deploy --config firebase.cutover.json --project flushcrowd-staging --only firestore:rules`).
+  * Preserved default `firebase.json` pointing to `firestore.rules` for continued open staging direct-write operations.
+  * Authored automated configuration test suite in `rules_tests/test/firebase_config.test.js` validating rule file targets and configuration parity (61/61 total rules tests passing: 49 staging + 6 cutover + 6 config).
+  * Documented preflight verification, post-deploy direct-write rejection checks, and abort criteria in `docs/10-deployment-readiness-and-cutover-runbook.md`.
+- **Task 3 — Physical Device QA Acceptance Runbook (Remediated per PR #16 Audit):**
   * Prepared exhaustive physical-device test checklists in `docs/10-deployment-readiness-and-cutover-runbook.md` for Samsung SM-G998B (Android) and iPhone 12 Pro Max (iOS).
-  * Distinguishes Category A (immediately executable on local/staging builds: TalkBack/VoiceOver, 200% dynamic type scaling, duplicate warning advisory, draft recovery) from Category B (requiring approved deployed staging callable: App Check debug token registration, callable submissions, 3/10m burst limit, 24h limit, idempotent retries, authoritative map refresh).
-- **Task 4 — Staged Rollout and Rollback Plan:**
-  * Documented complete 5-stage rollout progression: staging prerequisites, separate human approval gate for callable deployment, mobile physical device validation with `USE_CALLABLE_SUBMISSION=true`, separate human approval gate for staging rules lockdown, and production gate.
-  * Documented 3 granular rollback procedures: R1 (mobile client revert), R2 (security rules revert to `firestore.rules`), and R3 (Cloud Function deletion/traffic rollback).
-  * Kept the production contribution gate strictly closed.
+  * Added operational instructions for QA testers to record exact OS, One UI, and iOS version metadata on testing day via device Settings rather than assuming static versions.
+  * Clearly partitions Category A (immediate local/staging tests) from Category B (post-callable tests).
+- **Task 4 — Staged Rollout and Safe Rollback Sequencing (Remediated per PR #16 Audit):**
+  * Established safe rollback hierarchy: R.1 (client draft preservation & submission suspension) and R.2 (Cloud Run callable revision rollback) as primary defenses.
+  * Explicitly labeled restoring permissive rules via R.3 as an exceptional, staging-only, owner-authorized action.
+  * Strictly prohibited re-enabling direct client writes as a production fallback under any circumstances.
+  * Kept production contribution gate strictly closed.
 
 The active specifications are:
 
@@ -387,19 +388,20 @@ Milestone P2.6 Final QA & Security Cutover Preparation exact-head validation:
 - `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
 - `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (25/25 a11y tests passed across 320, 375, 390px viewports at 200% scaling)
 - Functions package entrypoint smoke test: `npm --prefix functions run smoke:entrypoint` — PASS
+- Functions staging discovery smoke test: `npm --prefix functions run smoke:staging` — PASS (proves persistent `.env.flushcrowd-staging` loading)
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
-- Functions isolated App Check test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (5/5 tests passed, including staging runtime project ID check)
-- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (55/55 tests passed: 49 staging + 6 production cutover)
-- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (21/21 tests passed)
+- Functions isolated App Check and fail-closed preflight test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (9/9 tests passed: missing/mismatched project identity, missing APP_ENV, App Check disable rejection, production guards)
+- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (61/61 tests passed: 49 staging + 6 production cutover + 6 configuration selection checks)
+- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (25/25 tests passed: 9 preflight + 16 rate-limiting scenarios)
 - Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 19.5s)
 - iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 25.8s)
 - Physical device VoiceOver / TalkBack QA — NOT RUN (pending physical device QA by human owner)
-- `git diff --check` — PASS
+- `git diff --check` — PASS (0 errors)
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Submit PR `phase-2/p2.6-final-qa-security-cutover` against `main` for independent audit and human owner review.
+1. Push PR #16 audit remediation commit to `phase-2/p2.6-final-qa-security-cutover` for independent re-audit.
 2. Human owner reviews deployment readiness configuration and approves GCP billing budget alerts.
 3. Human owner executes physical device acceptance testing on Samsung SM-G998B and iPhone 12 Pro Max per `docs/10-deployment-readiness-and-cutover-runbook.md`.
 4. Hold live Cloud Functions deployment and rules activation until explicit staging deployment approval gate is reached.
