@@ -52,6 +52,7 @@ app.*.map.json
 # Environment, secrets, and credentials
 .env*
 !.env.example
+!functions/.env.flushcrowd-staging
 *.key
 *.keystore
 *.jks
