@@ -164,6 +164,28 @@ These tests validate UI/UX, accessibility, duplicate detection, and draft preser
 4. Tap `"Resume"`: verify all previously entered fields and coordinates are restored without data loss.
 5. Dismiss or navigate away; tap Add Restroom again: verify option to resume draft or discard.
 
+#### Category A Physical QA Execution Evidence (Recorded October 18, 2026)
+
+- **Execution Date:** October 18, 2026
+- **Test Build Architecture:** Non-callable development QA path (`USE_CALLABLE_SUBMISSION=false`)
+- **Evaluation Status:** 8/8 HUMAN-REPORTED PASS
+- **Target Devices:**
+  * **Device 1:** Samsung Galaxy S21 Ultra 5G (`SM-G998B`) — OS Version: Pending confirmation
+  * **Device 2:** iPhone 12 Pro Max (`A2411`) — iOS Version: Pending confirmation
+
+| Test ID | Test Description | Samsung SM-G998B | iPhone 12 Pro Max | Evaluated Behavior & Observations |
+| :--- | :--- | :--- | :--- | :--- |
+| **Test A.1** | TalkBack / VoiceOver Semantic Screen-Reader Audit | **PASS** (Human-Reported) | **PASS** (Human-Reported) | Screen-reader announces location pinpoint banner, Confirm Pin, Recenter, Back, text inputs, Access Type dropdown, and tri-state chips. Interactive targets satisfy min 48×48 dp. |
+| **Test A.2** | 200% System Font & Dynamic Type Scaling Stability | **PASS** (Human-Reported) | **PASS** (Human-Reported) | Multiline instruction banner, validation error summary, and duplicate warning sheet render cleanly with zero `RenderFlex` overflows at 200% text scale. |
+| **Test A.3** | Duplicate Detection Advisory & Dismissal UX | **PASS** (Human-Reported) | **PASS** (Human-Reported) | Coordinates within 200m trigger `DuplicateWarningSheet`; "View Existing Restroom" dismisses and centers discovery map; "No, It's a Different Restroom" resumes submission flow. |
+| **Test A.4** | Draft Preservation & In-App "Resume" Restoration | **PASS** (Human-Reported) | **PASS** (Human-Reported) | Back navigation displays persistent SnackBar `"Restroom draft saved."` with `"Resume"` action; tapping `"Resume"` cleanly restores all entered form values and coordinates without data loss. |
+
+> [!NOTE]
+> - Category A tests were executed on the non-callable development QA path.
+> - Firebase callable submissions (`USE_CALLABLE_SUBMISSION=true`), App Check debug token exchanges, and server-side rate limits (Category B tests) remain **PENDING** until the Cloud Function is deployed to `flushcrowd-staging`.
+> - Device OS versions remain marked pending confirmation per operating requirements.
+> - Forced-app-termination and OS-level restart persistence were not evaluated in this round and are not claimed.
+
 ---
 
 ### Category B: Post-Callable Deployment Acceptance Tests (`USE_CALLABLE_SUBMISSION=true`)
@@ -357,11 +379,48 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 | **Backend Discovery** | `firebase.json` codebase, predeploy & `.env.flushcrowd-staging` | Verified |
 | **Region Parity** | `us-central1` explicit in backend & client | Verified |
 | **Project Guard** | `getAppConfig()` fail-closed on missing/mismatched identity | Verified & Tested |
-| **App Check Sync** | Contradiction resolved via debug-token plan | Documented |
+| **App Check Sync** | Contradiction resolved via debug-token plan | Documented & Implemented |
 | **Rules Candidate** | `firestore.production.rules` closes direct writes | Authored & Validated |
 | **Cutover Configuration** | `firebase.cutover.json` deterministic selection | Verified & Tested |
 | **Rules Testing** | 61 scenarios in `rules_tests` (49 staging + 6 cutover + 6 config) | 61/61 PASS |
 | **Functions Testing** | 25 callable & preflight scenarios in `functions/test` | 25/25 PASS |
-| **Physical QA Runbook** | Checklists for SM-G998B & iPhone 12 Pro Max with test-day OS recording | Documented |
+| **Physical QA Runbook** | Checklists for SM-G998B & iPhone 12 Pro Max | 8/8 Category A Human PASS Recorded |
+| **Staging Preflight** | 12-point read-only audit against `flushcrowd-staging` | 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING REGISTRATION |
 | **Rollout / Rollback** | Step-by-step gates, explicit sequencing & production non-bypass invariants | Documented |
 | **Live Gate** | No live deployment or merge without human approval | LOCKED |
+
+---
+
+## 7. Staging Readiness Preflight Assessment (Read-Only) & Gate Report
+
+Conducted on October 18, 2026 using read-only CLI operations and existing environment configuration against project `flushcrowd-staging`. Zero live deployments, zero security rules activations, and zero secrets committed or exposed.
+
+### 7.1 Preflight Assessment Matrix (12 Audit Vectors)
+
+| # | Inspection Item | Scope / Command | Result | Evidence & Findings |
+| :--- | :--- | :--- | :--- | :--- |
+| **1** | Firebase Project ID | CLI (`firebase projects:list`) | **PASS** | `flushcrowd-staging` (Project Number: `925391896465`). |
+| **2** | Blaze Billing Plan Status | GCP CLI (`gcloud billing projects describe`) | **PASS** | `billingEnabled: true`, linked to billing account `billingAccounts/017ED3-AC57E0-96AF50`. |
+| **3** | Billing Budget & Alert Thresholds | GCP Cloud Billing Console | **NOT VERIFIED** | `billingbudgets.googleapis.com` API requires quota project and admin permissions; owner must confirm $25.00/mo budget and 50%/90%/100% email alerts in GCP Console. |
+| **4** | Firebase Anonymous Auth | CLI (`firebase auth:export`) | **PASS** | Enabled and operational on `flushcrowd-staging` (3 active anonymous accounts confirmed, 0 plaintext secrets stored). |
+| **5** | Cloud Firestore Staging Readiness | GCP CLI (`gcloud firestore databases describe`) | **PASS** | `projects/flushcrowd-staging/databases/(default)` active in `FIRESTORE_NATIVE` mode, Standard edition (`asia-southeast1`). |
+| **6** | Mobile Firebase Configuration Consistency | Mobile Config Check (`google-services.json` / `GoogleService-Info.plist`) | **PASS** | Android: `flushcrowd-staging` / `com.flushcrowd.flushcrowd` (App ID `1:925391896465:android:bcaddc3c452836bae82430`); iOS: `flushcrowd-staging` / `com.flushcrowd.flushcrowd` (App ID `1:925391896465:ios:debbd6ca5515e5f1e82430`). 100% match with `firebase apps:list`. |
+| **7** | App Check Debug-Provider Readiness | Client Service Code & Runbook | **PASS (Implemented)** | `FirebaseAppCheckService` activates `AndroidDebugProvider` and `AppleDebugProvider` in staging; token registration procedure documented in §2.4 and §4 (Test B.1). Debug token registration pending on test day. |
+| **8** | Staging Functions Environment File | File Inspection (`functions/.env.flushcrowd-staging`) | **PASS** | Declares non-secret `APP_ENV=staging`, auto-loaded by Firebase CLI for `flushcrowd-staging` and deployed to Cloud Run container runtime. |
+| **9** | Functions TypeScript Build & Smoke Checks | Smoke Scripts (`npm run build && smoke:entrypoint && smoke:staging`) | **PASS** | TypeScript compilation: 0 errors; package entrypoint smoke: PASS; staging discovery smoke: PASS (`APP_ENV=staging` confirmed). |
+| **10** | Rules & Functions Emulator Suites | Emulators (`rules_tests run test:emulators` & `functions run test:emulators`) | **PASS** | Rules emulator: 61/61 PASS (49 staging rules + 6 cutover rules + 6 config checks); Functions emulator: 25/25 PASS (9 App Check/env preflight + 16 rate-limiting scenarios). |
+| **11** | Deployment Target & Region | Configuration & Code Inspection | **PASS** | Target: `--project flushcrowd-staging --only functions:submitRestroom`. Region: `us-central1` across `functions/src/index.ts`, `functions/src/submit_restroom.ts`, and Flutter client `app_constants.dart`. |
+| **12** | Explicit Rollback & Abort Procedures | Runbook Specification (§5 Stage 5) | **PASS** | R.1 (client draft preservation & build recovery), R.2 (Cloud Run revision rollback with verified service/revision discovery), R.3 (staging-only emergency rules rollback), and Stage 4 abort criteria documented. |
+
+**Assessment Matrix Outcome:** 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING TESTING-DAY ACTION.
+
+---
+
+### 7.2 Gate 2 Prerequisite Checklist (Owner Actions Prior to Staging Deployment)
+
+Before executing the live staging deployment command (`firebase deploy --project flushcrowd-staging --only functions:submitRestroom`), the human owner must:
+
+1. [ ] **Confirm Billing Budget in GCP Console:** Log in to Google Cloud Console for billing account `017ED3-AC57E0-96AF50` and confirm a $25/mo budget with alert notifications configured at 50% ($12.50), 90% ($22.50), and 100% ($25.00).
+2. [ ] **Confirm Device OS Versions on Testing Day:** Record actual Android OS & One UI version for Samsung SM-G998B and iOS version for iPhone 12 Pro Max via device Settings.
+3. [ ] **Register App Check Debug Tokens:** Once the callable test build is launched on the devices, extract debug tokens from device logs and register them under **App Check -> Apps -> Manage debug tokens** in `flushcrowd-staging`.
+4. [ ] **Grant Explicit Gate 2 Signoff:** Provide explicit written authorization to deploy `submitRestroom` to `flushcrowd-staging`.
