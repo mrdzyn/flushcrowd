@@ -10,7 +10,7 @@
 - **Current milestone:** Milestone P2.6 Physical QA Acceptance & Staging Preflight — READY FOR AUDIT
 - **Current branch:** `phase-2/p2.6-physical-device-qa`
 - **Current PR:** PR #17 (https://github.com/mrdzyn/flushcrowd/pull/17)
-- **Latest commit:** `b77f58f8b8a531d054e56598c1990c6499a0999d`
+- **Latest commit:** `b35f509f8519a04bfe346ddcc0fb2ecba5611f0d`
 - **Base:** `main` at `d6e3f53b7d9d317dc16af8bf8088444d12d0d033` (squash merge of PR #16)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [RECORDED & VALIDATED].
 
@@ -28,9 +28,9 @@ Record the owner's completed physical-device Category A QA acceptance results an
   * Recorded OS versions as pending confirmation on test day; zero unsupported restart-persistence claims made.
 - **Task 2 — Staging Preflight Read-Only Audit:**
   * Executed comprehensive 12-point read-only preflight assessment against project `flushcrowd-staging`.
-  * Verified 10 points as PASS: Firebase Project ID (`flushcrowd-staging`), Blaze billing active (`billingEnabled: true`), Firebase Anonymous Auth active (confirmed with 3 anonymous user accounts), Cloud Firestore `(default)` database active, Android/iOS Firebase config parity, App Check debug-provider implementation & procedure, staging environment file (`APP_ENV=staging`), Functions TypeScript build & discovery smokes, emulator suites (61/61 rules + 25/25 functions), deployment target (`us-central1`), and explicit rollback/abort procedures.
+  * Verified 10 points as PASS: Firebase Project ID (`flushcrowd-staging`), Blaze billing active (`billingEnabled: true`), Firebase Anonymous Auth active (confirmed via authenticated Identity Toolkit API `signIn.anonymous.enabled: true`), Cloud Firestore `(default)` database active, Android/iOS Firebase config parity, staging environment file (`APP_ENV=staging`), Functions TypeScript build & discovery smokes, emulator suites (61/61 rules + 25/25 functions), deployment target (`us-central1`), and explicit rollback/abort procedures.
   * Identified 1 NOT VERIFIED: Monthly billing budget and alert thresholds ($25.00/mo budget & 50%/90%/100% email alerts) require owner verification in GCP Cloud Billing Console due to `billingbudgets.googleapis.com` API permission constraints.
-  * Identified 1 PENDING TESTING-DAY ACTION: Mobile App Check debug tokens must be extracted and registered in Firebase Console upon launching callable staging test builds.
+  * Identified 1 PENDING: Mobile App Check debug tokens must be extracted and registered in Firebase Console upon launching callable staging test builds on physical devices.
 - **Task 3 — Gate 2 Prerequisite Checklist & Next Actions:**
   * Documented exact owner actions needed before approving staging `submitRestroom` deployment in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
 
@@ -368,20 +368,20 @@ Owner-confirmed staging infrastructure state:
 ## Current owner actions / external dependencies
 
 1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
-2. Configure GCP billing budget alerts for Cloud Functions V2 / Artifact Registry.
-3. Production Android signing remains a later release-readiness action.
-4. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
-5. Deploy `submitRestroom` Cloud Function to live staging environment prior to flipping `useCallableSubmission: true` in staging.
-5. Human owner confirms $25/mo GCP billing budget and alert thresholds in Cloud Console.
-6. Obtain Gate 2 written approval to deploy `submitRestroom` to `flushcrowd-staging`.
-7. Execute Category B physical device testing with App Check debug token registration and callable submission.
+2. Production Android signing remains a later release-readiness action.
+3. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
+4. Confirm $25/mo GCP billing budget and alert thresholds (50%, 90%, 100%) in Google Cloud Console for project `flushcrowd-staging`.
+5. Confirm Anonymous Authentication provider is active in Firebase Console > Authentication > Sign-in method.
+6. Register App Check debug tokens in Firebase Console upon launching Category B physical device test builds.
+7. Grant Gate 2 written approval to deploy `submitRestroom` Cloud Function to `flushcrowd-staging`.
+8. Execute Category B physical device testing with callable submission (`USE_CALLABLE_SUBMISSION=true`).
 
 ## Current validation status
 
 Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
 
 - Physical device Category A QA (October 18, 2026) — PASS (8/8 HUMAN-REPORTED PASS across Samsung SM-G998B and iPhone 12 Pro Max on non-callable development QA path).
-- Staging Preflight Read-Only Audit (October 18, 2026) — 10 PASS / 0 FAIL / 1 NOT VERIFIED (GCP billing budget & alert thresholds) / 1 PENDING TESTING-DAY ACTION (App Check debug token registration).
+- Staging Preflight Read-Only Audit (October 18, 2026) — 10 PASS / 0 FAIL / 1 NOT VERIFIED (GCP billing budget & alert thresholds) / 1 PENDING (App Check debug token registration).
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
