@@ -9,8 +9,8 @@
 - **Current phase:** Phase 2 Add Restroom
 - **Current milestone:** Milestone P2.6 Physical QA Acceptance & Staging Preflight — READY FOR AUDIT
 - **Current branch:** `phase-2/p2.6-physical-device-qa`
-- **Current PR:** Pending
-- **Latest commit:** `c472c97176d93c64af306989d59297fe24ab277a`
+- **Current PR:** PR #17 (https://github.com/mrdzyn/flushcrowd/pull/17)
+- **Latest commit:** `b77f58f8b8a531d054e56598c1990c6499a0999d`
 - **Base:** `main` at `d6e3f53b7d9d317dc16af8bf8088444d12d0d033` (squash merge of PR #16)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [RECORDED & VALIDATED].
 
