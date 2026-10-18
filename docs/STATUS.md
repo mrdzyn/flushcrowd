@@ -7,38 +7,32 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6 Final QA & Security Cutover Preparation — COMPLETED & VALIDATED
-- **Current branch:** `phase-2/p2.6-final-qa-security-cutover`
-- **Current PR:** PR #16 (https://github.com/mrdzyn/flushcrowd/pull/16)
-- **Latest commit:** `9b942b78edbbe198a273fe8382f1c41ff1cce225`
-- **Base:** `main` at `b1c54f7ad8587ddac041401889f159fd5baf8920` (merge of PR #15)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [COMPLETED & VALIDATED].
+- **Current milestone:** Milestone P2.6 Physical QA Acceptance & Staging Preflight — READY FOR AUDIT
+- **Current branch:** `phase-2/p2.6-physical-device-qa`
+- **Current PR:** PR #17 (https://github.com/mrdzyn/flushcrowd/pull/17)
+- **Latest commit:** `b35f509f8519a04bfe346ddcc0fb2ecba5611f0d`
+- **Base:** `main` at `d6e3f53b7d9d317dc16af8bf8088444d12d0d033` (squash merge of PR #16)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [RECORDED & VALIDATED].
 
 ## Current objective
 
-Prepare Phase 2 for final physical-device acceptance and a separately approved staged Firebase security cutover (**PREPARATION ONLY** — zero live deployments, rules activations, production enablements, or unauthorized PR merges):
+Record the owner's completed physical-device Category A QA acceptance results and independently assess staging readiness without deploying services (**PREPARATION ONLY** — zero live deployments, rules activations, production enablements, or unauthorized PR merges):
 
-- **Task 1 — Cloud Functions V2 Deployment Readiness (Remediated per PR #16 Audit):**
-  * Provisioned explicit, persistent, non-secret staging environment configuration in `functions/.env.flushcrowd-staging` declaring `APP_ENV=staging`, automatically loaded by Firebase CLI and deployed to Cloud Run.
-  * Added staging discovery smoke test `npm run smoke:staging` verifying environment loading prior to deployment.
-  * Hardened `functions/src/config.ts` with strictly fail-closed project identity validation: rejects missing `APP_ENV`, missing project identity, mismatched project identity, attempts to disable App Check in staging/production, and production crossover to staging.
-  * Added unit test suite in `functions/test/app_check_init.test.ts` verifying all negative preflight conditions (9/9 passing).
-  * Documented deployment readiness, explicit region targeting (`us-central1`), Blaze billing prerequisite, and GCP billing budget alerts ($25/mo).
-- **Task 2 — Security Rules Cutover Candidate & Deterministic Configuration (Remediated per PR #16 Audit):**
-  * Created dedicated, version-controlled `firebase.cutover.json` specifying `"rules": "firestore.production.rules"` for explicit cutover deployment (`firebase deploy --config firebase.cutover.json --project flushcrowd-staging --only firestore:rules`).
-  * Preserved default `firebase.json` pointing to `firestore.rules` for continued open staging direct-write operations.
-  * Authored automated configuration test suite in `rules_tests/test/firebase_config.test.js` validating rule file targets and configuration parity (61/61 total rules tests passing: 49 staging + 6 cutover + 6 config).
-  * Documented preflight verification, post-deploy direct-write rejection checks, and abort criteria in `docs/10-deployment-readiness-and-cutover-runbook.md`.
-- **Task 3 — Physical Device QA Acceptance Runbook (Remediated per PR #16 Audit):**
-  * Prepared exhaustive physical-device test checklists in `docs/10-deployment-readiness-and-cutover-runbook.md` for Samsung SM-G998B (Android) and iPhone 12 Pro Max (iOS).
-  * Added operational instructions for QA testers to record exact OS, One UI, and iOS version metadata on testing day via device Settings rather than assuming static versions.
-  * Clearly partitions Category A (immediate local/staging tests) from Category B (post-callable tests).
-- **Task 4 — Staged Rollout and Safe Rollback Sequencing (Remediated per PR #16 Audit):**
-  * Established safe rollback hierarchy: R.1 (local draft preservation & executable staging build gating without speculative toggles) and R.2 (Cloud Run revision rollback with verified service/revision discovery) as primary defenses.
-  * Clearly distinguished existing compile-time/runtime capabilities from future non-MVP remote kill-switch enhancements.
-  * Explicitly labeled restoring permissive rules via R.3 as an exceptional, staging-only, owner-authorized action.
-  * Strictly prohibited re-enabling direct client writes as a production fallback under any circumstances.
-  * Kept production contribution gate strictly closed.
+- **Task 1 — Record Human QA (Completed October 18, 2026):**
+  * Recorded 8/8 HUMAN-REPORTED PASS across Samsung Galaxy S21 Ultra (`SM-G998B`) and iPhone 12 Pro Max (`A2411`) for Category A tests:
+    - Test A.1 (TalkBack / VoiceOver semantic screen-reader audit: announcements, hints, headers, min 48×48 dp targets) — PASS.
+    - Test A.2 (200% system font & dynamic type scaling stability: zero `RenderFlex` overflows across multiline banner, error summary, duplicate warning sheet) — PASS.
+    - Test A.3 (Duplicate detection advisory & dismissal UX: candidate presentation, "View Existing" map recentering, dismissal resumption) — PASS.
+    - Test A.4 (Draft preservation & in-app "Resume" restoration: non-blocking SnackBar, intact recovery of coordinates and form fields) — PASS.
+  * Verified that Category A tests executed on the non-callable development QA path (`USE_CALLABLE_SUBMISSION=false`). Category B tests (Firebase callable, App Check tokens, and server-side rate limits) remain pending Cloud Function deployment.
+  * Recorded OS versions as pending confirmation on test day; zero unsupported restart-persistence claims made.
+- **Task 2 — Staging Preflight Read-Only Audit:**
+  * Executed comprehensive 12-point read-only preflight assessment against project `flushcrowd-staging`.
+  * Verified 10 points as PASS: Firebase Project ID (`flushcrowd-staging`), Blaze billing active (`billingEnabled: true`), Firebase Anonymous Auth active (confirmed via authenticated Identity Toolkit API `signIn.anonymous.enabled: true`), Cloud Firestore `(default)` database active, Android/iOS Firebase config parity, staging environment file (`APP_ENV=staging`), Functions TypeScript build & discovery smokes, emulator suites (61/61 rules + 25/25 functions), deployment target (`us-central1`), and explicit rollback/abort procedures.
+  * Identified 1 NOT VERIFIED: Monthly billing budget and alert thresholds ($25.00/mo budget & 50%/90%/100% email alerts) require owner verification in GCP Cloud Billing Console due to `billingbudgets.googleapis.com` API permission constraints.
+  * Identified 1 PENDING: Mobile App Check debug tokens must be extracted and registered in Firebase Console upon launching callable staging test builds on physical devices.
+- **Task 3 — Gate 2 Prerequisite Checklist & Next Actions:**
+  * Documented exact owner actions needed before approving staging `submitRestroom` deployment in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
 
 The active specifications are:
 
@@ -374,16 +368,20 @@ Owner-confirmed staging infrastructure state:
 ## Current owner actions / external dependencies
 
 1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
-2. Configure GCP billing budget alerts for Cloud Functions V2 / Artifact Registry.
-3. Production Android signing remains a later release-readiness action.
-4. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
-5. Deploy `submitRestroom` Cloud Function to live staging environment prior to flipping `useCallableSubmission: true` in staging.
-6. Conduct physical device VoiceOver (iOS) and TalkBack (Android) qualitative testing of Phase 2 contribution workflow.
+2. Production Android signing remains a later release-readiness action.
+3. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
+4. Confirm $25/mo GCP billing budget and alert thresholds (50%, 90%, 100%) in Google Cloud Console for project `flushcrowd-staging`.
+5. Confirm Anonymous Authentication provider is active in Firebase Console > Authentication > Sign-in method.
+6. Register App Check debug tokens in Firebase Console upon launching Category B physical device test builds.
+7. Grant Gate 2 written approval to deploy `submitRestroom` Cloud Function to `flushcrowd-staging`.
+8. Execute Category B physical device testing with callable submission (`USE_CALLABLE_SUBMISSION=true`).
 
 ## Current validation status
 
-Milestone P2.6 Final QA & Security Cutover Preparation exact-head validation:
+Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
 
+- Physical device Category A QA (October 18, 2026) — PASS (8/8 HUMAN-REPORTED PASS across Samsung SM-G998B and iPhone 12 Pro Max on non-callable development QA path).
+- Staging Preflight Read-Only Audit (October 18, 2026) — 10 PASS / 0 FAIL / 1 NOT VERIFIED (GCP billing budget & alert thresholds) / 1 PENDING (App Check debug token registration).
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
@@ -396,16 +394,15 @@ Milestone P2.6 Final QA & Security Cutover Preparation exact-head validation:
 - Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (25/25 tests passed: 9 preflight + 16 rate-limiting scenarios)
 - Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 19.5s)
 - iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 25.8s)
-- Physical device VoiceOver / TalkBack QA — NOT RUN (pending physical device QA by human owner)
 - `git diff --check` — PASS (0 errors)
-- Secrets scan — PASS (0 secrets or private keys in git tree)
+- Secrets scan — PASS (0 secrets or private keys in git tree; test files safely deleted)
 
 ## Next recommended action
 
-1. Push PR #16 audit remediation commit to `phase-2/p2.6-final-qa-security-cutover` for independent re-audit.
-2. Human owner reviews deployment readiness configuration and approves GCP billing budget alerts.
-3. Human owner executes physical device acceptance testing on Samsung SM-G998B and iPhone 12 Pro Max per `docs/10-deployment-readiness-and-cutover-runbook.md`.
-4. Hold live Cloud Functions deployment and rules activation until explicit staging deployment approval gate is reached.
+1. Human owner reviews Gate 2 prerequisite checklist in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
+2. Human owner verifies GCP billing budget ($25/mo) and alert notifications (50%, 90%, 100%) in Google Cloud Console.
+3. Submit PR for Milestone P2.6 Physical QA Acceptance & Staging Preflight for independent audit.
+4. Hold live Cloud Functions deployment and rules activation until Gate 2 approval is granted.
 
 ## Handoff template
 
