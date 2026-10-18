@@ -7,12 +7,12 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6 Gate 2 — Staging Callable Deployment Approval (PENDING)
-- **Current branch:** `docs/p2.6-billing-alerts-owner-confirmed` (documentation-only)
-- **Last merged PR:** #17 (https://github.com/mrdzyn/flushcrowd/pull/17) — Physical QA & Staging Preflight
-- **Main baseline:** `1f9aea60968fe4ef4ef56a8fe5186c4734f48b3c` (squash merge of PR #17)
-- **Active documentation PR:** #18 (https://github.com/mrdzyn/flushcrowd/pull/18) — owner billing/alerts confirmation (open; not merged)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [MERGED — PR #17]; Google Cloud Billing & Alerts [OWNER-CONFIRMED CONFIGURED — 2026-10-18].
+- **Current milestone:** Milestone P2.6 Gate 2 Manual CI Security Follow-up — COMPLETED (Documentation-Only)
+- **Current branch:** `phase-2/p2.6-gate-2-security-followup` (documentation-only)
+- **Last merged PR:** #18 (https://github.com/mrdzyn/flushcrowd/pull/18) — Google Cloud Billing & Alerts Owner Confirmation
+- **Main baseline:** `a9248193a38ab509e3e9a0eea4e1b5449db8715c` (squash merge of PR #18)
+- **Active documentation PR:** Gate 2 Manual CI Security Follow-up (branch: `phase-2/p2.6-gate-2-security-followup`)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [MERGED — PR #17]; Google Cloud Billing & Alerts [MERGED — PR #18]; Gate 2 Manual CI Security Follow-up [COMPLETED — 2026-10-18].
 
 ## Temporary CI operating mode (October–November 2026)
 
@@ -24,26 +24,25 @@
 
 ## Current objective
 
-Record the owner's October 18, 2026 confirmation that Google Cloud billing and alerts are already configured and advance documentation to the staging callable Gate 2 approval checkpoint (**DOCUMENTATION ONLY** — no live deployment, rules activation, production enablement or PR merge authorized):
+Reconcile the owner's October 18, 2026 manual CI execution, verify Node.js version parity (Finding 1), and complete dependency security advisory triage (Finding 2) for staging deployment approval (**DOCUMENTATION ONLY** — no live deployment, rules activation, production enablement or PR merge authorized):
 
-- **Task 1 — Record Human QA (Completed October 18, 2026):**
-  * Recorded 8/8 HUMAN-REPORTED PASS across Samsung Galaxy S21 Ultra (`SM-G998B`) and iPhone 12 Pro Max (`A2411`) for Category A tests:
-    - Test A.1 (TalkBack / VoiceOver semantic screen-reader audit: announcements, hints, headers, min 48×48 dp targets) — PASS.
-    - Test A.2 (200% system font & dynamic type scaling stability: zero `RenderFlex` overflows across multiline banner, error summary, duplicate warning sheet) — PASS.
-    - Test A.3 (Duplicate detection advisory & dismissal UX: candidate presentation, "View Existing" map recentering, dismissal resumption) — PASS.
-    - Test A.4 (Draft preservation & in-app "Resume" restoration: non-blocking SnackBar, intact recovery of coordinates and form fields) — PASS.
-  * Verified that Category A tests executed on the non-callable development QA path (`USE_CALLABLE_SUBMISSION=false`). Category B tests (Firebase callable, App Check tokens, and server-side rate limits) remain pending Cloud Function deployment.
-  * Recorded OS versions as pending confirmation on test day; zero unsupported restart-persistence claims made.
-- **Task 2 — Staging Preflight Read-Only Audit:**
-  * Executed comprehensive 12-point read-only preflight assessment against project `flushcrowd-staging`.
-  * Verified 10 points as PASS: Firebase Project ID (`flushcrowd-staging`), Blaze billing active (`billingEnabled: true`), Firebase Anonymous Auth active (confirmed via authenticated Identity Toolkit API `signIn.anonymous.enabled: true`), Cloud Firestore `(default)` database active, Android/iOS Firebase config parity, staging environment file (`APP_ENV=staging`), Functions TypeScript build & discovery smokes, emulator suites (61/61 rules + 25/25 functions), deployment target (`us-central1`), and explicit rollback/abort procedures.
-  * Budget/alerts previously NOT VERIFIED via API; **OWNER-CONFIRMED CONFIGURED on 2026-10-18**. The runbook target is a $25/month budget with 50%/90%/100% alerts; exact values and delivery recipients were not independently read from Cloud Billing. Do not label the console settings API-verified.
-  * Identified 1 PENDING: Mobile App Check debug tokens must be extracted and registered in Firebase Console upon launching callable staging test builds on physical devices.
-- **Task 3 — Gate 2 Prerequisite Checklist & Next Actions:**
-  * Billing and alert configuration marked owner-complete; App Check physical-device debug-token registration, final test-day metadata and separate staging deployment approval remain pending in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
+- **Finding 1 — Node.js Version Parity (Verified & Resolved):**
+  * Ambient Node.js 24.21.0 in initial manual CI produced a `superstatic@9.2.0` engine compatibility warning (`required: >=18.0.0 <=22.x`).
+  * Re-executed full test suites under canonical **Node.js 22.23.3** / **npm 10.9.9** matching `.github/workflows/ci.yml`.
+  * Verified **61/61 PASS** on Firestore Rules emulator and **25/25 PASS** on Functions emulator with **zero engine warnings**.
+- **Finding 2 — Dependency Security Advisory Triage (Classified & Resolved):**
+  * Evaluated npm audit reports across separate workspaces: 24 packages in `rules_tests/` and 29 packages in `functions/`. Never summed to avoid double-counting shared dev tools.
+  * Verified production runtime boundary (`npm --prefix functions audit --omit=dev`): **0 Critical** vulnerabilities exist in production runtime.
+  * Evaluated 2 High vulnerabilities in production (`node-forge@1.4.0` via `firebase-admin@12.7.0`): deep inspection confirms `node-forge` is imported only for private-key PEM parsing in `CertificateCredential`. Deployed Cloud Functions V2 runs under Application Default Credentials (`ComputeEngineCredential`), making `node-forge` **completely unreachable and unexploitable in production runtime**.
+  * Remediation requires major breaking upgrades (`firebase-admin@14.x`, `firebase-tools@15.x`). Findings are justified and deferred to future scheduled maintenance; no breaking `--force` fixes applied.
+- **Documentation & Readiness Handoff:**
+  * Authored canonical Gate 2 report in `docs/11-gate-2-manual-ci-evidence.md`.
+  * Updated `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2 checklist and index in `docs/README.md`.
+  * Clearly distinguished functional PASS (461 Flutter tests, 61 Rules emulator tests, 25 Functions emulator tests) from security advisory triage and testing-day operational App Check token registration.
 
 The active specifications are:
 
+- `docs/11-gate-2-manual-ci-evidence.md` (active Gate 2 manual CI verification and security triage report)
 - `docs/10-deployment-readiness-and-cutover-runbook.md` (active deployment readiness & QA runbook)
 - `docs/tasks/P2.6-hardening-rate-limit.md` (active P2.6 task specification)
 - `docs/03-privacy-security.md` (abuse-control release gate & contribution controls)
@@ -375,23 +374,28 @@ Owner-confirmed staging infrastructure state:
 
 ## Current owner actions / external dependencies
 
-1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
-2. Production Android signing remains a later release-readiness action.
-3. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
-4. Confirm Anonymous Authentication provider remains active in Firebase Console > Authentication > Sign-in method (secondary check; authenticated Identity Toolkit API already reported enabled).
-5. Register App Check debug tokens in Firebase Console upon launching Category B physical-device test builds; never commit tokens.
-6. Grant **separate Gate 2 written approval** before deploying `submitRestroom` to `flushcrowd-staging`.
-7. Execute Category B physical-device testing with callable submission (`USE_CALLABLE_SUBMISSION=true`) after approved deployment.
+1. Review and approve Gate 2 Manual CI Verification and Dependency Security Triage Report in [`docs/11-gate-2-manual-ci-evidence.md`](11-gate-2-manual-ci-evidence.md).
+2. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
+3. Production Android signing remains a later release-readiness action.
+4. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
+5. Confirm Anonymous Authentication provider remains active in Firebase Console > Authentication > Sign-in method (secondary check; authenticated Identity Toolkit API already reported enabled).
+6. Register App Check debug tokens in Firebase Console upon launching Category B physical-device test builds; never commit tokens.
+7. Grant **separate Gate 2 written approval** before deploying `submitRestroom` to `flushcrowd-staging`.
+8. Execute Category B physical-device testing with callable submission (`USE_CALLABLE_SUBMISSION=true`) after approved deployment.
 
-**Owner-completed external prerequisite (2026-10-18):** Google Cloud billing and budget alerts are configured. Budget target in the runbook: $25/month, alerts at 50%/90%/100%; exact configured values and delivery recipients were not independently read via the restricted Billing Budgets API.
+**Owner-completed external prerequisites (2026-10-18):**
+- Google Cloud billing and budget alerts are configured ($25/month budget target with 50%/90%/100% alerts; owner-confirmed October 18, 2026).
+- Node.js 22 parity and dependency security triage completed; 0 unmitigated production risks (`docs/11-gate-2-manual-ci-evidence.md`).
 
 ## Current validation status
 
-Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
+Milestone P2.6 Gate 2 Manual CI Security Follow-up validation:
 
 - Physical device Category A QA (October 18, 2026) — PASS (8/8 HUMAN-REPORTED PASS across Samsung SM-G998B and iPhone 12 Pro Max on non-callable development QA path).
-- Staging Preflight (October 18, 2026, updated after owner confirmation) — **10 previously verified PASS / 0 FAIL / 1 OWNER-CONFIRMED CONFIGURED** (Google Cloud budget and alerts; not independently API-verified) **/ 1 PENDING** (App Check debug-token registration).
-- `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
+- Staging Preflight Assessment (October 18, 2026) — **12 PASS / 1 OWNER-CONFIRMED CONFIGURED / 1 RESOLVED / 0 FAIL / 1 PENDING** (App Check debug-token registration on test day).
+- Finding 1 — Node.js Version Parity (Node.js 22.23.3 / npm 10.9.9) — **PASS** (`superstatic@9.2.0` engine warning completely eliminated; 100% test pass).
+- Finding 2 — Dependency Security Advisory Triage — **RESOLVED & CLASSIFIED** (0 production critical vulnerabilities; 2 production high vulnerabilities [`node-forge` / `firebase-admin`] unexploitable under ADC runtime; all dev/CLI advisories classified and deferred without breaking `--force` updates; see `docs/11-gate-2-manual-ci-evidence.md`).
+- `dart format --output=none --set-exit-if-changed lib test` — PASS (102 files checked, 0 changed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
 - `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (25/25 a11y tests passed across 320, 375, 390px viewports at 200% scaling)
@@ -399,8 +403,9 @@ Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
 - Functions staging discovery smoke test: `npm --prefix functions run smoke:staging` — PASS (proves persistent `.env.flushcrowd-staging` loading)
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
 - Functions isolated App Check and fail-closed preflight test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (9/9 tests passed: missing/mismatched project identity, missing APP_ENV, App Check disable rejection, production guards)
-- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (61/61 tests passed: 49 staging + 6 production cutover + 6 configuration selection checks)
-- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (25/25 tests passed: 9 preflight + 16 rate-limiting scenarios)
+- Deterministic Firebase configuration test: `node --test rules_tests/test/firebase_config.test.js` — PASS (6/6 tests passed)
+- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (61/61 tests passed under Node 22.23.3: 49 staging + 6 production cutover + 6 configuration selection checks; 0 engine warnings)
+- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (25/25 tests passed under Node 22.23.3: 9 preflight + 16 rate-limiting scenarios; 0 engine warnings)
 - Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 19.5s)
 - iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 25.8s)
 - `git diff --check` — PASS (0 errors)
@@ -408,10 +413,11 @@ Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
 
 ## Next recommended action
 
-1. Review the updated Gate 2 checklist in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2. Google Cloud billing/alerts are owner-confirmed configured; no repeat setup requested.
-2. Confirm physical-device OS versions and, at the controlled test stage, register App Check debug tokens securely.
-3. Obtain **separate explicit owner authorization** before deploying only `submitRestroom` to `flushcrowd-staging`.
-4. Execute Category B callable QA following the approved staging deployment; keep live Firestore Rules cutover and production contribution enablement behind distinct approvals.
+1. Human owner reviews the Gate 2 Manual CI Verification and Dependency Security Triage Report in [`docs/11-gate-2-manual-ci-evidence.md`](11-gate-2-manual-ci-evidence.md).
+2. Confirm physical-device OS versions (Samsung SM-G998B Android & iPhone 12 Pro Max iOS) on test day.
+3. At the controlled test stage, register App Check debug tokens in Firebase Console.
+4. Obtain **separate explicit owner authorization** before deploying only `submitRestroom` to `flushcrowd-staging`.
+5. Execute Category B callable QA following the approved staging deployment; keep live Firestore Rules cutover and production contribution enablement behind distinct approvals.
 
 ## Handoff template
 

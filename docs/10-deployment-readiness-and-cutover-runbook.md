@@ -412,7 +412,7 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 | **11** | Deployment Target & Region | Configuration & Code Inspection | **PASS** | Target: `--project flushcrowd-staging --only functions:submitRestroom`. Region: `us-central1` across `functions/src/index.ts`, `functions/src/submit_restroom.ts`, and Flutter client `app_constants.dart`. |
 | **12** | Explicit Rollback & Abort Procedures | Runbook Specification (§5 Stage 5) | **PASS** | R.1 (client draft preservation & build recovery), R.2 (Cloud Run revision rollback with verified service/revision discovery), R.3 (staging-only emergency rules rollback), and Stage 4 abort criteria documented. |
 
-**Assessment Matrix Outcome (updated October 18, 2026):** 10 PASS / 0 FAIL / 1 OWNER-CONFIRMED CONFIGURED (budget and alerts; not independently verified) / 1 PENDING (App Check test-device registration). 12 audit vectors total.
+**Assessment Matrix Outcome (updated October 18, 2026):** 10 PASS / 0 FAIL / 1 OWNER-CONFIRMED CONFIGURED (budget and alerts; not independently verified) / 1 PENDING (App Check test-device registration). 12 audit vectors total. See [`11-gate-2-manual-ci-evidence.md`](11-gate-2-manual-ci-evidence.md) for full Gate 2 manual CI verification, Node 22 parity audit, and dependency security triage.
 
 ---
 
@@ -421,7 +421,9 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 Before executing the live staging deployment command (`firebase deploy --project flushcrowd-staging --only functions:submitRestroom`), the human owner must:
 
 1. [x] **Google Cloud billing and alerts configured — OWNER-CONFIRMED October 18, 2026:** No repeat setup required. The operational target is a $25/month budget with 50%/90%/100% alerts. Exact budget amount, notification thresholds and delivery were not independently checked through the Billing Budgets API; verify them in Console if independent attestation is required.
-2. [ ] **Confirm Anonymous Authentication in Firebase Console:** Double-check in Firebase Console > Authentication > Sign-in method that the Anonymous provider is active (secondary visual confirmation of vector #4).
-3. [ ] **Confirm Device OS Versions on Testing Day:** Record actual Android OS & One UI version for Samsung SM-G998B and iOS version for iPhone 12 Pro Max via device Settings.
-4. [ ] **Register App Check Debug Tokens:** Once the callable test build is launched on the devices, extract debug tokens from device logs and register them under **App Check -> Apps -> Manage debug tokens** in `flushcrowd-staging` (fulfilling operational vector #7).
-5. [ ] **Grant Explicit Gate 2 Signoff:** Provide explicit written authorization to deploy `submitRestroom` to `flushcrowd-staging`.
+2. [x] **Node.js Version Parity (Finding 1) — VERIFIED October 18, 2026:** Full emulator test suites executed under canonical Node.js 22.23.3 / npm 10.9.9 (61/61 rules tests, 25/25 functions tests); engine compatibility warning eliminated. Detailed in [`11-gate-2-manual-ci-evidence.md`](11-gate-2-manual-ci-evidence.md) §2.
+3. [x] **Dependency Security Advisory Triage (Finding 2) — RESOLVED October 18, 2026:** Full classification of 24 `rules_tests` and 29 `functions` advisories completed. Confirmed 0 production critical vulnerabilities, and 2 production high vulnerabilities (`node-forge` / `firebase-admin`) are unreachable under Application Default Credentials runtime. Detailed in [`11-gate-2-manual-ci-evidence.md`](11-gate-2-manual-ci-evidence.md) §3.
+4. [ ] **Confirm Anonymous Authentication in Firebase Console:** Double-check in Firebase Console > Authentication > Sign-in method that the Anonymous provider is active (secondary visual confirmation of vector #4).
+5. [ ] **Confirm Device OS Versions on Testing Day:** Record actual Android OS & One UI version for Samsung SM-G998B and iOS version for iPhone 12 Pro Max via device Settings.
+6. [ ] **Register App Check Debug Tokens:** Once the callable test build is launched on the devices, extract debug tokens from device logs and register them under **App Check -> Apps -> Manage debug tokens** in `flushcrowd-staging` (fulfilling operational vector #7).
+7. [ ] **Grant Explicit Gate 2 Signoff:** Provide explicit written authorization to deploy `submitRestroom` to `flushcrowd-staging`.
