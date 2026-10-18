@@ -385,7 +385,7 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 | **Rules Testing** | 61 scenarios in `rules_tests` (49 staging + 6 cutover + 6 config) | 61/61 PASS |
 | **Functions Testing** | 25 callable & preflight scenarios in `functions/test` | 25/25 PASS |
 | **Physical QA Runbook** | Checklists for SM-G998B & iPhone 12 Pro Max | 8/8 Category A Human PASS Recorded |
-| **Staging Preflight** | 12-point read-only audit against `flushcrowd-staging` | 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING REGISTRATION |
+| **Staging Preflight** | 12-point read-only audit against `flushcrowd-staging` | 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING |
 | **Rollout / Rollback** | Step-by-step gates, explicit sequencing & production non-bypass invariants | Documented |
 | **Live Gate** | No live deployment or merge without human approval | LOCKED |
 
@@ -402,17 +402,17 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 | **1** | Firebase Project ID | CLI (`firebase projects:list`) | **PASS** | `flushcrowd-staging` (Project Number: `925391896465`). |
 | **2** | Blaze Billing Plan Status | GCP CLI (`gcloud billing projects describe`) | **PASS** | `billingEnabled: true`, linked to billing account `billingAccounts/017ED3-AC57E0-96AF50`. |
 | **3** | Billing Budget & Alert Thresholds | GCP Cloud Billing Console | **NOT VERIFIED** | `billingbudgets.googleapis.com` API requires quota project and admin permissions; owner must confirm $25.00/mo budget and 50%/90%/100% email alerts in GCP Console. |
-| **4** | Firebase Anonymous Auth | CLI (`firebase auth:export`) | **PASS** | Enabled and operational on `flushcrowd-staging` (3 active anonymous accounts confirmed, 0 plaintext secrets stored). |
+| **4** | Firebase Anonymous Auth Provider | Identity Toolkit API (`GET /v2/projects/flushcrowd-staging/config`) | **PASS** | Direct read-only confirmation of live provider configuration via authenticated Identity Toolkit REST API (`projects/925391896465/config`: `signIn.anonymous.enabled: true`). Confirms anonymous authentication is enabled in `flushcrowd-staging` without creating test users or exporting user records. |
 | **5** | Cloud Firestore Staging Readiness | GCP CLI (`gcloud firestore databases describe`) | **PASS** | `projects/flushcrowd-staging/databases/(default)` active in `FIRESTORE_NATIVE` mode, Standard edition (`asia-southeast1`). |
 | **6** | Mobile Firebase Configuration Consistency | Mobile Config Check (`google-services.json` / `GoogleService-Info.plist`) | **PASS** | Android: `flushcrowd-staging` / `com.flushcrowd.flushcrowd` (App ID `1:925391896465:android:bcaddc3c452836bae82430`); iOS: `flushcrowd-staging` / `com.flushcrowd.flushcrowd` (App ID `1:925391896465:ios:debbd6ca5515e5f1e82430`). 100% match with `firebase apps:list`. |
-| **7** | App Check Debug-Provider Readiness | Client Service Code & Runbook | **PASS (Implemented)** | `FirebaseAppCheckService` activates `AndroidDebugProvider` and `AppleDebugProvider` in staging; token registration procedure documented in §2.4 and §4 (Test B.1). Debug token registration pending on test day. |
+| **7** | App Check Debug-Provider & Token Registration | Client Service Code & Testing Procedure | **PENDING** | `FirebaseAppCheckService` activates `AndroidDebugProvider` and `AppleDebugProvider` in staging builds (§2.4). Physical-device debug token extraction and console registration is an operational action required on test day (§4 Test B.1). |
 | **8** | Staging Functions Environment File | File Inspection (`functions/.env.flushcrowd-staging`) | **PASS** | Declares non-secret `APP_ENV=staging`, auto-loaded by Firebase CLI for `flushcrowd-staging` and deployed to Cloud Run container runtime. |
 | **9** | Functions TypeScript Build & Smoke Checks | Smoke Scripts (`npm run build && smoke:entrypoint && smoke:staging`) | **PASS** | TypeScript compilation: 0 errors; package entrypoint smoke: PASS; staging discovery smoke: PASS (`APP_ENV=staging` confirmed). |
 | **10** | Rules & Functions Emulator Suites | Emulators (`rules_tests run test:emulators` & `functions run test:emulators`) | **PASS** | Rules emulator: 61/61 PASS (49 staging rules + 6 cutover rules + 6 config checks); Functions emulator: 25/25 PASS (9 App Check/env preflight + 16 rate-limiting scenarios). |
 | **11** | Deployment Target & Region | Configuration & Code Inspection | **PASS** | Target: `--project flushcrowd-staging --only functions:submitRestroom`. Region: `us-central1` across `functions/src/index.ts`, `functions/src/submit_restroom.ts`, and Flutter client `app_constants.dart`. |
 | **12** | Explicit Rollback & Abort Procedures | Runbook Specification (§5 Stage 5) | **PASS** | R.1 (client draft preservation & build recovery), R.2 (Cloud Run revision rollback with verified service/revision discovery), R.3 (staging-only emergency rules rollback), and Stage 4 abort criteria documented. |
 
-**Assessment Matrix Outcome:** 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING TESTING-DAY ACTION.
+**Assessment Matrix Outcome:** 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING (12 audit vectors total).
 
 ---
 
@@ -421,6 +421,7 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 Before executing the live staging deployment command (`firebase deploy --project flushcrowd-staging --only functions:submitRestroom`), the human owner must:
 
 1. [ ] **Confirm Billing Budget in GCP Console:** Log in to Google Cloud Console for billing account `017ED3-AC57E0-96AF50` and confirm a $25/mo budget with alert notifications configured at 50% ($12.50), 90% ($22.50), and 100% ($25.00).
-2. [ ] **Confirm Device OS Versions on Testing Day:** Record actual Android OS & One UI version for Samsung SM-G998B and iOS version for iPhone 12 Pro Max via device Settings.
-3. [ ] **Register App Check Debug Tokens:** Once the callable test build is launched on the devices, extract debug tokens from device logs and register them under **App Check -> Apps -> Manage debug tokens** in `flushcrowd-staging`.
-4. [ ] **Grant Explicit Gate 2 Signoff:** Provide explicit written authorization to deploy `submitRestroom` to `flushcrowd-staging`.
+2. [ ] **Confirm Anonymous Authentication in Firebase Console:** Double-check in Firebase Console > Authentication > Sign-in method that the Anonymous provider is active (secondary visual confirmation of vector #4).
+3. [ ] **Confirm Device OS Versions on Testing Day:** Record actual Android OS & One UI version for Samsung SM-G998B and iOS version for iPhone 12 Pro Max via device Settings.
+4. [ ] **Register App Check Debug Tokens:** Once the callable test build is launched on the devices, extract debug tokens from device logs and register them under **App Check -> Apps -> Manage debug tokens** in `flushcrowd-staging` (fulfilling operational vector #7).
+5. [ ] **Grant Explicit Gate 2 Signoff:** Provide explicit written authorization to deploy `submitRestroom` to `flushcrowd-staging`.
