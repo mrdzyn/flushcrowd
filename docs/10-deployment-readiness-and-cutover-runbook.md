@@ -385,7 +385,7 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 | **Rules Testing** | 61 scenarios in `rules_tests` (49 staging + 6 cutover + 6 config) | 61/61 PASS |
 | **Functions Testing** | 25 callable & preflight scenarios in `functions/test` | 25/25 PASS |
 | **Physical QA Runbook** | Checklists for SM-G998B & iPhone 12 Pro Max | 8/8 Category A Human PASS Recorded |
-| **Staging Preflight** | 12-point read-only audit against `flushcrowd-staging` | 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING |
+| **Staging Preflight** | 12-point audit + October 18 owner confirmation | 10 PASS / 0 FAIL / 1 OWNER-CONFIRMED / 1 PENDING |
 | **Rollout / Rollback** | Step-by-step gates, explicit sequencing & production non-bypass invariants | Documented |
 | **Live Gate** | No live deployment or merge without human approval | LOCKED |
 
@@ -401,7 +401,7 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 | :--- | :--- | :--- | :--- | :--- |
 | **1** | Firebase Project ID | CLI (`firebase projects:list`) | **PASS** | `flushcrowd-staging` (Project Number: `925391896465`). |
 | **2** | Blaze Billing Plan Status | GCP CLI (`gcloud billing projects describe`) | **PASS** | `billingEnabled: true`, linked to billing account `billingAccounts/017ED3-AC57E0-96AF50`. |
-| **3** | Billing Budget & Alert Thresholds | GCP Cloud Billing Console | **NOT VERIFIED** | `billingbudgets.googleapis.com` API requires quota project and admin permissions; owner must confirm $25.00/mo budget and 50%/90%/100% email alerts in GCP Console. |
+| **3** | Billing Budget & Alert Thresholds | Owner confirmation (2026-10-18); earlier Billing Budgets API check unavailable | **OWNER-CONFIRMED CONFIGURED** | Owner states Google Cloud billing and alerts are already configured. Runbook target: $25/month budget with 50%/90%/100% notifications. Exact live amounts, alert recipients and delivery were **not independently verified** in Cloud Billing due to API access limits. |
 | **4** | Firebase Anonymous Auth Provider | Identity Toolkit API (`GET /v2/projects/flushcrowd-staging/config`) | **PASS** | Direct read-only confirmation of live provider configuration via authenticated Identity Toolkit REST API (`projects/925391896465/config`: `signIn.anonymous.enabled: true`). Confirms anonymous authentication is enabled in `flushcrowd-staging` without creating test users or exporting user records. |
 | **5** | Cloud Firestore Staging Readiness | GCP CLI (`gcloud firestore databases describe`) | **PASS** | `projects/flushcrowd-staging/databases/(default)` active in `FIRESTORE_NATIVE` mode, Standard edition (`asia-southeast1`). |
 | **6** | Mobile Firebase Configuration Consistency | Mobile Config Check (`google-services.json` / `GoogleService-Info.plist`) | **PASS** | Android: `flushcrowd-staging` / `com.flushcrowd.flushcrowd` (App ID `1:925391896465:android:bcaddc3c452836bae82430`); iOS: `flushcrowd-staging` / `com.flushcrowd.flushcrowd` (App ID `1:925391896465:ios:debbd6ca5515e5f1e82430`). 100% match with `firebase apps:list`. |
@@ -412,7 +412,7 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 | **11** | Deployment Target & Region | Configuration & Code Inspection | **PASS** | Target: `--project flushcrowd-staging --only functions:submitRestroom`. Region: `us-central1` across `functions/src/index.ts`, `functions/src/submit_restroom.ts`, and Flutter client `app_constants.dart`. |
 | **12** | Explicit Rollback & Abort Procedures | Runbook Specification (§5 Stage 5) | **PASS** | R.1 (client draft preservation & build recovery), R.2 (Cloud Run revision rollback with verified service/revision discovery), R.3 (staging-only emergency rules rollback), and Stage 4 abort criteria documented. |
 
-**Assessment Matrix Outcome:** 10 PASS / 0 FAIL / 1 NOT VERIFIED / 1 PENDING (12 audit vectors total).
+**Assessment Matrix Outcome (updated October 18, 2026):** 10 PASS / 0 FAIL / 1 OWNER-CONFIRMED CONFIGURED (budget and alerts; not independently verified) / 1 PENDING (App Check test-device registration). 12 audit vectors total.
 
 ---
 
@@ -420,7 +420,7 @@ Conducted on October 18, 2026 using read-only CLI operations and existing enviro
 
 Before executing the live staging deployment command (`firebase deploy --project flushcrowd-staging --only functions:submitRestroom`), the human owner must:
 
-1. [ ] **Confirm Billing Budget in GCP Console:** Log in to Google Cloud Console for billing account `017ED3-AC57E0-96AF50` and confirm a $25/mo budget with alert notifications configured at 50% ($12.50), 90% ($22.50), and 100% ($25.00).
+1. [x] **Google Cloud billing and alerts configured — OWNER-CONFIRMED October 18, 2026:** No repeat setup required. The operational target is a $25/month budget with 50%/90%/100% alerts. Exact budget amount, notification thresholds and delivery were not independently checked through the Billing Budgets API; verify them in Console if independent attestation is required.
 2. [ ] **Confirm Anonymous Authentication in Firebase Console:** Double-check in Firebase Console > Authentication > Sign-in method that the Anonymous provider is active (secondary visual confirmation of vector #4).
 3. [ ] **Confirm Device OS Versions on Testing Day:** Record actual Android OS & One UI version for Samsung SM-G998B and iOS version for iPhone 12 Pro Max via device Settings.
 4. [ ] **Register App Check Debug Tokens:** Once the callable test build is launched on the devices, extract debug tokens from device logs and register them under **App Check -> Apps -> Manage debug tokens** in `flushcrowd-staging` (fulfilling operational vector #7).

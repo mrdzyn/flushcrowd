@@ -7,16 +7,24 @@
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6 Physical QA Acceptance & Staging Preflight — READY FOR AUDIT
-- **Current branch:** `phase-2/p2.6-physical-device-qa`
-- **Current PR:** PR #17 (https://github.com/mrdzyn/flushcrowd/pull/17)
-- **Latest commit:** `b35f509f8519a04bfe346ddcc0fb2ecba5611f0d`
-- **Base:** `main` at `d6e3f53b7d9d317dc16af8bf8088444d12d0d033` (squash merge of PR #16)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [RECORDED & VALIDATED].
+- **Current milestone:** Milestone P2.6 Gate 2 — Staging Callable Deployment Approval (PENDING)
+- **Current branch:** `docs/p2.6-billing-alerts-owner-confirmed` (documentation-only)
+- **Last merged PR:** #17 (https://github.com/mrdzyn/flushcrowd/pull/17) — Physical QA & Staging Preflight
+- **Main baseline:** `1f9aea60968fe4ef4ef56a8fe5186c4734f48b3c` (squash merge of PR #17)
+- **Active documentation PR:** #18 (https://github.com/mrdzyn/flushcrowd/pull/18) — owner billing/alerts confirmation (open; not merged)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [MERGED — PR #17]; Google Cloud Billing & Alerts [OWNER-CONFIRMED CONFIGURED — 2026-10-18].
+
+## Temporary CI operating mode (October–November 2026)
+
+- **Owner-reported constraint:** GitHub Actions is suspended until November 2026; exact restoration date is unverified. Do not treat pending/missing hosted checks as a passing CI result.
+- **Temporary gate:** Execute the repository's relevant automated tests locally at the **exact PR head** and record commands, exit codes, environment/tool versions, date, and evidence in the PR. For docs-only changes, scope validation, diff/whitespace check, document consistency, and independent review may suffice. For code, Firebase, security, or release changes, retain all applicable targeted tests, emulator suites, builds and mandatory safety gates.
+- **Independent review:** A reviewer other than the implementing agent must validate evidence and audit the exact head. Any unexecuted checks are marked **NOT RUN**, not PASS.
+- **Protected branch:** Prefer waiting or an owner-approved per-PR ruleset bypass when GitHub Actions cannot run. Do **not** disable repository protections globally, fabricate a green check, or bypass security/release gates. Every merge and every live Firebase deployment still requires separate explicit owner authorization.
+- **Return to normal:** Re-check GitHub Actions availability in November 2026 and restore hosted CI as the mandatory source of automated evidence once working.
 
 ## Current objective
 
-Record the owner's completed physical-device Category A QA acceptance results and independently assess staging readiness without deploying services (**PREPARATION ONLY** — zero live deployments, rules activations, production enablements, or unauthorized PR merges):
+Record the owner's October 18, 2026 confirmation that Google Cloud billing and alerts are already configured and advance documentation to the staging callable Gate 2 approval checkpoint (**DOCUMENTATION ONLY** — no live deployment, rules activation, production enablement or PR merge authorized):
 
 - **Task 1 — Record Human QA (Completed October 18, 2026):**
   * Recorded 8/8 HUMAN-REPORTED PASS across Samsung Galaxy S21 Ultra (`SM-G998B`) and iPhone 12 Pro Max (`A2411`) for Category A tests:
@@ -29,10 +37,10 @@ Record the owner's completed physical-device Category A QA acceptance results an
 - **Task 2 — Staging Preflight Read-Only Audit:**
   * Executed comprehensive 12-point read-only preflight assessment against project `flushcrowd-staging`.
   * Verified 10 points as PASS: Firebase Project ID (`flushcrowd-staging`), Blaze billing active (`billingEnabled: true`), Firebase Anonymous Auth active (confirmed via authenticated Identity Toolkit API `signIn.anonymous.enabled: true`), Cloud Firestore `(default)` database active, Android/iOS Firebase config parity, staging environment file (`APP_ENV=staging`), Functions TypeScript build & discovery smokes, emulator suites (61/61 rules + 25/25 functions), deployment target (`us-central1`), and explicit rollback/abort procedures.
-  * Identified 1 NOT VERIFIED: Monthly billing budget and alert thresholds ($25.00/mo budget & 50%/90%/100% email alerts) require owner verification in GCP Cloud Billing Console due to `billingbudgets.googleapis.com` API permission constraints.
+  * Budget/alerts previously NOT VERIFIED via API; **OWNER-CONFIRMED CONFIGURED on 2026-10-18**. The runbook target is a $25/month budget with 50%/90%/100% alerts; exact values and delivery recipients were not independently read from Cloud Billing. Do not label the console settings API-verified.
   * Identified 1 PENDING: Mobile App Check debug tokens must be extracted and registered in Firebase Console upon launching callable staging test builds on physical devices.
 - **Task 3 — Gate 2 Prerequisite Checklist & Next Actions:**
-  * Documented exact owner actions needed before approving staging `submitRestroom` deployment in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
+  * Billing and alert configuration marked owner-complete; App Check physical-device debug-token registration, final test-day metadata and separate staging deployment approval remain pending in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
 
 The active specifications are:
 
@@ -370,18 +378,19 @@ Owner-confirmed staging infrastructure state:
 1. Establish and publish external donation/support URL (`AppConstants.buyMeACoffeeUrl`) and privacy policy URL (`AppConstants.privacyPolicyUrl`).
 2. Production Android signing remains a later release-readiness action.
 3. Review and approve proposed Phase Re-Ordering Architecture accelerating Phase 4 (Moderation & Facility Operations) ahead of Phase 3 (Community Ratings & Reporting).
-4. Confirm $25/mo GCP billing budget and alert thresholds (50%, 90%, 100%) in Google Cloud Console for project `flushcrowd-staging`.
-5. Confirm Anonymous Authentication provider is active in Firebase Console > Authentication > Sign-in method.
-6. Register App Check debug tokens in Firebase Console upon launching Category B physical device test builds.
-7. Grant Gate 2 written approval to deploy `submitRestroom` Cloud Function to `flushcrowd-staging`.
-8. Execute Category B physical device testing with callable submission (`USE_CALLABLE_SUBMISSION=true`).
+4. Confirm Anonymous Authentication provider remains active in Firebase Console > Authentication > Sign-in method (secondary check; authenticated Identity Toolkit API already reported enabled).
+5. Register App Check debug tokens in Firebase Console upon launching Category B physical-device test builds; never commit tokens.
+6. Grant **separate Gate 2 written approval** before deploying `submitRestroom` to `flushcrowd-staging`.
+7. Execute Category B physical-device testing with callable submission (`USE_CALLABLE_SUBMISSION=true`) after approved deployment.
+
+**Owner-completed external prerequisite (2026-10-18):** Google Cloud billing and budget alerts are configured. Budget target in the runbook: $25/month, alerts at 50%/90%/100%; exact configured values and delivery recipients were not independently read via the restricted Billing Budgets API.
 
 ## Current validation status
 
 Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
 
 - Physical device Category A QA (October 18, 2026) — PASS (8/8 HUMAN-REPORTED PASS across Samsung SM-G998B and iPhone 12 Pro Max on non-callable development QA path).
-- Staging Preflight Read-Only Audit (October 18, 2026) — 10 PASS / 0 FAIL / 1 NOT VERIFIED (GCP billing budget & alert thresholds) / 1 PENDING (App Check debug token registration).
+- Staging Preflight (October 18, 2026, updated after owner confirmation) — **10 previously verified PASS / 0 FAIL / 1 OWNER-CONFIRMED CONFIGURED** (Google Cloud budget and alerts; not independently API-verified) **/ 1 PENDING** (App Check debug-token registration).
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
@@ -399,10 +408,10 @@ Milestone P2.6 Physical QA Acceptance & Staging Preflight validation:
 
 ## Next recommended action
 
-1. Human owner reviews Gate 2 prerequisite checklist in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2.
-2. Human owner verifies GCP billing budget ($25/mo) and alert notifications (50%, 90%, 100%) in Google Cloud Console.
-3. Submit PR for Milestone P2.6 Physical QA Acceptance & Staging Preflight for independent audit.
-4. Hold live Cloud Functions deployment and rules activation until Gate 2 approval is granted.
+1. Review the updated Gate 2 checklist in `docs/10-deployment-readiness-and-cutover-runbook.md` §7.2. Google Cloud billing/alerts are owner-confirmed configured; no repeat setup requested.
+2. Confirm physical-device OS versions and, at the controlled test stage, register App Check debug tokens securely.
+3. Obtain **separate explicit owner authorization** before deploying only `submitRestroom` to `flushcrowd-staging`.
+4. Execute Category B callable QA following the approved staging deployment; keep live Firestore Rules cutover and production contribution enablement behind distinct approvals.
 
 ## Handoff template
 
