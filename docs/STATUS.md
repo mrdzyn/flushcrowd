@@ -14,6 +14,14 @@
 - **Active documentation PR:** #18 (https://github.com/mrdzyn/flushcrowd/pull/18) — owner billing/alerts confirmation (open; not merged)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [MERGED — PR #17]; Google Cloud Billing & Alerts [OWNER-CONFIRMED CONFIGURED — 2026-10-18].
 
+## Temporary CI operating mode (October–November 2026)
+
+- **Owner-reported constraint:** GitHub Actions is suspended until November 2026; exact restoration date is unverified. Do not treat pending/missing hosted checks as a passing CI result.
+- **Temporary gate:** Execute the repository's relevant automated tests locally at the **exact PR head** and record commands, exit codes, environment/tool versions, date, and evidence in the PR. For docs-only changes, scope validation, diff/whitespace check, document consistency, and independent review may suffice. For code, Firebase, security, or release changes, retain all applicable targeted tests, emulator suites, builds and mandatory safety gates.
+- **Independent review:** A reviewer other than the implementing agent must validate evidence and audit the exact head. Any unexecuted checks are marked **NOT RUN**, not PASS.
+- **Protected branch:** Prefer waiting or an owner-approved per-PR ruleset bypass when GitHub Actions cannot run. Do **not** disable repository protections globally, fabricate a green check, or bypass security/release gates. Every merge and every live Firebase deployment still requires separate explicit owner authorization.
+- **Return to normal:** Re-check GitHub Actions availability in November 2026 and restore hosted CI as the mandatory source of automated evidence once working.
+
 ## Current objective
 
 Record the owner's October 18, 2026 confirmation that Google Cloud billing and alerts are already configured and advance documentation to the staging callable Gate 2 approval checkpoint (**DOCUMENTATION ONLY** — no live deployment, rules activation, production enablement or PR merge authorized):
