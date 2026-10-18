@@ -2,41 +2,47 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-15
+- **Last updated:** 2026-10-18
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
 - **Current phase:** Phase 2 Add Restroom
-- **Current milestone:** Milestone P2.6-F/G Accessibility Audit, Remediation & Platform Release Validation — REMEDIATED & VALIDATED
-- **Current branch:** `phase-2/p2.6-fg-accessibility-platform-validation`
-- **Current PR:** #15 — P2.6-F/G Accessibility & Platform Validation (https://github.com/mrdzyn/flushcrowd/pull/15)
-- **Base:** `main` at `059fefbba63b8adad6c2887dccd20f910c8068d9` (squash-merge of PR #14)
-- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED — PASS 0/0/0]; P2.1 [APPROVED — PASS 0/0/0]; P2.2 [APPROVED — PASS 0/0/0, merged into main]; Product Rename [MERGED — PASS 0/0/0]; Staging Readiness [MERGED — PR #6]; P2.2 Navigation Hotfix [MERGED — PR #7]; P2.3 [APPROVED & MERGED into main]; P2.4 [MERGED — PR #10]; P2.5 [MERGED — PR #12]; P2.6-A [MERGED — PR #13]; P2.6-B [MERGED — PR #14]; P2.6-F [REMEDIATED & PASS]; P2.6-G [VALIDATED & PASS].
+- **Current milestone:** Milestone P2.6 Final QA & Security Cutover Preparation — COMPLETED & VALIDATED
+- **Current branch:** `phase-2/p2.6-final-qa-security-cutover`
+- **Current PR:** PR #16 (https://github.com/mrdzyn/flushcrowd/pull/16)
+- **Latest commit:** `9b942b78edbbe198a273fe8382f1c41ff1cce225`
+- **Base:** `main` at `b1c54f7ad8587ddac041401889f159fd5baf8920` (merge of PR #15)
+- **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [COMPLETED & VALIDATED].
 
 ## Current objective
 
-Remediate PR #15 audit findings (**0 BLOCKER / 2 MAJOR / 0 MINOR**) and validate **P2.6-F** (Accessibility audit & remediation) and **P2.6-G** (Platform compilation & release validation) on branch `phase-2/p2.6-fg-accessibility-platform-validation`:
+Prepare Phase 2 for final physical-device acceptance and a separately approved staged Firebase security cutover (**PREPARATION ONLY** — zero live deployments, rules activations, production enablements, or unauthorized PR merges):
 
-- **MAJOR-1 Remediated — Preserve Real MediaQuery Dimensions in Multi-Viewport Tests (320, 375, 390 dp at 200% scale):**
-  * Updated `test/presentation/p2_6_accessibility_test.dart` to use `_wrapWithScale(child: ..., textScale: 2.0)`, copying inherited `MediaQueryData` rather than instantiating a text-scale-only `MediaQueryData` with default `Size.zero`.
-  * Verified screen dimensions in tests match actual viewport (`width` × 844.0 dp) and scale (`TextScaler.linear(2.0)`).
-  * Asserted `DuplicateWarningSheet` nonzero rendered height (`sheetBox.size.height > 0.0`) and constraint adherence (`<= 844.0 * 0.85`).
-  * Verified warning-sheet actions ("View Existing Restroom" `LooSecondaryButton` and "No, It's a Different Restroom" `LooPrimaryButton`) remain visible, scrollable, and accessible with >= 48dp target height under 200% text scaling.
-  * Preserved `configureTestViewport` `physicalSize` and `devicePixelRatio` reset behavior in `addTearDown`.
-- **MAJOR-2 Remediated — Gender Stall Validation Error Contrast Compliance (WCAG 2.1 AA >= 4.5:1):**
-  * In `AddRestroomFormScreen`, replaced `AppColors.error` (`#EF4444`, 3.5:1 — fails 4.5:1) with `AppColors.onErrorContainer` (`#991B1B`, 8.24:1 against white — passes WCAG AA >= 4.5:1 and AAA >= 7.0:1) for `_notifier.genderStallsError`.
-  * Added mathematical WCAG relative luminance contrast calculation assertion for `onErrorContainer` on `surface`.
-  * Added rendered widget test covering the actual invalid gender configuration state and verifying WCAG AA contrast ratio of the rendered text.
-- **P2.6-G — Platform Compilation & Release Validation:**
-  * `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 15.3s)
-  * `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 27.2s)
-  * Full Flutter test suite: 461/461 tests passed (+25 dedicated a11y tests, 0 failures).
-  * Firestore rules emulator test suite: 49/49 tests passed.
-  * Cloud Functions emulator test suite: 20/20 tests passed.
-  * Physical device VoiceOver / TalkBack QA: NOT RUN (pending physical device QA by human owner).
+- **Task 1 — Cloud Functions V2 Deployment Readiness (Remediated per PR #16 Audit):**
+  * Provisioned explicit, persistent, non-secret staging environment configuration in `functions/.env.flushcrowd-staging` declaring `APP_ENV=staging`, automatically loaded by Firebase CLI and deployed to Cloud Run.
+  * Added staging discovery smoke test `npm run smoke:staging` verifying environment loading prior to deployment.
+  * Hardened `functions/src/config.ts` with strictly fail-closed project identity validation: rejects missing `APP_ENV`, missing project identity, mismatched project identity, attempts to disable App Check in staging/production, and production crossover to staging.
+  * Added unit test suite in `functions/test/app_check_init.test.ts` verifying all negative preflight conditions (9/9 passing).
+  * Documented deployment readiness, explicit region targeting (`us-central1`), Blaze billing prerequisite, and GCP billing budget alerts ($25/mo).
+- **Task 2 — Security Rules Cutover Candidate & Deterministic Configuration (Remediated per PR #16 Audit):**
+  * Created dedicated, version-controlled `firebase.cutover.json` specifying `"rules": "firestore.production.rules"` for explicit cutover deployment (`firebase deploy --config firebase.cutover.json --project flushcrowd-staging --only firestore:rules`).
+  * Preserved default `firebase.json` pointing to `firestore.rules` for continued open staging direct-write operations.
+  * Authored automated configuration test suite in `rules_tests/test/firebase_config.test.js` validating rule file targets and configuration parity (61/61 total rules tests passing: 49 staging + 6 cutover + 6 config).
+  * Documented preflight verification, post-deploy direct-write rejection checks, and abort criteria in `docs/10-deployment-readiness-and-cutover-runbook.md`.
+- **Task 3 — Physical Device QA Acceptance Runbook (Remediated per PR #16 Audit):**
+  * Prepared exhaustive physical-device test checklists in `docs/10-deployment-readiness-and-cutover-runbook.md` for Samsung SM-G998B (Android) and iPhone 12 Pro Max (iOS).
+  * Added operational instructions for QA testers to record exact OS, One UI, and iOS version metadata on testing day via device Settings rather than assuming static versions.
+  * Clearly partitions Category A (immediate local/staging tests) from Category B (post-callable tests).
+- **Task 4 — Staged Rollout and Safe Rollback Sequencing (Remediated per PR #16 Audit):**
+  * Established safe rollback hierarchy: R.1 (local draft preservation & executable staging build gating without speculative toggles) and R.2 (Cloud Run revision rollback with verified service/revision discovery) as primary defenses.
+  * Clearly distinguished existing compile-time/runtime capabilities from future non-MVP remote kill-switch enhancements.
+  * Explicitly labeled restoring permissive rules via R.3 as an exceptional, staging-only, owner-authorized action.
+  * Strictly prohibited re-enabling direct client writes as a production fallback under any circumstances.
+  * Kept production contribution gate strictly closed.
 
 The active specifications are:
 
+- `docs/10-deployment-readiness-and-cutover-runbook.md` (active deployment readiness & QA runbook)
 - `docs/tasks/P2.6-hardening-rate-limit.md` (active P2.6 task specification)
 - `docs/03-privacy-security.md` (abuse-control release gate & contribution controls)
 - `docs/09-phase-2-add-restroom.md` (Phase 2 specification)
@@ -376,28 +382,30 @@ Owner-confirmed staging infrastructure state:
 
 ## Current validation status
 
-Milestone P2.6-F/G remediation exact-head validation:
+Milestone P2.6 Final QA & Security Cutover Preparation exact-head validation:
 
 - `dart format --output=none --set-exit-if-changed lib test` — PASS (0 changed)
 - `flutter analyze` — PASS (0 issues found)
 - `flutter test` — PASS (461/461 tests passed, +25 dedicated accessibility tests)
 - `flutter test test/presentation/p2_6_accessibility_test.dart` — PASS (25/25 a11y tests passed across 320, 375, 390px viewports at 200% scaling)
 - Functions package entrypoint smoke test: `npm --prefix functions run smoke:entrypoint` — PASS
+- Functions staging discovery smoke test: `npm --prefix functions run smoke:staging` — PASS (proves persistent `.env.flushcrowd-staging` loading)
 - TypeScript build: `npm --prefix functions run build` — PASS (0 errors)
-- Functions isolated App Check test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (4/4 tests passed)
-- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (49/49 tests passed)
-- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (20/20 tests passed)
-- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 15.3s)
-- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 27.2s)
+- Functions isolated App Check and fail-closed preflight test suite: `APP_ENV=test node --test functions/lib/test/app_check_init.test.js` — PASS (9/9 tests passed: missing/mismatched project identity, missing APP_ENV, App Check disable rejection, production guards)
+- Firestore rules emulator test suite: `npm --prefix rules_tests run test:emulators` — PASS (61/61 tests passed: 49 staging + 6 production cutover + 6 configuration selection checks)
+- Functions emulator test suite: `npm --prefix functions run test:emulators` — PASS (25/25 tests passed: 9 preflight + 16 rate-limiting scenarios)
+- Android debug build: `flutter build apk --debug` — PASS (`✓ Built build/app/outputs/flutter-apk/app-debug.apk` in 19.5s)
+- iOS debug build: `flutter build ios --debug --no-codesign` — PASS (`✓ Built build/ios/iphoneos/Runner.app` in 25.8s)
 - Physical device VoiceOver / TalkBack QA — NOT RUN (pending physical device QA by human owner)
-- `git diff --check` — PASS
+- `git diff --check` — PASS (0 errors)
 - Secrets scan — PASS (0 secrets or private keys in git tree)
 
 ## Next recommended action
 
-1. Push `phase-2/p2.6-fg-accessibility-platform-validation` branch to remote origin.
-2. Request re-review on PR #15 from independent auditor.
-3. Conduct manual physical device screen-reader QA (VoiceOver / TalkBack) with owner.
+1. Push PR #16 audit remediation commit to `phase-2/p2.6-final-qa-security-cutover` for independent re-audit.
+2. Human owner reviews deployment readiness configuration and approves GCP billing budget alerts.
+3. Human owner executes physical device acceptance testing on Samsung SM-G998B and iPhone 12 Pro Max per `docs/10-deployment-readiness-and-cutover-runbook.md`.
+4. Hold live Cloud Functions deployment and rules activation until explicit staging deployment approval gate is reached.
 
 ## Handoff template
 
