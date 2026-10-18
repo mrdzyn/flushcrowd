@@ -11,7 +11,7 @@
 - **Current branch:** `phase-2/p2.6-gate-2-security-followup` (documentation-only)
 - **Last merged PR:** #18 (https://github.com/mrdzyn/flushcrowd/pull/18) — Google Cloud Billing & Alerts Owner Confirmation
 - **Main baseline:** `a9248193a38ab509e3e9a0eea4e1b5449db8715c` (squash merge of PR #18)
-- **Active documentation PR:** Gate 2 Manual CI Security Follow-up (branch: `phase-2/p2.6-gate-2-security-followup`)
+- **Active documentation PR:** #19 (https://github.com/mrdzyn/flushcrowd/pull/19) — Gate 2 manual CI follow-up (open; not merged)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [MERGED — PR #16]; P2.6 Physical QA Acceptance & Staging Preflight [MERGED — PR #17]; Google Cloud Billing & Alerts [MERGED — PR #18]; Gate 2 Manual CI Security Follow-up [COMPLETED — 2026-10-18].
 
 ## Temporary CI operating mode (October–November 2026)
