@@ -272,7 +272,7 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 - **Preflight Configuration Verification:**
   Run automated configuration check:
   ```bash
-  npm --prefix rules_tests test test/firebase_config.test.js
+  node --test rules_tests/test/firebase_config.test.js
   ```
   Confirms `firebase.cutover.json` explicitly targets `firestore.production.rules` while `firebase.json` targets `firestore.rules`.
 - **Deployment Command:**
@@ -293,21 +293,45 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 ### Stage 5: Rollback Procedures (If Anomaly Detected)
 
 #### Order of Rollback Operations:
-1. **R.1 — Client Draft Preservation & Submission Suspension (First Line of Defense):**
-   If mobile client issues, unexpected UI errors, or submission failures occur:
-   - Contributor drafts remain fully preserved locally via `DraftPreservationService` with the `"Resume"` action.
-   - If required to prevent user disruption, suspend submissions via app-level configuration (`isSubmissionsEnabled: false` or maintenance toggle) while preserving all drafts.
-   - No data loss occurs.
+
+1. **R.1 — Local Draft Preservation & Staging Build Recovery (First Line of Defense):**
+   If mobile client issues, unexpected submission failures, or callable degradation occur during staging testing:
+   - **Guaranteed Draft Safety:** Contributor drafts remain fully preserved locally via `DraftPreservationService` across app restarts and navigation. When submission fails or is aborted, a persistent SnackBar with the `"Resume"` action is displayed, ensuring zero user data loss.
+   - **Executable Staging Recovery Procedure:**
+     * Immediately cease active distribution or testing of callable-enabled staging builds (`USE_CALLABLE_SUBMISSION=true`).
+     * If testers run the standard staging build without `--dart-define=USE_CALLABLE_SUBMISSION=true` (defaults to `false`), the client attempts direct Firestore writes:
+       - If security rules cutover (Stage 4) is already active, direct client writes are rejected by Firestore Security Rules with `PERMISSION_DENIED`. The app fails closed safely, displays a permission error SnackBar, and preserves the draft with the `"Resume"` action (no data corruption or rate-limit bypass).
+       - Or operators launch the test build with a non-staging environment (e.g. `--dart-define=APP_ENV=development`), which immediately triggers the client-side fail-closed gate in `main_shell_screen.dart` (`!config.isStagingSubmissionAllowed`), blocking submission attempts instantly and preserving drafts with `"Resume"`.
+   - **Distinction from Future Capabilities:**
+     * *Existing Capabilities:* Compile-time `--dart-define` configuration (`APP_ENV`, `USE_CALLABLE_SUBMISSION`, `FIREBASE_PROJECT_ID`), strict `isStagingSubmissionAllowed` client gate, fail-closed Firestore Security Rules (`firestore.production.rules`), and local draft preservation with `"Resume"`.
+     * *Future Phase Enhancement (Non-MVP Scope):* Dynamic server-side maintenance kill-switches or remote configuration toggles (e.g., Firebase Remote Config) do **not** exist in the V1 Phase 2 implementation and are slated for a future phase. Operators must rely solely on the verified build/environment gating and draft preservation behaviors described above.
+
 2. **R.2 — Cloud Function Revision Rollback (Primary Backend Defense):**
-   If `submitRestroom` exhibits an unexpected error spike, regression, or failure:
-   - In Google Cloud Console -> Cloud Run -> `submitRestroom` -> **Revisions**, route 100% of traffic back to the previously verified stable revision.
-   - Or execute via Google Cloud CLI:
+   If `submitRestroom` exhibits an unexpected error spike, latency spike, or runtime regression:
+   - **Prerequisite — Service & Revision Discovery:**
+     Do not guess Cloud Run service or revision names. In Cloud Functions V2, Cloud Run service names are provisioned per Google Cloud naming conventions. Operators must first verify the exact service name and deployed revisions in `flushcrowd-staging`:
      ```bash
-     gcloud run services update-traffic submit-restroom \
-       --to-revisions=<PREVIOUS_STABLE_REVISION>=100 \
+     # 1. Identify the exact Cloud Run service name
+     gcloud run services list \
+       --project=flushcrowd-staging \
+       --region=us-central1
+
+     # 2. List deployed revisions for that verified service name
+     gcloud run revisions list \
+       --service=<VERIFIED_SERVICE_NAME> \
+       --project=flushcrowd-staging \
+       --region=us-central1
+     ```
+   - **Traffic Rollback Execution:**
+     Route 100% of ingress traffic back to the identified previously healthy revision:
+     ```bash
+     gcloud run services update-traffic <VERIFIED_SERVICE_NAME> \
+       --to-revisions=<PREVIOUS_STABLE_REVISION_NAME>=100 \
        --region=us-central1 \
        --project=flushcrowd-staging
      ```
+   - *Alternative Console Workflow:* Navigate to **Google Cloud Console -> Cloud Run -> [Verified Service Name] -> Revisions -> Manage Traffic**, select the prior healthy revision, and set traffic allocation to 100%.
+
 3. **R.3 — Emergency Staging Rules Rollback (Exceptional Staging-Only Action):**
    If candidate cutover rules cause unexpected operational disruption during staging testing:
    - Re-deploy the staging rules using the default configuration:
@@ -322,7 +346,7 @@ These tests require an active staging Cloud Function deployment on `flushcrowd-s
 > [!CAUTION]
 > **RESTRICTED TO STAGING ONLY — NEVER RE-ENABLE DIRECT WRITES IN PRODUCTION.**
 > Restoring permissive rules (`firestore.rules`) re-enables direct client batch writes and re-opens the rate-limit and App Check bypass. It is an exceptional, owner-authorized debugging procedure valid ONLY in `flushcrowd-staging`.
-> **Under no circumstances shall direct client writes ever be described or used as a production rollback fallback.** Production operates exclusively through the callable function backend. In production, any incident is resolved by Cloud Run revision rollback (R.2) or client submission suspension (R.1).
+> **Under no circumstances shall direct client writes ever be described or used as a production rollback fallback.** Production operates exclusively through the callable function backend. In production, any backend incident is resolved strictly by Cloud Run revision rollback (R.2) or by halting new client releases while preserving user drafts (R.1).
 
 ---
 
