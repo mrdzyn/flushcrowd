@@ -2,7 +2,7 @@
 
 > Current-state coordination file for humans and AI agents. Keep this concise and update it at every meaningful handoff. Detailed history belongs in Git commits and PRs.
 
-- **Last updated:** 2026-10-15
+- **Last updated:** 2026-10-18
 - **Project:** FlushCrowd — global community-powered restroom finder
 - **Repository:** `mrdzyn/flushcrowd`
 - **Overall stage:** Phase 2 Add Restroom
@@ -10,7 +10,7 @@
 - **Current milestone:** Milestone P2.6 Final QA & Security Cutover Preparation — COMPLETED & VALIDATED
 - **Current branch:** `phase-2/p2.6-final-qa-security-cutover`
 - **Current PR:** PR #16 (https://github.com/mrdzyn/flushcrowd/pull/16)
-- **Latest commit:** `ec8d692753a9461f4dbe06b0b6a1648af3036c7f`
+- **Latest commit:** `9b942b78edbbe198a273fe8382f1c41ff1cce225`
 - **Base:** `main` at `b1c54f7ad8587ddac041401889f159fd5baf8920` (merge of PR #15)
 - **Implementation status:** Phase 0 [MERGED]; Phase 1 [MERGED]; Phase 2 [ACTIVE]; P2.0 [APPROVED]; P2.1 [APPROVED]; P2.2 [APPROVED]; Product Rename [MERGED]; Staging Readiness [MERGED]; P2.2 Navigation Hotfix [MERGED]; P2.3 [APPROVED & MERGED]; P2.4 [MERGED]; P2.5 [MERGED]; P2.6-A [MERGED]; P2.6-B [MERGED]; P2.6-F/G [MERGED — PR #15]; P2.6 Final QA & Security Cutover Preparation [COMPLETED & VALIDATED].
 
@@ -34,7 +34,8 @@ Prepare Phase 2 for final physical-device acceptance and a separately approved s
   * Added operational instructions for QA testers to record exact OS, One UI, and iOS version metadata on testing day via device Settings rather than assuming static versions.
   * Clearly partitions Category A (immediate local/staging tests) from Category B (post-callable tests).
 - **Task 4 — Staged Rollout and Safe Rollback Sequencing (Remediated per PR #16 Audit):**
-  * Established safe rollback hierarchy: R.1 (client draft preservation & submission suspension) and R.2 (Cloud Run callable revision rollback) as primary defenses.
+  * Established safe rollback hierarchy: R.1 (local draft preservation & executable staging build gating without speculative toggles) and R.2 (Cloud Run revision rollback with verified service/revision discovery) as primary defenses.
+  * Clearly distinguished existing compile-time/runtime capabilities from future non-MVP remote kill-switch enhancements.
   * Explicitly labeled restoring permissive rules via R.3 as an exceptional, staging-only, owner-authorized action.
   * Strictly prohibited re-enabling direct client writes as a production fallback under any circumstances.
   * Kept production contribution gate strictly closed.
