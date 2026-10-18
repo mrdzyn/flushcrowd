@@ -18,6 +18,7 @@ For AI-assisted development, agents must read [`../AGENTS.md`](../AGENTS.md) fir
 10. [`08-phase-1-map-discovery.md`](08-phase-1-map-discovery.md) — Phase 1 GIS/query contract, map orchestration, markers/clustering, preview/list/filter requirements, cost controls, testing, and definition of done.
 11. [`09-phase-2-add-restroom.md`](09-phase-2-add-restroom.md) — active Phase 2 Add Restroom specification, contribution workflow, duplicate detection, atomic batch writes, security rules, and testing contract.
 12. [`10-deployment-readiness-and-cutover-runbook.md`](10-deployment-readiness-and-cutover-runbook.md) — Phase 2 deployment readiness, security rules cutover candidate, physical-device QA runbook, and staged rollout/rollback procedures.
+13. [`11-gate-2-manual-ci-evidence.md`](11-gate-2-manual-ci-evidence.md) — Gate 2 manual CI verification report, Node 22 parity audit, and dependency security advisory triage for staging deployment approval.
 
 ## Canonical brand assets
 
